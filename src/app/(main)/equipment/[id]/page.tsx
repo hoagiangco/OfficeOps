@@ -1,0 +1,300 @@
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
+import { can } from "@/lib/rbac";
+import { STATUS_LABELS } from "@/lib/labels";
+
+const fmt = (d: Date) => d.toLocaleString("vi-VN");
+
+export default async function EquipmentDetail({ params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession();
+  if (!session || !can(session.role, "equipment:read")) redirect("/");
+  const { id } = await params;
+
+  const e = await prisma.equipment.findUnique({
+    where: { id },
+    include: {
+      customer: true,
+      contract: true,
+      department: { include: { building: { include: { branch: true } } } },
+      statusHistory: { orderBy: { changedAt: "desc" } },
+      partHistory: { include: { part: true }, orderBy: { replacedAt: "desc" } },
+      tickets: { orderBy: { createdAt: "desc" }, take: 20 },
+      meterLogs: { orderBy: { logDate: "desc" }, take: 15 },
+    },
+  });
+  if (!e) notFound();
+
+  const role = session.role;
+  const showContract = role === "SUPER_ADMIN" || role === "ADMIN";
+  const showLocation = role !== "ADMIN";
+  const showHistory = role !== "ADMIN";
+  const loc = e.department
+    ? `${e.department.building.branch.name} › ${e.department.building.name} › ${e.department.name}`
+    : e.locationNote ?? "Chưa xác định";
+
+  return (
+    <div className="container-fluid px-1 py-1">
+      {/* Compact Header */}
+      <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3 gap-2 bg-white p-2 px-3 rounded-3 shadow-sm border">
+        <div className="d-flex align-items-center gap-2">
+          <Link href="/equipment" className="btn btn-outline-secondary btn-sm">
+            <i className="fas fa-arrow-left me-1"></i> Danh sách
+          </Link>
+          <div className="vr mx-1" style={{ height: "20px" }}></div>
+          <h1 className="h6 mb-0 text-dark fw-bold">
+            HỒ SƠ MÁY: {e.brand ? `${e.brand} ` : ""}
+            {e.model} <span className="text-primary font-monospace">#{e.serialNumber}</span>
+          </h1>
+          <span className="badge bg-primary ms-1">{STATUS_LABELS[e.status]}</span>
+        </div>
+        <div className="d-flex gap-1">
+          <Link
+            href={`/api/equipment/${e.id}/qr`}
+            target="_blank"
+            className="btn btn-dark btn-sm px-3 fw-bold"
+          >
+            <i className="fas fa-qrcode me-1"></i> In tem QR
+          </Link>
+        </div>
+      </div>
+
+      <div className="row g-3 mb-3">
+        {/* Thông tin chung */}
+        <div className="col-lg-9">
+          <div className="card shadow-sm border-0 rounded-3 border h-100">
+            <div className="card-header bg-dark text-white py-2 px-3">
+              <strong className="small text-uppercase">
+                <i className="fas fa-info-circle me-1"></i> Thông số &amp; Vận hành
+              </strong>
+            </div>
+            <div className="card-body p-3">
+              <div className="row g-2 small">
+                <div className="col-md-6">
+                  <div className="p-2 bg-light rounded border">
+                    <div className="text-muted">Khách hàng đang thuê/sử dụng:</div>
+                    <div className="fw-bold text-dark fs-6">{e.customer?.name ?? "Trong kho công ty"}</div>
+                  </div>
+                </div>
+                <div className="col-md-6">
+                  <div className="p-2 bg-light rounded border">
+                    <div className="text-muted">Counter hiện tại:</div>
+                    <div className="fw-bold text-primary font-monospace fs-6">
+                      {e.currentCounter.toLocaleString("vi-VN")} bản
+                    </div>
+                  </div>
+                </div>
+                {showLocation && (
+                  <div className="col-md-6">
+                    <div className="p-2 border rounded">
+                      <span className="text-muted">Vị trí lắp đặt: </span>
+                      <strong>{loc}</strong>
+                    </div>
+                  </div>
+                )}
+                <div className="col-md-6">
+                  <div className="p-2 border rounded">
+                    <span className="text-muted">Chỉ số sức khỏe máy: </span>
+                    <strong className="text-success">{e.healthScore}%</strong>
+                  </div>
+                </div>
+                {showContract && (
+                  <>
+                    <div className="col-md-6">
+                      <div className="p-2 border rounded">
+                        <span className="text-muted">Mã hợp đồng: </span>
+                        <strong className="font-monospace">{e.contract?.code ?? "—"}</strong>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="p-2 border rounded">
+                        <span className="text-muted">Định mức bản in riêng: </span>
+                        <strong>
+                          {e.baseQuota !== null
+                            ? `${e.baseQuota.toLocaleString("vi-VN")} bản/tháng`
+                            : `Theo hợp đồng (${e.contract?.baseQuota?.toLocaleString("vi-VN") ?? "—"})`}
+                        </strong>
+                      </div>
+                    </div>
+                  </>
+                )}
+                <div className="col-md-6">
+                  <div className="p-2 border rounded">
+                    <span className="text-muted">Ngày nhập kho: </span>
+                    <strong>{e.importedAt ? fmt(e.importedAt) : "—"}</strong>
+                  </div>
+                </div>
+                <div className="col-md-6">
+                  <div className="p-2 border rounded">
+                    <span className="text-muted">Ngày lắp đặt: </span>
+                    <strong>{e.installedAt ? fmt(e.installedAt) : "—"}</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Mã định danh QR */}
+        <div className="col-lg-3">
+          <div className="card shadow-sm border-0 rounded-3 border h-100 text-center">
+            <div className="card-header bg-dark text-white py-2 px-3">
+              <strong className="small text-uppercase">Mã Định Danh QR</strong>
+            </div>
+            <div className="card-body d-flex flex-column align-items-center justify-content-center p-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/equipment/${e.id}/qr`}
+                alt="QR thiết bị"
+                width={165}
+                height={165}
+                className="border rounded p-1 bg-white"
+              />
+              <div className="mt-2 small font-monospace text-muted text-break">{e.qrCode}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {showHistory && (
+        <div className="row g-3 mb-3">
+          {/* Lịch sử sửa chữa */}
+          <div className="col-lg-6">
+            <div className="card shadow-sm border-0 rounded-3 border h-100">
+              <div className="card-header bg-dark text-white py-2 px-3">
+                <strong className="small text-uppercase">
+                  <i className="fas fa-tools me-1"></i> Lịch sử sửa chữa &amp; Bảo trì ({e.tickets.length})
+                </strong>
+              </div>
+              <div className="card-body p-0">
+                <table className="table table-sm table-hover mb-0 custom-dense-table">
+                  <thead className="table-light">
+                    <tr>
+                      <th className="px-3">Mã phiếu</th>
+                      <th>Loại</th>
+                      <th>Trạng thái</th>
+                      <th>Mô tả</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {e.tickets.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="text-center py-4 text-muted small">
+                          Chưa phát sinh phiếu kỹ thuật nào
+                        </td>
+                      </tr>
+                    ) : (
+                      e.tickets.map((t) => (
+                        <tr key={t.id}>
+                          <td className="px-3 font-monospace fw-bold small">{t.code}</td>
+                          <td className="small">{t.type}</td>
+                          <td>
+                            <span className="badge bg-secondary">{t.status}</span>
+                          </td>
+                          <td className="small text-truncate" style={{ maxWidth: "200px" }}>
+                            {t.description}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Linh kiện đã thay */}
+          <div className="col-lg-6">
+            <div className="card shadow-sm border-0 rounded-3 border h-100">
+              <div className="card-header bg-dark text-white py-2 px-3">
+                <strong className="small text-uppercase">
+                  <i className="fas fa-cogs me-1"></i> Linh kiện đã thay thế ({e.partHistory.length})
+                </strong>
+              </div>
+              <div className="card-body p-0">
+                <table className="table table-sm table-hover mb-0 custom-dense-table">
+                  <thead className="table-light">
+                    <tr>
+                      <th className="px-3">Thời gian</th>
+                      <th>Mã &amp; Tên linh kiện</th>
+                      <th className="text-center">SL</th>
+                      <th className="text-center">Thu hồi xác</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {e.partHistory.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="text-center py-4 text-muted small">
+                          Chưa thay thế linh kiện nào
+                        </td>
+                      </tr>
+                    ) : (
+                      e.partHistory.map((p) => (
+                        <tr key={p.id}>
+                          <td className="px-3 small text-muted">{fmt(p.replacedAt)}</td>
+                          <td className="small">
+                            <strong>{p.part.name}</strong> ({p.part.partCode})
+                          </td>
+                          <td className="text-center fw-bold small">{p.quantity}</td>
+                          <td className="text-center small">
+                            {p.oldPartReturned ? (
+                              <span className="text-success">Đã thu hồi</span>
+                            ) : (
+                              <span className="text-muted">Chưa</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lịch sử trạng thái */}
+      <div className="card shadow-sm border-0 rounded-3 border">
+        <div className="card-header bg-dark text-white py-2 px-3">
+          <strong className="small text-uppercase">
+            <i className="fas fa-history me-1"></i> Lịch sử biến động trạng thái vòng đời
+          </strong>
+        </div>
+        <div className="card-body p-0">
+          <table className="table table-sm mb-0 custom-dense-table">
+            <thead className="table-light">
+              <tr>
+                <th className="px-3" style={{ width: "180px" }}>
+                  Thời điểm
+                </th>
+                <th>Chuyển đổi trạng thái</th>
+                <th>Ghi chú</th>
+              </tr>
+            </thead>
+            <tbody>
+              {e.statusHistory.map((h) => (
+                <tr key={h.id}>
+                  <td className="px-3 small text-muted font-monospace">{fmt(h.changedAt)}</td>
+                  <td className="small">
+                    {h.fromStatus ? (
+                      <>
+                        <span className="badge bg-secondary me-1">
+                          {STATUS_LABELS[h.fromStatus]}
+                        </span>
+                        <i className="fas fa-arrow-right text-muted mx-1"></i>
+                      </>
+                    ) : null}
+                    <span className="badge bg-primary">{STATUS_LABELS[h.toStatus]}</span>
+                  </td>
+                  <td className="small text-muted">{h.note || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

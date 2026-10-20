@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="vi" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OfficeOps – Demo giao diện Desktop</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app" id="app">
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar">
+    <div class="brand"><div class="logo">O</div><span class="t">OfficeOps</span></div>
+    <nav class="menu">
+      <button class="item" data-view="dashboard"><span class="ico">▦</span><span class="label">Tổng quan</span></button>
+      <div class="group">Vận hành</div>
+      <button class="item" data-view="tickets"><span class="ico">✉</span><span class="label">Ticket</span><span class="badge-n">7</span></button>
+      <button class="item" data-view="dispatch"><span class="ico">⌖</span><span class="label">Điều phối</span></button>
+      <div class="group">Danh mục</div>
+      <button class="item" data-view="customers"><span class="ico">☺</span><span class="label">Khách hàng</span></button>
+      <button class="item" data-view="contracts"><span class="ico">▤</span><span class="label">Hợp đồng</span></button>
+      <button class="item active" data-view="equipment"><span class="ico">⎙</span><span class="label">Thiết bị</span></button>
+      <div class="group">Kho</div>
+      <button class="item" data-view="inventory"><span class="ico">▣</span><span class="label">Tồn kho linh kiện</span></button>
+      <button class="item" data-view="issues"><span class="ico">⇄</span><span class="label">Phiếu xuất kho</span><span class="badge-n">3</span></button>
+      <div class="group">Tài chính</div>
+      <button class="item" data-view="invoices"><span class="ico">₫</span><span class="label">Hóa đơn / Bảng kê</span></button>
+      <button class="item" data-view="reports"><span class="ico">◔</span><span class="label">Báo cáo</span></button>
+      <div class="group">Hệ thống</div>
+      <button class="item" data-view="admin"><span class="ico">⚙</span><span class="label">Người dùng &amp; quyền</span></button>
+    </nav>
+    <div class="side-foot"><button class="item" id="collapse"><span class="ico">«</span><span class="label">Thu gọn menu</span></button></div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <div class="main">
+    <div class="topbar">
+      <div class="crumb">Danh mục / <b id="crumb">Thiết bị</b></div>
+      <div class="search">🔍 Tìm serial, khách hàng, mã phiếu… <kbd>Ctrl K</kbd></div>
+      <button class="icon-btn bell" title="Thông báo">🔔<i>4</i></button>
+      <button class="icon-btn" id="theme" title="Sáng / tối">☾</button>
+      <div class="user"><div class="avatar">GĐ</div><div><div>Giám đốc</div><div class="role">Super Admin</div></div></div>
+    </div>
+
+    <div class="content">
+      <!-- ===== VIEW: Thiết bị (LIST) ===== -->
+      <section class="view active" id="v-equipment">
+        <div class="page-head">
+          <h1>Thiết bị</h1><span class="sub">248 thiết bị</span>
+          <div class="actions">
+            <button class="btn">⭳ Xuất Excel</button>
+            <button class="btn">⎙ In tem QR</button>
+            <button class="btn primary" id="openForm">+ Thêm thiết bị</button>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat on"><div class="n">248</div><div class="l">Tất cả</div></div>
+          <div class="stat"><div class="n" style="color:var(--ok)">196</div><div class="l">Đang hoạt động</div></div>
+          <div class="stat"><div class="n" style="color:var(--err)">14</div><div class="l">Lỗi / Cần bảo trì</div></div>
+          <div class="stat"><div class="n" style="color:var(--warn)">6</div><div class="l">Chờ linh kiện</div></div>
+          <div class="stat"><div class="n">32</div><div class="l">Trong kho</div></div>
+        </div>
+        <div class="filters">
+          <input class="input" placeholder="Tìm theo Serial / Model…">
+          <select class="select"><option>Mọi khách hàng</option><option>Cty TNHH Minh Phát</option><option>Ngân hàng Việt Tín</option></select>
+          <select class="select"><option>Mọi dòng máy</option><option>Ricoh MP 3055</option><option>Canon iR 2625</option></select>
+          <select class="select"><option>Mọi trạng thái</option></select>
+          <div class="sp"><button class="btn">⚙ Cột hiển thị</button><button class="btn">⟲ Xóa lọc</button></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th><input type="checkbox"></th><th>Serial ⇅</th><th>Model</th><th>Khách hàng</th><th>Vị trí</th><th>Hợp đồng</th><th>Trạng thái</th><th class="num">Counter</th><th class="num">Quota</th><th>Sức khỏe</th><th></th>
+            </tr></thead>
+            <tbody>
+              <tr data-detail><td><input type="checkbox"></td><td class="mono"><a>SN-A10234</a></td><td>Ricoh MP 3055</td><td>Cty TNHH Minh Phát</td><td>CN HN › Tòa A › P.Kế toán</td><td>HD-2026-014</td><td><span class="badge b-ok">Hoạt động</span></td><td class="num">128.450</td><td class="num">10.000</td><td>92%</td><td>⋯</td></tr>
+              <tr data-detail><td><input type="checkbox"></td><td class="mono"><a>SN-A10235</a></td><td>Ricoh MP 3055</td><td>Cty TNHH Minh Phát</td><td>CN HN › Tòa A › P.Nhân sự</td><td>HD-2026-014</td><td><span class="badge b-err">Lỗi</span></td><td class="num">96.012</td><td class="num">10.000</td><td>41%</td><td>⋯</td></tr>
+              <tr data-detail><td><input type="checkbox"></td><td class="mono"><a>SN-B20871</a></td><td>Canon iR 2625</td><td>Ngân hàng Việt Tín</td><td>CN HCM › Tòa B › Tầng 3</td><td>HD-2026-021</td><td><span class="badge b-warn">Chờ linh kiện</span></td><td class="num">54.300</td><td class="num">6.000</td><td>63%</td><td>⋯</td></tr>
+              <tr data-detail><td><input type="checkbox"></td><td class="mono"><a>SN-B20872</a></td><td>Canon iR 2625</td><td>Ngân hàng Việt Tín</td><td>CN HCM › Tòa B › Tầng 4</td><td>HD-2026-021</td><td><span class="badge b-ok">Hoạt động</span></td><td class="num">49.870</td><td class="num">6.000</td><td>88%</td><td>⋯</td></tr>
+              <tr data-detail><td><input type="checkbox"></td><td class="mono"><a>SN-C30112</a></td><td>HP LaserJet M430</td><td>Trường THPT Lê Quý Đôn</td><td>Phòng Giáo vụ</td><td>HD-2025-087</td><td><span class="badge b-ok">Hoạt động</span></td><td class="num">210.994</td><td class="num">8.000</td><td>77%</td><td>⋯</td></tr>
+              <tr data-detail><td><input type="checkbox"></td><td class="mono"><a>SN-C30150</a></td><td>HP LaserJet M430</td><td>—</td><td>Kho trung tâm › Kệ B2</td><td>—</td><td><span class="badge b-info">Trong kho</span></td><td class="num">0</td><td class="num">—</td><td>100%</td><td>⋯</td></tr>
+              <tr data-detail><td><input type="checkbox"></td><td class="mono"><a>SN-D40007</a></td><td>Xerox VersaLink C7025</td><td>Cty CP Sao Việt</td><td>Văn phòng chính</td><td>HD-2026-003</td><td><span class="badge b-gray">Đã thu hồi</span></td><td class="num">301.220</td><td class="num">12.000</td><td>35%</td><td>⋯</td></tr>
+              <tr data-detail><td><input type="checkbox"></td><td class="mono"><a>SN-D40031</a></td><td>Xerox VersaLink C7025</td><td>Cty CP Sao Việt</td><td>Phòng Marketing</td><td>HD-2026-003</td><td><span class="badge b-ok">Hoạt động</span></td><td class="num">88.140</td><td class="num">12.000</td><td>95%</td><td>⋯</td></tr>
+            </tbody>
+          </table>
+          <div class="pager"><span>Hiển thị 1–8 / 248</span><div class="sp"><select class="select"><option>20 / trang</option></select><button class="btn sm">‹</button><button class="btn sm primary">1</button><button class="btn sm">2</button><button class="btn sm">3</button><button class="btn sm">›</button></div></div>
+        </div>
+      </section>
+
+      <!-- ===== VIEW: Chi tiết thiết bị ===== -->
+      <section class="view" id="v-detail">
+        <div class="page-head">
+          <a id="back" style="cursor:pointer">← Thiết bị</a>
+          <h1>Ricoh MP 3055 <span class="sub">#SN-A10235</span></h1><span class="badge b-err">Lỗi</span>
+          <div class="actions"><button class="btn">✎ Sửa</button><button class="btn">Đổi trạng thái ▾</button><button class="btn primary">+ Tạo ticket</button></div>
+        </div>
+        <div class="tabs"><button class="tab active">Thông tin</button><button class="tab">Lịch sử sửa chữa (5)</button><button class="tab">Counter &amp; cước</button><button class="tab">Linh kiện đã thay</button><button class="tab">Lịch sử trạng thái</button></div>
+        <div class="detail">
+          <div class="card">
+            <dl class="kv">
+              <dt>Khách hàng</dt><dd><a>Cty TNHH Minh Phát</a></dd>
+              <dt>Vị trí lắp đặt</dt><dd>CN Hà Nội › Tòa A › Phòng Nhân sự</dd>
+              <dt>Hợp đồng</dt><dd><a>HD-2026-014</a> (hiệu lực đến 31/12/2026)</dd>
+              <dt>Định mức / Đơn giá vượt</dt><dd>10.000 bản/tháng · 300 ₫/bản</dd>
+              <dt>Counter hiện tại</dt><dd>96.012 (ghi nhận 18/10/2026)</dd>
+              <dt>Sức khỏe thiết bị</dt><dd>41% – cần bảo trì</dd>
+              <dt>Nhập kho / Lắp đặt</dt><dd>05/01/2025 · 12/01/2025</dd>
+              <dt>Bảo dưỡng kế tiếp</dt><dd>12/11/2026</dd>
+            </dl>
+          </div>
+          <div class="card qr">
+            <svg viewBox="0 0 21 21" shape-rendering="crispEdges"><rect width="21" height="21" fill="#fff"/><g fill="#000"><path d="M0 0h7v7H0zM14 0h7v7h-7zM0 14h7v7H0z"/></g><g fill="#fff"><path d="M1 1h5v5H1zM15 1h5v5h-5zM1 15h5v5H1z"/></g><g fill="#000"><path d="M2 2h3v3H2zM16 2h3v3h-3zM2 16h3v3H2zM9 1h2v2H9zM8 8h2v2H8zM12 9h3v2h-3zM9 12h2v3H9zM13 14h3v2h-3zM16 17h4v3h-4zM11 18h3v2h-3zM8 4h1v2H8z"/></g></svg>
+            <div class="hint">QR: eq_cmvg5x7do000l</div>
+            <button class="btn sm">⎙ In tem</button>
+          </div>
+        </div>
+        <div class="card">
+          <b>Lịch sử trạng thái</b>
+          <ul class="timeline" style="margin-top:6px">
+            <li><time>18/10/2026 09:12</time><span><span class="badge b-ok">Hoạt động</span> → <span class="badge b-err">Lỗi</span> · Kẹt giấy liên tục (TK-2026-000231)</span></li>
+            <li><time>12/01/2025 14:00</time><span><span class="badge b-info">Trong kho</span> → <span class="badge b-ok">Hoạt động</span> · Lắp đặt tại khách hàng</span></li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ===== VIEW: Ticket (LIST) ===== -->
+      <section class="view" id="v-tickets">
+        <div class="page-head"><h1>Ticket</h1><span class="sub">Phiếu yêu cầu dịch vụ</span>
+          <div class="actions"><button class="btn primary">+ Tạo phiếu</button></div></div>
+        <div class="filters"><input class="input" placeholder="Tìm mã phiếu / serial…"><select class="select"><option>Mọi loại</option></select><select class="select"><option>Mọi trạng thái</option></select><select class="select"><option>Mọi kỹ thuật viên</option></select></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Mã</th><th>Loại</th><th>Thiết bị</th><th>Khách hàng</th><th>Ưu tiên</th><th>Trạng thái</th><th>Kỹ thuật viên</th><th>SLA</th></tr></thead>
+          <tbody>
+            <tr><td class="mono"><a>TK-2026-000231</a></td><td>Sửa chữa</td><td class="mono">SN-A10235</td><td>Cty TNHH Minh Phát</td><td><span class="badge b-err">Khẩn</span></td><td><span class="badge b-vio">Đang xử lý</span></td><td>Nguyễn Văn An</td><td style="color:var(--err)">Còn 1h20</td></tr>
+            <tr><td class="mono"><a>TK-2026-000230</a></td><td>Bảo trì</td><td class="mono">SN-B20872</td><td>Ngân hàng Việt Tín</td><td><span class="badge b-info">Thường</span></td><td><span class="badge b-info">Đã giao</span></td><td>Trần Quốc Bảo</td><td>Còn 1 ngày</td></tr>
+            <tr><td class="mono"><a>TK-2026-000229</a></td><td>Sửa chữa</td><td class="mono">SN-B20871</td><td>Ngân hàng Việt Tín</td><td><span class="badge b-orange">Cao</span></td><td><span class="badge b-warn">Chờ linh kiện</span></td><td>Trần Quốc Bảo</td><td>Còn 5h</td></tr>
+            <tr><td class="mono"><a>TK-2026-000228</a></td><td>Kiểm tra</td><td class="mono">SN-C30112</td><td>THPT Lê Quý Đôn</td><td><span class="badge b-gray">Thấp</span></td><td><span class="badge b-gray">Chờ giao</span></td><td>—</td><td>Còn 3 ngày</td></tr>
+            <tr><td class="mono"><a>TK-2026-000227</a></td><td>Lắp mới</td><td class="mono">SN-C30150</td><td>Cty CP Sao Việt</td><td><span class="badge b-info">Thường</span></td><td><span class="badge b-ok">Hoàn tất</span></td><td>Nguyễn Văn An</td><td>—</td></tr>
+          </tbody></table></div>
+      </section>
+
+      <!-- Các mục menu khác: khung trống minh họa -->
+      <section class="view" id="v-placeholder"><div class="card" style="text-align:center;padding:60px;color:var(--muted)"><b id="ph-title"></b><br>Màn hình này sẽ được thiết kế theo cùng mẫu: tiêu đề + hành động → thẻ số liệu → bộ lọc → bảng.</div></section>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DRAWER FORM ===== -->
+<div class="overlay" id="overlay"></div>
+<aside class="drawer" id="drawer" aria-label="Thêm thiết bị">
+  <header><h2>Thêm thiết bị</h2><button class="icon-btn" id="closeForm" aria-label="Đóng">✕</button></header>
+  <div class="body">
+    <div class="section">Định danh</div>
+    <div class="grid2">
+      <div class="field"><label>Serial Number <span class="req">*</span></label><input class="input" placeholder="VD: SN-A10236"><span class="hint">Mỗi máy một serial duy nhất.</span></div>
+      <div class="field"><label>Model (dòng máy) <span class="req">*</span></label><select class="select"><option>Ricoh MP 3055</option><option>Canon iR 2625</option></select></div>
+      <div class="field"><label>Hãng</label><input class="input" placeholder="Ricoh"></div>
+      <div class="field"><label>Trạng thái</label><select class="select"><option>Trong kho</option><option>Đang hoạt động</option></select></div>
+    </div>
+    <div class="section">Khách hàng &amp; hợp đồng</div>
+    <div class="grid2">
+      <div class="field"><label>Khách hàng</label><select class="select"><option>Cty TNHH Minh Phát</option></select></div>
+      <div class="field"><label>Hợp đồng</label><select class="select"><option>HD-2026-014</option></select><span class="hint">Chỉ hiện hợp đồng của khách đã chọn.</span></div>
+      <div class="field"><label>Chi nhánh › Tòa nhà › Phòng ban</label><select class="select"><option>CN Hà Nội › Tòa A › P.Kế toán</option></select></div>
+      <div class="field"><label>Ghi chú vị trí</label><input class="input" placeholder="Cạnh cửa sổ, tầng 2"></div>
+    </div>
+    <div class="section">Định mức riêng (tùy chọn)</div>
+    <div class="grid2">
+      <div class="field"><label>Định mức (bản/tháng)</label><input class="input" type="number" placeholder="Để trống = theo hợp đồng"></div>
+      <div class="field"><label>Đơn giá vượt (₫/bản)</label><input class="input" type="number" placeholder="Để trống = theo hợp đồng"></div>
+    </div>
+    <div class="section">Khác</div>
+    <div class="grid2">
+      <div class="field"><label>Ngày nhập kho</label><input class="input" type="date"></div>
+      <div class="field"><label>Ngày lắp đặt</label><input class="input" type="date"></div>
+      <div class="field full"><label>Ghi chú / cấu hình</label><textarea class="textarea" rows="3" placeholder="Khay phụ, bộ finisher…"></textarea></div>
+    </div>
+  </div>
+  <footer><button class="btn" id="cancelForm">Hủy</button><button class="btn" id="saveNew">Lưu và thêm tiếp</button><button class="btn primary" id="save">Lưu thiết bị</button></footer>
+</aside>
+<div class="toast" id="toast">✓ Đã lưu thiết bị SN-A10236</div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const titles={dashboard:'Tổng quan',tickets:'Ticket',dispatch:'Điều phối',customers:'Khách hàng',contracts:'Hợp đồng',equipment:'Thiết bị',inventory:'Tồn kho linh kiện',issues:'Phiếu xuất kho',invoices:'Hóa đơn / Bảng kê',reports:'Báo cáo',admin:'Người dùng & quyền'};
+function show(v){
+  $$('.item[data-view]').forEach(i=>i.classList.toggle('active',i.dataset.view===v));
+  $$('.view').forEach(x=>x.classList.remove('active'));
+  const real=$('#v-'+v);
+  if(real){real.classList.add('active')}else{$('#v-placeholder').classList.add('active');$('#ph-title').textContent=titles[v]}
+  $('#crumb').textContent=titles[v]||'Thiết bị';
+}
+$$('.item[data-view]').forEach(i=>i.onclick=()=>show(i.dataset.view));
+$$('tr[data-detail]').forEach(r=>r.onclick=()=>{$$('.view').forEach(x=>x.classList.remove('active'));$('#v-detail').classList.add('active');$('#crumb').textContent='Thiết bị / SN-A10235'});
+$('#back').onclick=()=>show('equipment');
+$('#collapse').onclick=()=>$('#app').classList.toggle('collapsed');
+$('#theme').onclick=()=>{const d=document.documentElement;const dark=d.dataset.theme==='dark';d.dataset.theme=dark?'light':'dark';$('#theme').textContent=dark?'☾':'☀'};
+const open=()=>{$('#drawer').classList.add('open');$('#overlay').classList.add('open')};
+const close=()=>{$('#drawer').classList.remove('open');$('#overlay').classList.remove('open')};
+$('#openForm').onclick=open;$('#closeForm').onclick=close;$('#cancelForm').onclick=close;$('#overlay').onclick=close;
+const toast=()=>{const t=$('#toast');t.style.display='block';setTimeout(()=>t.style.display='none',2200)};
+$('#save').onclick=()=>{close();toast()};$('#saveNew').onclick=toast;
+document.addEventListener('keydown',e=>{if(e.key==='Escape')close()});
+</script>
+</body>
+</html>

@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="vi" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>OfficeOps – Mobile Tech App Demo</title>
+<link rel="stylesheet" href="style.css">
+<style>
+/* Tinh chỉnh riêng cho khung mô phỏng Mobile Tech */
+body {
+  background: #cbd5e1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+.mobile-frame {
+  width: 390px;
+  height: 844px;
+  background: var(--bg);
+  border-radius: 40px;
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
+  border: 10px solid #1e293b;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* Notch mô phỏng điện thoại */
+.notch {
+  width: 140px;
+  height: 24px;
+  background: #1e293b;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px;
+  z-index: 100;
+}
+.m-header {
+  padding: 34px 16px 12px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.m-header h1 {
+  font-size: 17px;
+  margin: 0;
+  font-weight: 700;
+}
+.m-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.m-bottom-nav {
+  height: 68px;
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding-bottom: 8px;
+  position: relative;
+}
+.m-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  gap: 2px;
+}
+.m-nav-item.active {
+  color: var(--primary);
+  font-weight: 600;
+}
+.m-nav-item .ico {
+  font-size: 18px;
+}
+.qr-fab {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  border: 4px solid var(--bg);
+  box-shadow: 0 4px 12px rgba(37,99,235,0.4);
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+  cursor: pointer;
+}
+/* Thẻ Ticket cho Kỹ thuật viên */
+.tech-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.tech-card .top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.tech-card .title {
+  font-weight: 600;
+  font-size: 14.5px;
+}
+.tech-card .meta {
+  font-size: 12.5px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+/* Modal QR Scanner mô phỏng */
+.qr-modal {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  z-index: 90;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+.qr-scanner-box {
+  width: 220px;
+  height: 220px;
+  border: 2px dashed #3b82f6;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.qr-scanner-box::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  height: 2px;
+  background: #ef4444;
+  animation: scan 2s infinite linear;
+}
+@keyframes scan {
+  0% { top: 10px; }
+  50% { top: 200px; }
+  100% { top: 10px; }
+}
+</style>
+</head>
+<body>
+
+<div class="mobile-frame">
+  <div class="notch"></div>
+  
+  <header class="m-header">
+    <div>
+      <div style="font-size:11px;color:var(--muted)">Kỹ thuật viên</div>
+      <h1>Nguyễn Văn An</h1>
+    </div>
+    <span class="badge b-ok">Online</span>
+  </header>
+
+  <main class="m-content" id="mContent">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <b style="font-size:14px">Việc hôm nay (3)</b>
+      <span style="font-size:12px;color:var(--primary);cursor:pointer">Lọc ▾</span>
+    </div>
+
+    <!-- Ticket 1: Khẩn -->
+    <div class="tech-card" style="border-left: 4px solid var(--err)">
+      <div class="top">
+        <span class="badge b-err">Khẩn • Sửa chữa</span>
+        <span style="font-size:11.5px;color:var(--err);font-weight:600">Còn 1h20</span>
+      </div>
+      <div class="title">Ricoh MP 3055 (#SN-A10235)</div>
+      <div class="meta">
+        <div>🏢 Cty TNHH Minh Phát - CN Hà Nội</div>
+        <div>📍 Tòa A, P. Kế Toán (Tầng 2)</div>
+        <div>⚠ Sự cố: Kẹt giấy liên tục tại khay 1</div>
+      </div>
+      <div class="action-grid">
+        <button class="btn sm" onclick="alert('Mở bản đồ chỉ đường...')">📍 Chỉ đường</button>
+        <button class="btn sm primary" onclick="showTicketDetail()">Bắt đầu xử lý</button>
+      </div>
+    </div>
+
+    <!-- Ticket 2: Bảo trì định kỳ -->
+    <div class="tech-card" style="border-left: 4px solid var(--primary)">
+      <div class="top">
+        <span class="badge b-info">Định kỳ • Bảo trì</span>
+        <span style="font-size:11.5px;color:var(--muted)">Hôm nay 15:00</span>
+      </div>
+      <div class="title">Canon iR 2625 (#SN-B20872)</div>
+      <div class="meta">
+        <div>🏢 Ngân hàng Việt Tín - CN HCM</div>
+        <div>📍 Tòa B, Tầng 4</div>
+        <div>🔧 Bảo trì chu kỳ 60 ngày + chốt Counter</div>
+      </div>
+      <div class="action-grid">
+        <button class="btn sm">📍 Chỉ đường</button>
+        <button class="btn sm">Xem chi tiết</button>
+      </div>
+    </div>
+
+    <!-- Ticket 3: Đã giao -->
+    <div class="tech-card">
+      <div class="top">
+        <span class="badge b-warn">Chờ linh kiện</span>
+        <span style="font-size:11.5px;color:var(--muted)">Hôm qua</span>
+      </div>
+      <div class="title">HP LaserJet M430 (#SN-C30112)</div>
+      <div class="meta">
+        <div>🏢 Trường THPT Lê Quý Đôn</div>
+        <div>📦 Chờ xuất Drum Ricoh MP 3055 từ kho</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal Quét QR Scanner mô phỏng -->
+  <div class="qr-modal" id="qrModal">
+    <div class="qr-scanner-box">
+      <span style="font-size:12px;opacity:0.7">Đưa mã QR vào khung</span>
+    </div>
+    <div style="margin-top:24px;text-align:center">
+      <p style="font-size:13px;margin:0 0 12px">Quét mã QR dán trên thân máy</p>
+      <button class="btn sm" onclick="closeScanner()" style="background:#fff;color:#000">Đóng máy quét</button>
+    </div>
+  </div>
+
+  <nav class="m-bottom-nav">
+    <button class="m-nav-item active">
+      <span class="ico">📋</span>
+      <span>Việc của tôi</span>
+    </button>
+    <button class="qr-fab" onclick="openScanner()" title="Quét mã QR máy">
+      <span>📷</span>
+    </button>
+    <button class="m-nav-item" style="margin-left:36px">
+      <span class="ico">📦</span>
+      <span>Linh kiện</span>
+    </button>
+    <button class="m-nav-item">
+      <span class="ico">👤</span>
+      <span>Cá nhân</span>
+    </button>
+  </nav>
+</div>
+
+<script>
+function openScanner() {
+  document.getElementById('qrModal').style.display = 'flex';
+}
+function closeScanner() {
+  document.getElementById('qrModal').style.display = 'none';
+}
+function showTicketDetail() {
+  alert('Chuyển sang màn hình Check-in GPS & Bắt đầu ghi nhận Counter/Linh kiện của phiếu TK-2026-000231!');
+}
+</script>
+</body>
+</html>

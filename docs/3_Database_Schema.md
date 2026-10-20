@@ -1,0 +1,482 @@
+// schema.prisma  (PHIÊN BẢN ĐÃ RÀ SOÁT & BỔ SUNG - v2)
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+//
+// Thay đổi so với v1:
+// - Sửa model PartReplacement bị cắt dở.
+// - Role / EquipmentStatus / ... chuyển từ String sang enum.
+// - Float -> Decimal cho mọi trường tiền tệ.
+// - Bổ sung: Branch/Building/Department, StockIssue, Invoice, MaintenanceSchedule,
+//   TicketAttachment, TicketLog, StockMovement, Notification, AuditLog.
+// - Part.stockQuantity bỏ: tồn kho = SUM(InventoryBatch.quantity) (nguồn dữ liệu duy nhất).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ ENUMS ============
+enum Role {
+  SUPER_ADMIN // Giám đốc
+  ADMIN       // Kế toán
+  DISPATCHER  // Điều phối viên / Thủ kho
+  FIELD_TECH  // Kỹ thuật viên
+}
+
+enum EquipmentStatus {
+  ACTIVE          // Đang hoạt động
+  FAULTY          // Lỗi / Cần bảo trì
+  WAITING_PARTS   // Đang chờ linh kiện
+  RECALLED        // Đã thu hồi
+  IN_STOCK        // Trong kho
+  SCRAPPED        // Thanh lý
+}
+
+enum TicketType {
+  INSTALLATION // Lắp mới
+  INSPECTION   // Kiểm tra
+  REPAIR       // Sửa chữa
+  MAINTENANCE  // Bảo trì
+  OTHER        // Khác
+}
+
+enum TicketStatus {
+  PENDING          // Chờ tiếp nhận / chưa giao
+  ASSIGNED         // Đã giao kỹ thuật viên
+  IN_PROGRESS      // Đang xử lý
+  WAITING_PARTS    // Chờ duyệt / chờ linh kiện
+  WAITING_CUSTOMER // Chờ khách ký xác nhận
+  COMPLETED
+  CANCELLED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TicketSource {
+  CUSTOMER   // Khách báo lỗi
+  SCHEDULED  // Sinh tự động từ lịch bảo trì
+  INTERNAL
+}
+
+enum StockIssueType {
+  TECHNICAL // Xuất kỹ thuật (đi sửa chữa)
+  RETAIL    // Xuất bán lẻ
+  RETURN    // Hoàn trả linh kiện cũ/hỏng
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MeterSource {
+  MANUAL
+  OCR
+  TECH
+  CUSTOMER
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  RETURN
+  ADJUST
+}
+
+enum NotificationChannel {
+  EMAIL
+  ZALO
+  IN_APP
+}
+
+// ============ USER & ORG ============
+model User {
+  id          String   @id @default(cuid())
+  name        String
+  email       String   @unique
+  password    String   // bcrypt hash
+  phone       String?
+  role        Role     @default(FIELD_TECH)
+  isActive    Boolean  @default(true)
+  region      String?  // Khu vực phụ trách (điều phối theo địa lý)
+  skills      String[] // Chuyên môn / dòng máy
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignedTickets Ticket[]        @relation("TicketAssignee")
+  createdTickets  Ticket[]        @relation("TicketCreator")
+  ticketLogs      TicketLog[]
+  stockIssuesReq  StockIssue[]    @relation("IssueRequester")
+  stockIssuesApp  StockIssue[]    @relation("IssueApprover")
+  notifications   Notification[]
+  auditLogs       AuditLog[]
+  meterLogs       MeterLog[]
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  taxCode   String?
+  phone     String
+  email     String?
+  zaloId    String?
+  address   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branches  Branch[]
+  equipment Equipment[]
+  contracts Contract[]
+  tickets   Ticket[]
+  invoices  Invoice[]
+}
+
+// Chi nhánh -> Tòa nhà -> Phòng ban (vị trí lắp đặt có cấu trúc)
+model Branch {
+  id         String     @id @default(cuid())
+  customerId String
+  customer   Customer   @relation(fields: [customerId], references: [id])
+  name       String
+  address    String?
+  latitude   Float?
+  longitude  Float?
+  buildings  Building[]
+}
+
+model Building {
+  id          String       @id @default(cuid())
+  branchId    String
+  branch      Branch       @relation(fields: [branchId], references: [id])
+  name        String
+  departments Department[]
+}
+
+model Department {
+  id          String      @id @default(cuid())
+  buildingId  String
+  building    Building    @relation(fields: [buildingId], references: [id])
+  name        String      // Tầng / Phòng ban
+  equipment   Equipment[]
+}
+
+// ============ CONTRACT & EQUIPMENT ============
+model Contract {
+  id            String      @id @default(cuid())
+  code          String      @unique
+  customerId    String
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  startDate     DateTime
+  endDate       DateTime
+  basePrice     Decimal     @db.Decimal(14, 2) // Giá thuê cố định / tháng
+  baseQuota     Int         // Định mức bản in mặc định cho mỗi máy (máy có thể ghi đè)
+  overagePrice  Decimal     @db.Decimal(14, 4) // Đơn giá vượt định mức mặc định
+  billingDay    Int         @default(1)        // Ngày chốt counter hàng tháng
+  maintenanceIntervalDays Int? // Chu kỳ bảo dưỡng định kỳ
+  isActive      Boolean     @default(true)
+  note          String?
+  createdAt     DateTime    @default(now())
+
+  equipment     Equipment[]
+  invoices      Invoice[]
+  schedules     MaintenanceSchedule[]
+}
+
+model Equipment {
+  id             String          @id @default(cuid())
+  serialNumber   String          @unique
+  qrCode         String          @unique @default(cuid()) // Mã QR/Barcode duy nhất
+  model          String
+  brand          String?
+  specs          Json?           // Cấu hình, thông số kỹ thuật
+  customerId     String?
+  customer       Customer?       @relation(fields: [customerId], references: [id])
+  contractId     String?
+  contract       Contract?       @relation(fields: [contractId], references: [id])
+  departmentId   String?
+  department     Department?     @relation(fields: [departmentId], references: [id])
+  locationNote   String?         // Ghi chú vị trí chi tiết
+  status         EquipmentStatus @default(IN_STOCK)
+  healthScore    Int             @default(100)
+  currentCounter Int             @default(0)
+  baseQuota      Int?            // Định mức riêng của máy (bản/tháng); null = chưa cấu hình
+  overagePrice   Decimal?        @db.Decimal(14, 4) // Đơn giá vượt riêng của máy; null = dùng đơn giá hợp đồng
+  importedAt     DateTime?       // Ngày nhập kho
+  installedAt    DateTime?
+  scrappedAt     DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  tickets        Ticket[]
+  meterLogs      MeterLog[]
+  partHistory    PartReplacement[]
+  schedules      MaintenanceSchedule[]
+  statusHistory  EquipmentStatusHistory[]
+
+  @@index([customerId])
+  @@index([status])
+}
+
+model EquipmentStatusHistory {
+  id          String          @id @default(cuid())
+  equipmentId String
+  equipment   Equipment       @relation(fields: [equipmentId], references: [id])
+  fromStatus  EquipmentStatus?
+  toStatus    EquipmentStatus
+  note        String?
+  changedAt   DateTime        @default(now())
+}
+
+model MaintenanceSchedule {
+  id          String    @id @default(cuid())
+  equipmentId String
+  equipment   Equipment @relation(fields: [equipmentId], references: [id])
+  contractId  String?
+  contract    Contract? @relation(fields: [contractId], references: [id])
+  intervalDays Int
+  nextDueDate DateTime
+  lastRunAt   DateTime?
+  isActive    Boolean   @default(true)
+}
+
+// ============ TICKET ============
+model Ticket {
+  id          String         @id @default(cuid())
+  code        String         @unique // VD: TK-2026-000123
+  customerId  String
+  customer    Customer       @relation(fields: [customerId], references: [id])
+  equipmentId String
+  equipment   Equipment      @relation(fields: [equipmentId], references: [id])
+  assigneeId  String?        // Kỹ thuật viên phụ trách
+  assignee    User?          @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  creatorId   String?
+  creator     User?          @relation("TicketCreator", fields: [creatorId], references: [id])
+  type        TicketType     @default(REPAIR)
+  status      TicketStatus   @default(PENDING)
+  priority    TicketPriority @default(NORMAL)
+  source      TicketSource   @default(CUSTOMER)
+  description String
+  diagnosis   String?        // Kết quả khảo sát của kỹ thuật viên
+  checkInAt   DateTime?
+  checkInLat  Float?
+  checkInLng  Float?
+  counterAtClose Int?
+  customerSignature String?  // URL ảnh chữ ký
+  slaDueAt    DateTime?
+  createdAt   DateTime       @default(now())
+  resolvedAt  DateTime?
+  updatedAt   DateTime       @updatedAt
+
+  partsUsed   PartReplacement[]
+  stockIssues StockIssue[]
+  attachments TicketAttachment[]
+  logs        TicketLog[]
+  meterLogs   MeterLog[]
+
+  @@index([status])
+  @@index([assigneeId])
+  @@index([equipmentId])
+}
+
+model TicketAttachment {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id])
+  url       String
+  kind      String   // PHOTO, REPORT, COUNTER_PHOTO
+  createdAt DateTime @default(now())
+}
+
+model TicketLog {
+  id         String        @id @default(cuid())
+  ticketId   String
+  ticket     Ticket        @relation(fields: [ticketId], references: [id])
+  userId     String?
+  user       User?         @relation(fields: [userId], references: [id])
+  fromStatus TicketStatus?
+  toStatus   TicketStatus
+  note       String?
+  createdAt  DateTime      @default(now())
+}
+
+// ============ METER & BILLING ============
+model MeterLog {
+  id           String      @id @default(cuid())
+  equipmentId  String
+  equipment    Equipment   @relation(fields: [equipmentId], references: [id])
+  ticketId     String?
+  ticket       Ticket?     @relation(fields: [ticketId], references: [id])
+  recordedById String?
+  recordedBy   User?       @relation(fields: [recordedById], references: [id])
+  counterValue Int
+  source       MeterSource @default(MANUAL)
+  photoUrl     String?
+  logDate      DateTime    @default(now())
+  isBilled     Boolean     @default(false)
+  invoiceItemId String?
+  invoiceItem  InvoiceItem? @relation(fields: [invoiceItemId], references: [id])
+
+  @@index([equipmentId, logDate])
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  code        String        @unique
+  customerId  String
+  customer    Customer      @relation(fields: [customerId], references: [id])
+  contractId  String
+  contract    Contract      @relation(fields: [contractId], references: [id])
+  periodStart DateTime
+  periodEnd   DateTime
+  subtotal    Decimal       @db.Decimal(14, 2)
+  tax         Decimal       @db.Decimal(14, 2) @default(0)
+  total       Decimal       @db.Decimal(14, 2)
+  status      InvoiceStatus @default(DRAFT)
+  dueDate     DateTime?
+  paidAt      DateTime?
+  sentAt      DateTime?
+  createdAt   DateTime      @default(now())
+
+  items       InvoiceItem[]
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id])
+  equipmentId String?
+  description String
+  usage       Int      @default(0)
+  quota       Int      @default(0)
+  overage     Int      @default(0)
+  amount      Decimal  @db.Decimal(14, 2)
+
+  meterLogs   MeterLog[]
+}
+
+// ============ INVENTORY ============
+model Part {
+  id               String            @id @default(cuid())
+  partCode         String            @unique
+  name             String
+  category         String?
+  unit             String            @default("cái")
+  compatibleModels String[]
+  minThreshold     Int               @default(5)
+  salePrice        Decimal?          @db.Decimal(14, 2)
+  isActive         Boolean           @default(true)
+
+  batches          InventoryBatch[]
+  replacements     PartReplacement[]
+  issueItems       StockIssueItem[]
+}
+
+model InventoryBatch {
+  id           String   @id @default(cuid())
+  partId       String
+  part         Part     @relation(fields: [partId], references: [id])
+  batchCode    String   // Mã lô FIFO
+  quantity     Int      // Số lượng còn lại trong lô
+  receivedDate DateTime @default(now())
+  costPrice    Decimal  @db.Decimal(14, 2)
+  location     String   // Tọa độ tủ/Kệ
+
+  movements    StockMovement[]
+
+  @@unique([partId, batchCode])
+  @@index([partId, receivedDate]) // Truy vấn FIFO
+}
+
+// Phiếu xuất kho (kỹ thuật / bán lẻ / hoàn trả) + quy trình duyệt
+model StockIssue {
+  id          String         @id @default(cuid())
+  code        String         @unique
+  type        StockIssueType @default(TECHNICAL)
+  status      ApprovalStatus @default(PENDING)
+  ticketId    String?
+  ticket      Ticket?        @relation(fields: [ticketId], references: [id])
+  requesterId String
+  requester   User           @relation("IssueRequester", fields: [requesterId], references: [id])
+  approverId  String?
+  approver    User?          @relation("IssueApprover", fields: [approverId], references: [id])
+  note        String?
+  rejectReason String?
+  createdAt   DateTime       @default(now())
+  approvedAt  DateTime?
+
+  items       StockIssueItem[]
+}
+
+model StockIssueItem {
+  id        String     @id @default(cuid())
+  issueId   String
+  issue     StockIssue @relation(fields: [issueId], references: [id])
+  partId    String
+  part      Part       @relation(fields: [partId], references: [id])
+  quantity  Int
+}
+
+// Sổ cái xuất-nhập-tồn (truy vết 100%)
+model StockMovement {
+  id        String            @id @default(cuid())
+  batchId   String
+  batch     InventoryBatch    @relation(fields: [batchId], references: [id])
+  type      StockMovementType
+  quantity  Int
+  refType   String?           // StockIssue, Ticket, ...
+  refId     String?
+  createdAt DateTime          @default(now())
+}
+
+model PartReplacement {
+  id          String    @id @default(cuid())
+  ticketId    String
+  ticket      Ticket    @relation(fields: [ticketId], references: [id])
+  equipmentId String
+  equipment   Equipment @relation(fields: [equipmentId], references: [id])
+  partId      String
+  part        Part      @relation(fields: [partId], references: [id])
+  quantity    Int       @default(1)
+  replacedAt  DateTime  @default(now())
+  oldPartReturned Boolean @default(false)
+}
+
+// ============ SYSTEM ============
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String?
+  user      User?               @relation(fields: [userId], references: [id])
+  channel   NotificationChannel
+  title     String
+  body      String
+  isRead    Boolean             @default(false)
+  sentAt    DateTime?
+  createdAt DateTime            @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String   // VD: INVOICE_APPROVE
+  entity    String
+  entityId  String?
+  meta      Json?
+  createdAt DateTime @default(now())
+}
