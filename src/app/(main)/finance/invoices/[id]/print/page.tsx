@@ -5,6 +5,11 @@ import Link from "next/link";
 import { toast } from "react-toastify";
 import { INVOICE_STATUS_LABELS } from "@/lib/labels";
 import { exportElementToPdf } from "@/lib/pdfExport";
+import {
+  CompanyProfile,
+  DEFAULT_COMPANY_PROFILE,
+  generateVietQrUrl,
+} from "@/lib/companyProfile";
 
 interface InvoicePrintData {
   id: string;
@@ -107,25 +112,34 @@ function InvoicePrintContent({
   const id = resolvedParams.id;
 
   const [invoice, setInvoice] = useState<InvoicePrintData | null>(null);
+  const [company, setCompany] = useState<CompanyProfile>(DEFAULT_COMPANY_PROFILE);
   const [loading, setLoading] = useState(true);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadInvoice() {
+    async function loadData() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/invoices/${id}`);
+        const [res, compRes] = await Promise.all([
+          fetch(`/api/invoices/${id}`),
+          fetch("/api/settings/company"),
+        ]);
         if (!res.ok) throw new Error("Không thể tải thông tin bảng kê cước");
         const data = await res.json();
         setInvoice(data);
+
+        if (compRes.ok) {
+          const compData = await compRes.json();
+          if (compData.profile) setCompany(compData.profile);
+        }
       } catch (err: unknown) {
         setErrorMsg(err instanceof Error ? err.message : "Lỗi tải hóa đơn");
       } finally {
         setLoading(false);
       }
     }
-    loadInvoice();
+    loadData();
   }, [id]);
 
   if (loading) {
@@ -151,10 +165,15 @@ function InvoicePrintContent({
   const totalNum = Number(invoice.total);
   const wordsAmount = numberToVietnameseWords(totalNum);
 
-  // Link mã VietQR động
-  const bankAccount = "190366889999";
-  const bankBin = "970407"; // Techcombank
-  const vietQrUrl = `https://img.vietqr.io/image/${bankBin}-${bankAccount}-compact2.png?amount=${totalNum}&addInfo=TT%20${encodeURIComponent(invoice.code)}&accountName=OFFICEOPS`;
+  // Link mã VietQR động từ cấu hình ngân hàng
+  const vietQrUrl = generateVietQrUrl({
+    bankBin: company.bankBin,
+    bankAccount: company.bankAccount,
+    amount: totalNum,
+    content: `TT ${invoice.code}`,
+    accountName: company.accountHolder,
+    template: company.qrTemplate || "compact2",
+  });
 
   return (
     <div className="bg-light min-vh-100 py-3 print-bg-white">
@@ -210,16 +229,16 @@ function InvoicePrintContent({
           <div className="col-8">
             <div className="d-flex align-items-center gap-2 mb-1">
               <div className="bg-primary text-white rounded p-1 px-2 fw-bold" style={{ fontSize: "14px", letterSpacing: "1px" }}>
-                OFFICEOPS
+                {company.shortName || "OFFICEOPS"}
               </div>
               <div className="fw-bold text-dark text-uppercase fs-6">
-                CÔNG TY TNHH GIẢI PHÁP VĂN PHÒNG OFFICEOPS
+                {company.companyName}
               </div>
             </div>
             <div className="small text-muted" style={{ fontSize: "11px" }}>
-              <div>MST: 0317899999 | Hotline Kế toán cước: 0908 123 456</div>
-              <div>Địa chỉ: Tầng 5, Tòa nhà Innovation, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh</div>
-              <div>Tài khoản ngân hàng: Techcombank - STK: 1903 6688 9999</div>
+              <div>MST: {company.taxCode} | Hotline Kế toán cước: {company.hotline}</div>
+              <div>Địa chỉ: {company.address}</div>
+              <div>Tài khoản ngân hàng: {company.bankName} - STK: {company.bankAccount}</div>
             </div>
           </div>
           <div className="col-4 text-end">
@@ -363,15 +382,15 @@ function InvoicePrintContent({
                 <tbody>
                   <tr>
                     <td className="text-muted text-nowrap" style={{ width: "130px" }}>Ngân hàng:</td>
-                    <td className="fw-bold">Techcombank (Ngân hàng TMCP Kỹ Thương Việt Nam)</td>
+                    <td className="fw-bold">{company.bankName}</td>
                   </tr>
                   <tr>
                     <td className="text-muted">Số tài khoản:</td>
-                    <td className="fw-bold font-monospace text-primary fs-6">1903 6688 9999</td>
+                    <td className="fw-bold font-monospace text-primary fs-6">{company.bankAccount}</td>
                   </tr>
                   <tr>
                     <td className="text-muted">Chủ tài khoản:</td>
-                    <td className="fw-bold text-uppercase">CÔNG TY TNHH GIẢI PHÁP VĂN PHÒNG OFFICEOPS</td>
+                    <td className="fw-bold text-uppercase">{company.accountHolder}</td>
                   </tr>
                   <tr>
                     <td className="text-muted">Nội dung CK:</td>

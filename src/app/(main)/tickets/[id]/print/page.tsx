@@ -6,6 +6,7 @@ import { toast } from "react-toastify";
 import { TICKET_TYPE_LABELS, TICKET_STATUS_LABELS } from "@/lib/labels";
 import { formatLocationPath } from "@/lib/location";
 import { exportElementToPdf } from "@/lib/pdfExport";
+import { CompanyProfile, DEFAULT_COMPANY_PROFILE } from "@/lib/companyProfile";
 
 interface TicketPrintData {
   id: string;
@@ -95,25 +96,34 @@ function TicketPrintContent({
   const id = resolvedParams.id;
 
   const [ticket, setTicket] = useState<TicketPrintData | null>(null);
+  const [company, setCompany] = useState<CompanyProfile>(DEFAULT_COMPANY_PROFILE);
   const [loading, setLoading] = useState(true);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    async function loadTicket() {
+    async function loadData() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/tickets/${id}`);
+        const [res, compRes] = await Promise.all([
+          fetch(`/api/tickets/${id}`),
+          fetch("/api/settings/company"),
+        ]);
         if (!res.ok) throw new Error("Không thể tải thông tin phiếu kỹ thuật");
         const data = await res.json();
         setTicket(data);
+
+        if (compRes.ok) {
+          const compData = await compRes.json();
+          if (compData.profile) setCompany(compData.profile);
+        }
       } catch (err: unknown) {
         setErrorMsg(err instanceof Error ? err.message : "Lỗi tải dữ liệu");
       } finally {
         setLoading(false);
       }
     }
-    loadTicket();
+    loadData();
   }, [id]);
 
   if (loading) {
@@ -197,15 +207,15 @@ function TicketPrintContent({
           <div className="col-7">
             <div className="d-flex align-items-center gap-2 mb-1">
               <div className="bg-dark text-white rounded p-1 px-2 fw-bold" style={{ fontSize: "14px", letterSpacing: "1px" }}>
-                OFFICEOPS
+                {company.shortName || "OFFICEOPS"}
               </div>
               <div className="fw-bold text-dark text-uppercase" style={{ fontSize: "13px" }}>
-                Hệ Thống Dịch Vụ Máy Văn Phòng Chuyên Nghiệp
+                {company.companyName}
               </div>
             </div>
             <div className="small text-muted" style={{ fontSize: "11px" }}>
-              <div>Địa chỉ: Tầng 5, Tòa nhà Innovation, Quận 1, TP. Hồ Chí Minh</div>
-              <div>Hotline Kỹ thuật: 0908 123 456 | Email: service@officeops.vn</div>
+              <div>Địa chỉ: {company.address}</div>
+              <div>Hotline Kỹ thuật: {company.hotline} | Email: {company.email}</div>
             </div>
           </div>
           <div className="col-5 text-end">

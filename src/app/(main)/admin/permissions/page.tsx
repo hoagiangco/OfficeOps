@@ -399,6 +399,12 @@ export default function AdminUserPermissionsPage() {
           <i className="fas fa-key me-1"></i> Phân quyền người dùng
         </Link>
         <Link
+          href="/admin/company"
+          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
+        >
+          <i className="fas fa-building-circle-check me-1"></i> Cấu hình Doanh nghiệp & VietQR
+        </Link>
+        <Link
           href="/admin/audit-logs"
           className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
         >
