@@ -695,20 +695,22 @@ export default function DispatchPage() {
                             : "bg-white"
                         }`}
                       >
-                        <div className="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                        <div className="d-flex justify-content-between align-items-start gap-2">
                           <div style={{ minWidth: 0 }} className="flex-grow-1">
-                            <div className="d-flex align-items-center gap-1.5 flex-wrap">
-                              <span className="fw-bold text-dark text-nowrap fs-6">{tech.name}</span>
+                            <div className="d-flex align-items-center gap-1.5 flex-wrap mb-1">
+                              <span className="fw-bold text-dark fs-6">{tech.name}</span>
                               {idx === 0 && selectedTicket && (
-                                <span className="badge bg-primary">
+                                <span className="badge bg-primary" style={{ fontSize: "11px" }}>
                                   <i className="fas fa-star me-1"></i>Gợi ý số 1 ({tech.matchScore}% phù hợp)
                                 </span>
                               )}
                               {isCurrentAssignee && (
-                                <span className="badge bg-success">Đang phụ trách phiếu này</span>
+                                <span className="badge bg-success" style={{ fontSize: "11px" }}>
+                                  <i className="fas fa-check me-1"></i>Đang phụ trách phiếu này
+                                </span>
                               )}
                             </div>
-                            <div className="small text-muted mt-1 d-flex flex-wrap gap-2 align-items-center">
+                            <div className="small text-muted d-flex flex-wrap gap-2 align-items-center">
                               <span>
                                 <i className="fas fa-map-pin text-danger me-1"></i>
                                 Khu vực: <strong>{tech.region || "Đa tuyến"}</strong>
@@ -725,7 +727,7 @@ export default function DispatchPage() {
                               </span>
                             </div>
                             {tech.lastLocation && (
-                              <div className="text-secondary mt-1 text-truncate" style={{ fontSize: "11px", maxWidth: "100%" }}>
+                              <div className="text-secondary mt-1 text-truncate" style={{ fontSize: "11px" }}>
                                 <i className="fas fa-map-marker-alt text-success me-1"></i>
                                 <span>Vị trí check-in: </span>
                                 <strong>{tech.lastLocation.customerName || tech.lastLocation.customerAddress || "GPS"}</strong>
@@ -755,8 +757,8 @@ export default function DispatchPage() {
                             </div>
                           </div>
 
-                          <div className="text-end flex-shrink-0">
-                            <div className="mb-2">
+                          <div className="text-end flex-shrink-0 d-flex flex-column align-items-end" style={{ minWidth: "120px" }}>
+                            <div className="mb-1.5">
                               <span
                                 className={`badge ${
                                   tech.openTicketsCount === 0
@@ -765,6 +767,7 @@ export default function DispatchPage() {
                                     ? "bg-warning text-dark"
                                     : "bg-danger"
                                 }`}
+                                style={{ fontSize: "11.5px" }}
                               >
                                 Đang xử lý: {tech.openTicketsCount} phiếu
                               </span>
@@ -780,7 +783,7 @@ export default function DispatchPage() {
                                   handleAssign(selectedTicket.id, tech.id, tech.name)
                                 }
                               >
-                                <i className="fas fa-paper-plane me-1"></i>
+                                <i className={`fas ${isCurrentAssignee ? "fa-check" : "fa-paper-plane"} me-1`}></i>
                                 {isCurrentAssignee ? "Đã giao" : "Giao ngay"}
                               </button>
                             )}
