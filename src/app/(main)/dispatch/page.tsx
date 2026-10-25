@@ -757,10 +757,10 @@ export default function DispatchPage() {
                             </div>
                           </div>
 
-                          <div className="text-end flex-shrink-0 d-flex flex-column align-items-end" style={{ minWidth: "120px" }}>
-                            <div className="mb-1.5">
+                          <div className="text-end flex-shrink-0 d-flex flex-column align-items-end justify-content-start" style={{ minWidth: "125px" }}>
+                            <div className="mb-2">
                               <span
-                                className={`badge ${
+                                className={`badge py-1.5 px-2.5 ${
                                   tech.openTicketsCount === 0
                                     ? "bg-success"
                                     : tech.openTicketsCount <= 2
@@ -775,15 +775,16 @@ export default function DispatchPage() {
                             {selectedTicket && (
                               <button
                                 type="button"
-                                className={`btn btn-sm ${
+                                className={`btn btn-sm px-3 py-1 fw-semibold shadow-2xs ${
                                   isCurrentAssignee ? "btn-outline-success" : "btn-primary"
                                 }`}
+                                style={{ marginTop: "4px" }}
                                 disabled={assigningId === tech.id || !!isCurrentAssignee}
                                 onClick={() =>
                                   handleAssign(selectedTicket.id, tech.id, tech.name)
                                 }
                               >
-                                <i className={`fas ${isCurrentAssignee ? "fa-check" : "fa-paper-plane"} me-1`}></i>
+                                <i className={`fas ${isCurrentAssignee ? "fa-check" : "fa-paper-plane"} me-1.5`}></i>
                                 {isCurrentAssignee ? "Đã giao" : "Giao ngay"}
                               </button>
                             )}
