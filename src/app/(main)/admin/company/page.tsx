@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { toast } from "react-toastify";
 import Loading from "@/components/Loading";
-import { MailTestModal } from "@/components/MailTestModal";
+import { AdminNavTabs } from "@/components/admin/AdminNavTabs";
 import {
   CompanyProfile,
   DEFAULT_COMPANY_PROFILE,
@@ -17,7 +17,6 @@ export default function AdminCompanyPage() {
   const [banks, setBanks] = useState<BankInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showMailModal, setShowMailModal] = useState(false);
 
   // Dữ liệu thử nghiệm xem trước VietQR
   const [testAmount, setTestAmount] = useState<number>(2500000);
@@ -131,39 +130,7 @@ export default function AdminCompanyPage() {
       </div>
 
       {/* Navigation Tabs giữa các trang Hệ Thống */}
-      <div className="d-flex gap-2 mb-3 border-bottom bg-white px-3 pt-2 rounded-top border flex-wrap">
-        <Link
-          href="/admin"
-          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
-        >
-          <i className="fas fa-user-shield me-1"></i> Tài khoản người dùng
-        </Link>
-        <Link
-          href="/admin/permissions"
-          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
-        >
-          <i className="fas fa-key me-1"></i> Phân quyền ma trận
-        </Link>
-        <Link
-          href="/admin/company"
-          className="pb-2 text-decoration-none small fw-bold text-primary border-bottom border-primary border-2 px-2"
-        >
-          <i className="fas fa-building-circle-check me-1"></i> Cấu hình Doanh nghiệp & VietQR
-        </Link>
-        <Link
-          href="/admin/audit-logs"
-          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
-        >
-          <i className="fas fa-history me-1"></i> Nhật ký hoạt động
-        </Link>
-        <button
-          type="button"
-          onClick={() => setShowMailModal(true)}
-          className="pb-2 btn btn-link text-decoration-none small fw-semibold text-secondary px-2 border-0 shadow-none"
-        >
-          <i className="fas fa-envelope me-1 text-primary"></i> Kiểm tra Email (SMTP)
-        </button>
-      </div>
+      <AdminNavTabs activeTab="company" />
 
       {loading ? (
         <Loading text="Đang tải thông tin cấu hình doanh nghiệp..." />
@@ -469,9 +436,6 @@ export default function AdminCompanyPage() {
           </div>
         </form>
       )}
-
-      {/* Modal Kiểm tra kết nối Email SMTP */}
-      <MailTestModal isOpen={showMailModal} onClose={() => setShowMailModal(false)} />
     </div>
   );
 }

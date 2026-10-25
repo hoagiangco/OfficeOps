@@ -7,7 +7,7 @@ import Loading from "@/components/Loading";
 import ActiveFilterChips, { FilterChipItem } from "@/components/ActiveFilterChips";
 import BatchActionBar from "@/components/BatchActionBar";
 import ModalShell from "@/components/ModalShell";
-import { MailTestModal } from "@/components/MailTestModal";
+import { AdminNavTabs } from "@/components/admin/AdminNavTabs";
 import { ROLE_LABELS, type Role } from "@/lib/rbac";
 
 interface UserItem {
@@ -43,7 +43,6 @@ export default function AdminUsersPage() {
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showModal, setShowModal] = useState(false);
-  const [showMailModal, setShowMailModal] = useState(false);
   const [editing, setEditing] = useState<UserItem | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -277,39 +276,7 @@ export default function AdminUsersPage() {
       </div>
 
       {/* Navigation Tabs giữa các trang Hệ Thống */}
-      <div className="d-flex gap-2 mb-2 border-bottom bg-white px-3 pt-2 rounded-top border">
-        <Link
-          href="/admin"
-          className="pb-2 text-decoration-none small fw-bold text-primary border-bottom border-primary border-2 px-2"
-        >
-          <i className="fas fa-user-shield me-1"></i> Tài khoản người dùng
-        </Link>
-        <Link
-          href="/admin/permissions"
-          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
-        >
-          <i className="fas fa-key me-1"></i> Phân quyền ma trận
-        </Link>
-        <Link
-          href="/admin/company"
-          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
-        >
-          <i className="fas fa-building-circle-check me-1"></i> Cấu hình Doanh nghiệp & VietQR
-        </Link>
-        <Link
-          href="/admin/audit-logs"
-          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
-        >
-          <i className="fas fa-history me-1"></i> Nhật ký hoạt động
-        </Link>
-        <button
-          type="button"
-          onClick={() => setShowMailModal(true)}
-          className="pb-2 btn btn-link text-decoration-none small fw-semibold text-secondary px-2 border-0 shadow-none"
-        >
-          <i className="fas fa-envelope me-1 text-primary"></i> Kiểm tra Email (SMTP)
-        </button>
-      </div>
+      <AdminNavTabs activeTab="users" />
 
       {/* Dense Filter Bar */}
       <div className="card shadow-sm border-0 mb-2 rounded-3 overflow-hidden border">
@@ -690,11 +657,6 @@ export default function AdminUsersPage() {
           </div>
         </form>
       </ModalShell>
-
-      <MailTestModal
-        isOpen={showMailModal}
-        onClose={() => setShowMailModal(false)}
-      />
     </div>
   );
 }

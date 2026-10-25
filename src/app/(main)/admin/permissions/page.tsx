@@ -6,6 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 import Loading from "@/components/Loading";
 import ModalShell from "@/components/ModalShell";
+import { AdminNavTabs } from "@/components/admin/AdminNavTabs";
 import type { Role } from "@/lib/rbac";
 import { ROLE_LABELS } from "@/lib/rbac";
 import type { PermissionModuleMeta } from "@/lib/rbacMetadata";
@@ -385,32 +386,7 @@ export default function AdminUserPermissionsPage() {
       </div>
 
       {/* 2. Navigation Tabs giữa các trang Hệ Thống */}
-      <div className="d-flex gap-2 mb-2 border-bottom bg-white px-3 pt-2 rounded-top border">
-        <Link
-          href="/admin"
-          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
-        >
-          <i className="fas fa-user-shield me-1"></i> Tài khoản người dùng
-        </Link>
-        <Link
-          href="/admin/permissions"
-          className="pb-2 text-decoration-none small fw-bold text-primary border-bottom border-primary border-2 px-2"
-        >
-          <i className="fas fa-key me-1"></i> Phân quyền người dùng
-        </Link>
-        <Link
-          href="/admin/company"
-          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
-        >
-          <i className="fas fa-building-circle-check me-1"></i> Cấu hình Doanh nghiệp & VietQR
-        </Link>
-        <Link
-          href="/admin/audit-logs"
-          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
-        >
-          <i className="fas fa-history me-1"></i> Nhật ký hoạt động
-        </Link>
-      </div>
+      <AdminNavTabs activeTab="permissions" />
 
       {loading ? (
         <Loading />
