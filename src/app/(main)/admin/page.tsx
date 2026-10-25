@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { toast } from "react-toastify";
 import Loading from "@/components/Loading";
 import ActiveFilterChips, { FilterChipItem } from "@/components/ActiveFilterChips";
@@ -249,7 +250,7 @@ export default function AdminUsersPage() {
           >
             <i className="fas fa-user-shield fa-sm"></i>
           </div>
-          <h1 className="h6 mb-0 text-dark fw-bold">QUẢN LÝ TÀI KHOẢN &amp; PHÂN QUYỀN</h1>
+          <h1 className="h6 mb-0 text-dark fw-bold">Tài khoản người dùng</h1>
           <div className="vr mx-2 d-none d-md-block" style={{ height: "20px" }}></div>
           <div className="d-none d-md-flex gap-3">
             <span className="small text-muted">
@@ -271,6 +272,28 @@ export default function AdminUsersPage() {
             <i className="fas fa-plus me-1"></i> Thêm tài khoản
           </button>
         </div>
+      </div>
+
+      {/* Navigation Tabs giữa các trang Hệ Thống */}
+      <div className="d-flex gap-2 mb-2 border-bottom bg-white px-3 pt-2 rounded-top border">
+        <Link
+          href="/admin"
+          className="pb-2 text-decoration-none small fw-bold text-primary border-bottom border-primary border-2 px-2"
+        >
+          <i className="fas fa-user-shield me-1"></i> Tài khoản người dùng
+        </Link>
+        <Link
+          href="/admin/permissions"
+          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
+        >
+          <i className="fas fa-key me-1"></i> Phân quyền ma trận
+        </Link>
+        <Link
+          href="/admin/audit-logs"
+          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
+        >
+          <i className="fas fa-history me-1"></i> Nhật ký hoạt động
+        </Link>
       </div>
 
       {/* Dense Filter Bar */}
@@ -454,6 +477,13 @@ export default function AdminUsersPage() {
                       </td>
                       <td className="px-3 text-end">
                         <div className="btn-group btn-group-sm">
+                          <Link
+                            href={`/admin/permissions?userId=${u.id}`}
+                            className="btn btn-outline-info btn-sm py-0 px-2"
+                            title="Phân quyền chi tiết cho nhân viên này"
+                          >
+                            <i className="fas fa-key"></i>
+                          </Link>
                           <button
                             className="btn btn-outline-primary btn-sm py-0 px-2"
                             title="Sửa"

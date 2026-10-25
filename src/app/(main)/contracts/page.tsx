@@ -253,7 +253,7 @@ export default function ContractsPage() {
           >
             <i className="fas fa-file-contract fa-sm"></i>
           </div>
-          <h1 className="h6 mb-0 text-dark fw-bold">QUẢN LÝ HỢP ĐỒNG CHO THUÊ &amp; BẢO TRÌ</h1>
+          <h1 className="h6 mb-0 text-dark fw-bold">Hợp đồng</h1>
           <div className="vr mx-2 d-none d-md-block" style={{ height: "20px" }}></div>
           <div className="d-none d-md-flex gap-3">
             <span className="small text-muted">
@@ -278,7 +278,7 @@ export default function ContractsPage() {
             <i className="fas fa-sync-alt me-1"></i> Tải lại
           </button>
           <button className="btn btn-primary btn-sm px-3 fw-bold shadow-sm" onClick={openNew}>
-            <i className="fas fa-plus me-1"></i> Thêm hợp đồng
+            <i className="fas fa-plus me-1"></i> Tạo hợp đồng
           </button>
         </div>
       </div>

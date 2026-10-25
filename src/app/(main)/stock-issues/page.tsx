@@ -177,7 +177,7 @@ export default function StockIssuesPage() {
           >
             <i className="fas fa-exchange-alt fa-sm"></i>
           </div>
-          <h1 className="h6 mb-0 text-dark fw-bold">PHIẾU XUẤT / HOÀN TRẢ KHO &amp; PHÊ DUYỆT FIFO</h1>
+          <h1 className="h6 mb-0 text-dark fw-bold">Xuất nhập kho</h1>
           <div className="vr mx-2 d-none d-md-block" style={{ height: "20px" }}></div>
           <div className="d-none d-md-flex gap-3">
             <span className="small text-muted">
@@ -193,7 +193,7 @@ export default function StockIssuesPage() {
             <i className="fas fa-sync-alt me-1"></i> Tải lại
           </button>
           <button className="btn btn-primary btn-sm px-3 fw-bold shadow-sm" onClick={openNew}>
-            <i className="fas fa-plus me-1"></i> Lập phiếu xuất / trả kho
+            <i className="fas fa-plus me-1"></i> Lập phiếu xuất kho
           </button>
         </div>
       </div>
@@ -240,7 +240,7 @@ export default function StockIssuesPage() {
                   <th className="px-3 py-2 text-uppercase small">Mã phiếu</th>
                   <th className="py-2 text-uppercase small">Loại nghiệp vụ</th>
                   <th className="py-2 text-uppercase small">Chi tiết linh kiện</th>
-                  <th className="py-2 text-uppercase small">Phiếu Ticket / Máy</th>
+                  <th className="py-2 text-uppercase small">Phiếu kỹ thuật / Máy</th>
                   <th className="py-2 text-uppercase small">Người đề xuất</th>
                   <th className="py-2 text-uppercase small text-center">Trạng thái</th>
                   <th className="py-2 text-uppercase small text-end px-3" style={{ width: "160px" }}>
@@ -395,14 +395,14 @@ export default function StockIssuesPage() {
             </div>
             <div className="col-md-7">
               <label className="form-label small fw-bold text-muted mb-1">
-                GẮN VỚI PHIẾU SỰ CỐ (TICKET - NẾU CÓ)
+                GẮN VỚI PHIẾU KỸ THUẬT (NẾU CÓ)
               </label>
               <select
                 className="form-select form-select-sm"
                 value={ticketId}
                 onChange={(e) => setTicketId(e.target.value)}
               >
-                <option value="">-- Không gắn Ticket --</option>
+                <option value="">-- Không gắn phiếu kỹ thuật --</option>
                 {tickets.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.code} – {t.equipment?.model} (#{t.equipment?.serialNumber})

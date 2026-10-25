@@ -2,21 +2,35 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { can } from "@/lib/rbac";
-import { STATUS_LABELS } from "@/lib/labels";
+import { formatLocationPath } from "@/lib/location";
+import { checkUserPermission } from "@/lib/rbacService";
+import { STATUS_LABELS, TICKET_TYPE_LABELS, TICKET_STATUS_LABELS } from "@/lib/labels";
 
 const fmt = (d: Date) => d.toLocaleString("vi-VN");
+const fmtDate = (d: Date) => d.toLocaleDateString("vi-VN");
 
 export default async function EquipmentDetail({ params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
-  if (!session || !can(session.role, "equipment:read")) redirect("/");
+  if (!session || !(await checkUserPermission(session.userId, session.role, "equipment:read"))) redirect("/");
   const { id } = await params;
 
   const e = await prisma.equipment.findUnique({
     where: { id },
     include: {
+      category: {
+        include: {
+          parent: {
+            include: {
+              parent: true,
+            },
+          },
+        },
+      },
       customer: true,
+      warehouse: true,
       contract: true,
+      branch: { select: { id: true, name: true } },
+      building: { select: { id: true, name: true, branch: { select: { name: true } } } },
       department: { include: { building: { include: { branch: true } } } },
       statusHistory: { orderBy: { changedAt: "desc" } },
       partHistory: { include: { part: true }, orderBy: { replacedAt: "desc" } },
@@ -28,17 +42,21 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
 
   const role = session.role;
   const showContract = role === "SUPER_ADMIN" || role === "ADMIN";
-  const showLocation = role !== "ADMIN";
+  const showLocation = true;
   const showHistory = role !== "ADMIN";
-  const loc = e.department
-    ? `${e.department.building.branch.name} › ${e.department.building.name} › ${e.department.name}`
-    : e.locationNote ?? "Chưa xác định";
+  const loc = formatLocationPath(e) || e.locationNote || "Chưa xác định";
+
+  const catParts: string[] = [];
+  if (e.category?.parent?.parent?.name) catParts.push(e.category.parent.parent.name);
+  if (e.category?.parent?.name) catParts.push(e.category.parent.name);
+  if (e.category?.name) catParts.push(e.category.name);
+  const categoryPath = catParts.length > 0 ? catParts.join(" › ") : "Chưa phân danh mục";
 
   return (
     <div className="container-fluid px-1 py-1">
       {/* Compact Header */}
       <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3 gap-2 bg-white p-2 px-3 rounded-3 shadow-sm border">
-        <div className="d-flex align-items-center gap-2">
+        <div className="d-flex align-items-center gap-2 flex-wrap">
           <Link href="/equipment" className="btn btn-outline-secondary btn-sm">
             <i className="fas fa-arrow-left me-1"></i> Danh sách
           </Link>
@@ -47,15 +65,32 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
             HỒ SƠ MÁY: {e.brand ? `${e.brand} ` : ""}
             {e.model} <span className="text-primary font-monospace">#{e.serialNumber}</span>
           </h1>
-          <span className="badge bg-primary ms-1">{STATUS_LABELS[e.status]}</span>
+          {e.code && (
+            <span className="badge bg-light text-secondary border font-monospace">{e.code}</span>
+          )}
+          {e.customer ? (
+            <span className="badge bg-success">{e.relationType}</span>
+          ) : (
+            <span className="badge bg-light text-secondary border">Sẵn hàng</span>
+          )}
+          <span className="badge bg-primary">{STATUS_LABELS[e.status]}</span>
         </div>
-        <div className="d-flex gap-1">
+        <div className="d-flex gap-2">
           <Link
-            href={`/api/equipment/${e.id}/qr`}
+            href={`/equipment/${e.id}/label`}
             target="_blank"
-            className="btn btn-dark btn-sm px-3 fw-bold"
+            className="btn btn-primary btn-sm px-3 fw-bold shadow-sm"
+            title="In mẫu tem decal dán lên máy chuẩn bị sẵn mã QR quét báo hỏng"
           >
-            <i className="fas fa-qrcode me-1"></i> In tem QR
+            <i className="fas fa-print me-1"></i> In Tem Decal Dán Máy
+          </Link>
+          <Link
+            href={`/scan/${e.qrCode}`}
+            target="_blank"
+            className="btn btn-outline-dark btn-sm px-2"
+            title="Xem trước trang tiếp nhận báo hỏng khi khách quét mã"
+          >
+            <i className="fas fa-external-link-alt me-1"></i> Thử Cổng QR
           </Link>
         </div>
       </div>
@@ -66,30 +101,77 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
           <div className="card shadow-sm border-0 rounded-3 border h-100">
             <div className="card-header bg-dark text-white py-2 px-3">
               <strong className="small text-uppercase">
-                <i className="fas fa-info-circle me-1"></i> Thông số &amp; Vận hành
+                <i className="fas fa-info-circle me-1"></i> Phân loại Danh mục, Quan hệ Khách hàng &amp; Thông số Vận hành
               </strong>
             </div>
             <div className="card-body p-3">
               <div className="row g-2 small">
                 <div className="col-md-6">
-                  <div className="p-2 bg-light rounded border">
-                    <div className="text-muted">Khách hàng đang thuê/sử dụng:</div>
-                    <div className="fw-bold text-dark fs-6">{e.customer?.name ?? "Trong kho công ty"}</div>
+                  <div className="p-2 bg-light rounded border h-100">
+                    <div className="text-muted">Khách hàng &amp; Hình thức quan hệ:</div>
+                    <div className="d-flex align-items-center gap-2 mt-0.5 flex-wrap">
+                      {e.customer ? (
+                        <>
+                          <span className="fw-bold text-dark fs-6">
+                            {e.customer.name}
+                          </span>
+                          <span className="badge bg-primary">{e.relationType}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="badge bg-warning-subtle text-dark border border-warning fs-6">
+                            <i className="fas fa-warehouse text-warning me-1"></i>
+                            {e.warehouse?.name || "Kho công ty"}
+                          </span>
+                          <span className="badge bg-light text-secondary border">Sẵn hàng</span>
+                          <span className="badge bg-secondary">{STATUS_LABELS[e.status]}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="col-md-6">
-                  <div className="p-2 bg-light rounded border">
+                  <div className="p-2 bg-light rounded border h-100">
                     <div className="text-muted">Counter hiện tại:</div>
                     <div className="fw-bold text-primary font-monospace fs-6">
                       {e.currentCounter.toLocaleString("vi-VN")} bản
                     </div>
                   </div>
                 </div>
+
+                <div className="col-md-6">
+                  <div className="p-2 border rounded">
+                    <span className="text-muted">Danh mục đa cấp: </span>
+                    <strong className="text-dark">
+                      <i className="fas fa-sitemap text-warning me-1"></i>
+                      {categoryPath}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="col-md-6">
+                  <div className="p-2 border rounded">
+                    <span className="text-muted">Hãng • Loại • Nhóm: </span>
+                    <strong className="text-dark">
+                      {e.brand || "—"} • {e.type} • {e.group}
+                    </strong>
+                  </div>
+                </div>
+
                 {showLocation && (
                   <div className="col-md-6">
                     <div className="p-2 border rounded">
-                      <span className="text-muted">Vị trí lắp đặt: </span>
-                      <strong>{loc}</strong>
+                      <span className="text-muted">
+                        {e.customer ? "Vị trí lắp đặt: " : "Kho lưu trữ công ty: "}
+                      </span>
+                      {e.customer ? (
+                        <strong>{loc}</strong>
+                      ) : (
+                        <strong className="text-dark">
+                          {e.warehouse?.name || "Kho công ty"}
+                          {e.locationNote ? ` • ${e.locationNote}` : ""}
+                        </strong>
+                      )}
                     </div>
                   </div>
                 )}
@@ -119,18 +201,32 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
                     </div>
                   </>
                 )}
-                <div className="col-md-6">
+                <div className="col-md-4">
                   <div className="p-2 border rounded">
                     <span className="text-muted">Ngày nhập kho: </span>
-                    <strong>{e.importedAt ? fmt(e.importedAt) : "—"}</strong>
+                    <strong>{e.importedAt ? fmtDate(e.importedAt) : "—"}</strong>
                   </div>
                 </div>
-                <div className="col-md-6">
+                <div className="col-md-4">
                   <div className="p-2 border rounded">
                     <span className="text-muted">Ngày lắp đặt: </span>
-                    <strong>{e.installedAt ? fmt(e.installedAt) : "—"}</strong>
+                    <strong>{e.installedAt ? fmtDate(e.installedAt) : "—"}</strong>
                   </div>
                 </div>
+                <div className="col-md-4">
+                  <div className="p-2 border rounded">
+                    <span className="text-muted">Hạn bảo hành / bảo trì: </span>
+                    <strong>{e.warrantyUntil ? fmtDate(e.warrantyUntil) : "—"}</strong>
+                  </div>
+                </div>
+                {e.notes && (
+                  <div className="col-12">
+                    <div className="p-2 border rounded bg-light">
+                      <span className="text-muted">Ghi chú kỹ thuật / dịch vụ: </span>
+                      <strong>{e.notes}</strong>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -188,9 +284,11 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
                       e.tickets.map((t) => (
                         <tr key={t.id}>
                           <td className="px-3 font-monospace fw-bold small">{t.code}</td>
-                          <td className="small">{t.type}</td>
+                          <td className="small">{TICKET_TYPE_LABELS[t.type] || t.type}</td>
                           <td>
-                            <span className="badge bg-secondary">{t.status}</span>
+                            <span className="badge bg-secondary">
+                              {TICKET_STATUS_LABELS[t.status] || t.status}
+                            </span>
                           </td>
                           <td className="small text-truncate" style={{ maxWidth: "200px" }}>
                             {t.description}

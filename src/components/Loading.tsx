@@ -10,6 +10,7 @@ export const Loading = ({
   fullPage?: boolean;
   message?: string;
   text?: string;
+  size?: string;
 }) => {
   const displayMsg = message || text || 'Đang tải dữ liệu...';
   const content = (

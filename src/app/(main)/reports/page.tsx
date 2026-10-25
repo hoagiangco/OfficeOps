@@ -83,7 +83,7 @@ export default function ReportsPage() {
         <div className="d-flex align-items-center gap-2">
           <h5 className="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
             <i className="fas fa-chart-pie text-primary"></i>
-            <span>Thống kê Tổng hợp & Phân tích Hiệu quả Vận hành</span>
+            <span>Báo cáo tổng hợp</span>
           </h5>
         </div>
         <div className="d-flex gap-2">
@@ -92,7 +92,7 @@ export default function ReportsPage() {
             className="btn btn-sm btn-outline-secondary"
             onClick={fetchSummary}
           >
-            <i className="fas fa-sync-alt me-1"></i> Làm mới số liệu
+            <i className="fas fa-sync-alt me-1"></i> Làm mới
           </button>
           <button
             type="button"
@@ -110,11 +110,11 @@ export default function ReportsPage() {
           <div className="stat-tile-compact h-100">
             <div className="stat-tile-accent accent-primary"></div>
             <div className="stat-tile-content">
-              <div className="stat-tile-title">Cước HĐ cố định/tháng</div>
+              <div className="stat-tile-title">Cước thuê cố định</div>
               <div className="stat-tile-value" style={{ fontSize: "1.1rem" }}>
                 {report.finance.monthlyContractRecurring.toLocaleString("vi-VN")} đ
               </div>
-              <div className="stat-tile-footer text-primary">Doanh thu nền định kỳ</div>
+              <div className="stat-tile-footer text-primary">Cố định hàng tháng</div>
             </div>
           </div>
         </div>
@@ -167,7 +167,7 @@ export default function ReportsPage() {
               <div className="stat-tile-title">Đạt chuẩn SLA KTV</div>
               <div className="stat-tile-value">{report.tickets.slaRate}%</div>
               <div className="stat-tile-footer text-info">
-                Hoàn thành {report.tickets.completed}/{report.tickets.total} phiếu
+                Hoàn thành {report.tickets.completed}/{report.tickets.total} phiếu kỹ thuật
               </div>
             </div>
           </div>
@@ -195,7 +195,7 @@ export default function ReportsPage() {
             <div className="card-header bg-dark text-white py-2 d-flex justify-content-between align-items-center">
               <span className="fw-bold small">
                 <i className="fas fa-heartbeat text-danger me-2"></i>
-                Giám sát Sức khỏe Thiết bị & Tần suất Sự cố
+                Giám sát Sức khỏe Thiết bị & Tần suất Phiếu kỹ thuật
               </span>
               <div className="d-flex gap-1">
                 {Object.entries(report.equipment.byStatus).map(([st, count]) => (
@@ -257,7 +257,7 @@ export default function ReportsPage() {
                         </span>
                       </td>
                       <td className="text-center small">
-                        <span className="fw-bold text-danger">{eq.ticketCount}</span> sự cố |{" "}
+                        <span className="fw-bold text-danger">{eq.ticketCount}</span> phiếu KT |{" "}
                         <span className="fw-bold text-primary">{eq.partReplacedCount}</span>{" "}
                         lần thay vật tư
                       </td>
@@ -275,7 +275,7 @@ export default function ReportsPage() {
             <div className="card-header bg-dark text-white py-2 d-flex justify-content-between align-items-center">
               <span className="fw-bold small">
                 <i className="fas fa-user-check text-info me-2"></i>
-                Năng suất Đội ngũ Kỹ thuật viên Hiện trường
+                Năng suất Đội ngũ Kỹ thuật viên
               </span>
               <Link href="/dispatch" className="btn btn-xs btn-outline-light py-0 px-2 small">
                 Điều phối

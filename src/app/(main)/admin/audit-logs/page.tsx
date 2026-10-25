@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { toast } from "react-toastify";
 import Loading from "@/components/Loading";
 import ActiveFilterChips, { FilterChipItem } from "@/components/ActiveFilterChips";
@@ -91,7 +92,7 @@ export default function AuditLogsPage() {
           >
             <i className="fas fa-history fa-sm"></i>
           </div>
-          <h1 className="h6 mb-0 text-dark fw-bold">NHẬT KÝ THAO TÁC HỆ THỐNG (AUDIT LOG)</h1>
+          <h1 className="h6 mb-0 text-dark fw-bold">Nhật ký thao tác</h1>
           <div className="vr mx-2 d-none d-md-block" style={{ height: "20px" }}></div>
           <span className="small text-muted d-none d-md-inline">
             Tổng bản ghi: <strong>{total}</strong>
@@ -100,6 +101,28 @@ export default function AuditLogsPage() {
         <button className="btn btn-outline-dark btn-sm px-3 fw-bold" onClick={loadData}>
           <i className="fas fa-sync-alt me-1"></i> Làm mới
         </button>
+      </div>
+
+      {/* Navigation Tabs giữa các trang Hệ Thống */}
+      <div className="d-flex gap-2 mb-2 border-bottom bg-white px-3 pt-2 rounded-top border">
+        <Link
+          href="/admin"
+          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
+        >
+          <i className="fas fa-user-shield me-1"></i> Tài khoản người dùng
+        </Link>
+        <Link
+          href="/admin/permissions"
+          className="pb-2 text-decoration-none small fw-semibold text-secondary px-2"
+        >
+          <i className="fas fa-key me-1"></i> Phân quyền ma trận
+        </Link>
+        <Link
+          href="/admin/audit-logs"
+          className="pb-2 text-decoration-none small fw-bold text-primary border-bottom border-primary border-2 px-2"
+        >
+          <i className="fas fa-history me-1"></i> Nhật ký hoạt động
+        </Link>
       </div>
 
       {/* Filters */}
@@ -137,7 +160,7 @@ export default function AuditLogsPage() {
                 <option value="Customer">Khách hàng (Customer)</option>
                 <option value="Contract">Hợp đồng (Contract)</option>
                 <option value="Equipment">Thiết bị (Equipment)</option>
-                <option value="Ticket">Phiếu sự cố (Ticket)</option>
+                <option value="Ticket">Phiếu kỹ thuật</option>
                 <option value="StockIssue">Xuất kho (StockIssue)</option>
                 <option value="Invoice">Hóa đơn (Invoice)</option>
               </select>

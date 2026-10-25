@@ -1998,6 +1998,22 @@ a {
 .accent-warning { background-color: #d97706 !important; }
 .accent-danger { background-color: #dc2626 !important; }
 .accent-info { background-color: #0891b2 !important; }
+.accent-secondary { background-color: #94a3b8 !important; }
+.border-left-secondary { border-left: 4px solid #94a3b8 !important; }
+
+.stat-tile-locked {
+  background: #f1f5f9 !important;
+  border: 1px dashed #cbd5e1 !important;
+  opacity: 0.75 !important;
+  cursor: not-allowed !important;
+  user-select: none !important;
+}
+
+.stat-tile-locked:hover {
+  border-color: #cbd5e1 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
 
 .border-left-primary { border-left: 4px solid #2563eb !important; }
 .border-left-success { border-left: 4px solid #16a34a !important; }
@@ -2132,3 +2148,110 @@ a {
 .react-datepicker__input-container {
   width: 100% !important;
 }
+
+/* ==========================================================================
+   MOBILE & PWA 100% FULL-SCREEN MODAL OPTIMIZATION (< 768px)
+   ========================================================================== */
+@media (max-width: 767.98px) {
+  /* Ép toàn bộ modal-dialog tràn viền 100% chiều rộng và chiều cao trên mobile */
+  .modal-dialog:not(.modal-dialog-inline),
+  .modal-dialog.modal-fullscreen-md-down,
+  .modal-dialog.modal-fullscreen-sm-down,
+  .modal-dialog.app-modal-mobile-fullscreen {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-width: 100vw !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    transform: none !important;
+  }
+
+  .modal-dialog:not(.modal-dialog-inline) .modal-content,
+  .modal-dialog.modal-fullscreen-md-down .modal-content,
+  .modal-dialog.modal-fullscreen-sm-down .modal-content,
+  .modal-dialog.app-modal-mobile-fullscreen .modal-content {
+    width: 100% !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    border: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    box-shadow: none !important;
+  }
+
+  .modal-dialog:not(.modal-dialog-inline) .modal-header,
+  .modal-dialog.modal-fullscreen-md-down .modal-header,
+  .modal-dialog.app-modal-mobile-fullscreen .modal-header {
+    flex-shrink: 0 !important;
+    border-radius: 0 !important;
+    min-height: 52px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding-top: calc(0.75rem + env(safe-area-inset-top, 0px)) !important;
+    padding-bottom: 0.75rem !important;
+    padding-left: calc(1rem + env(safe-area-inset-left, 0px)) !important;
+    padding-right: calc(1rem + env(safe-area-inset-right, 0px)) !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1055 !important;
+  }
+
+  .modal-dialog:not(.modal-dialog-inline) .modal-header .modal-title,
+  .modal-dialog.modal-fullscreen-md-down .modal-header .modal-title,
+  .modal-dialog.app-modal-mobile-fullscreen .modal-header .modal-title {
+    text-align: left !important;
+    margin-top: auto !important;
+    margin-bottom: auto !important;
+  }
+
+  .modal-dialog:not(.modal-dialog-inline) .modal-body,
+  .modal-dialog.modal-fullscreen-md-down .modal-body,
+  .modal-dialog.app-modal-mobile-fullscreen .modal-body {
+    flex: 1 1 auto !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain !important;
+    padding: 1rem !important;
+    padding-left: calc(1rem + env(safe-area-inset-left, 0px)) !important;
+    padding-right: calc(1rem + env(safe-area-inset-right, 0px)) !important;
+  }
+
+  .modal-dialog:not(.modal-dialog-inline) .modal-footer,
+  .modal-dialog.modal-fullscreen-md-down .modal-footer,
+  .modal-dialog.app-modal-mobile-fullscreen .modal-footer {
+    flex-shrink: 0 !important;
+    border-radius: 0 !important;
+    padding: 0.75rem 1rem !important;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px)) !important;
+    padding-left: calc(1rem + env(safe-area-inset-left, 0px)) !important;
+    padding-right: calc(1rem + env(safe-area-inset-right, 0px)) !important;
+    background-color: #f8f9fa !important;
+    border-top: 1px solid #dee2e6 !important;
+    position: sticky !important;
+    bottom: 0 !important;
+    z-index: 1055 !important;
+  }
+
+  /* Riêng modal xác nhận đơn giản nếu muốn giữ nhỏ giữa màn hình: gắn class .modal-confirm-sm */
+  .modal-dialog.modal-confirm-sm {
+    width: calc(100vw - 2rem) !important;
+    max-width: 380px !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: 90vh !important;
+    margin: 1.5rem auto !important;
+  }
+  .modal-dialog.modal-confirm-sm .modal-content {
+    height: auto !important;
+    min-height: 0 !important;
+    border-radius: 14px !important;
+  }
+}
+

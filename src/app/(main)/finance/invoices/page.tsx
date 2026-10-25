@@ -406,7 +406,7 @@ export default function FinanceInvoicesPage() {
         <div className="d-flex align-items-center gap-3 flex-wrap">
           <h5 className="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
             <i className="fas fa-receipt text-success"></i>
-            <span>Chốt Counter & Bảng kê Hóa đơn Tự động</span>
+            <span>Hóa đơn cước</span>
           </h5>
           <span className="badge bg-success-subtle text-success border border-success-subtle">
             Đã thu: <strong>{financeStats.totalPaid.toLocaleString("vi-VN")} đ</strong>
@@ -440,7 +440,7 @@ export default function FinanceInvoicesPage() {
             className="btn btn-sm btn-primary fw-semibold"
             onClick={() => setShowGenerateModal(true)}
           >
-            <i className="fas fa-calculator me-1"></i> Tự động tính cước & Lập Hóa đơn
+            <i className="fas fa-calculator me-1"></i> Lập hóa đơn
           </button>
         </div>
       </div>
@@ -455,7 +455,7 @@ export default function FinanceInvoicesPage() {
             }`}
             onClick={() => setActiveTab("invoices")}
           >
-            <i className="fas fa-file-invoice-dollar me-1"></i> Danh sách Bảng kê & Hóa đơn (
+            <i className="fas fa-file-invoice-dollar me-1"></i> Hóa đơn cước (
             {invoices.length})
           </button>
           <button
@@ -465,7 +465,7 @@ export default function FinanceInvoicesPage() {
             }`}
             onClick={() => setActiveTab("meters")}
           >
-            <i className="fas fa-list-ol me-1"></i> Sổ nhật ký Chốt Counter ({meterLogs.length})
+            <i className="fas fa-list-ol me-1"></i> Nhật ký Counter ({meterLogs.length})
           </button>
         </div>
 
@@ -584,10 +584,19 @@ export default function FinanceInvoicesPage() {
                           type="button"
                           className="btn btn-outline-primary"
                           onClick={() => setSelectedInvoice(inv)}
-                          title="Xem chi tiết bảng kê & In A4"
+                          title="Xem chi tiết bảng kê"
                         >
-                          <i className="fas fa-print me-1"></i> Bảng kê
+                          <i className="fas fa-eye me-1"></i> Bảng kê
                         </button>
+                        <a
+                          href={`/finance/invoices/${inv.id}/print`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-outline-dark"
+                          title="Mở mẫu in A4 chuẩn & Mã VietQR thanh toán"
+                        >
+                          <i className="fas fa-qrcode me-1 text-primary"></i> In A4 & VietQR
+                        </a>
                         {inv.status === "DRAFT" && (
                           <button
                             type="button"
@@ -875,7 +884,7 @@ export default function FinanceInvoicesPage() {
       <ModalShell
         open={showGenerateModal}
         onClose={() => setShowGenerateModal(false)}
-        title="Tự động Tính cước & Phát hành Bảng kê Hóa đơn"
+        title="Lập hóa đơn cước"
         size="lg"
         footer={
           <>
@@ -1087,13 +1096,14 @@ export default function FinanceInvoicesPage() {
               </div>
 
               <div className="d-flex gap-2">
-                <button
-                  type="button"
-                  className="btn btn-sm btn-dark"
-                  onClick={() => window.print()}
+                <a
+                  href={`/finance/invoices/${selectedInvoice.id}/print`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-sm btn-primary fw-bold"
                 >
-                  <i className="fas fa-print me-1"></i> In Bảng kê / Xuất PDF A4
-                </button>
+                  <i className="fas fa-qrcode me-1"></i> Mở Mẫu In A4 Chuẩn & VietQR
+                </a>
                 <button
                   type="button"
                   className="btn btn-sm btn-secondary"

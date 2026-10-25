@@ -5,11 +5,13 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { Role } from "@/lib/rbac";
 import { ROLE_LABELS } from "@/lib/rbac";
+import { ChangePasswordModal } from "@/components/ChangePasswordModal";
 
 interface SidebarProps {
   user: {
     name: string;
     role: Role;
+    permissions?: Record<string, boolean>;
   };
 }
 
@@ -33,6 +35,7 @@ export function SidebarLayout({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -51,6 +54,17 @@ export function SidebarLayout({
 
   useEffect(() => {
     if (typeof window !== "undefined") {
+      const isMobile =
+        window.innerWidth <= 768 ||
+        /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      const preferred = localStorage.getItem("preferred_view");
+      
+      // Mặc định kích hoạt giao diện mobile khi mở app trên mobile
+      if (isMobile && preferred !== "desktop") {
+        router.replace("/tech");
+        return;
+      }
+
       const savedCollapsed = localStorage.getItem("sidebarCollapsed");
       if (savedCollapsed === "true") {
         setSidebarCollapsed(true);
@@ -59,7 +73,7 @@ export function SidebarLayout({
     loadNotifications();
     const timer = setInterval(loadNotifications, 30000);
     return () => clearInterval(timer);
-  }, []);
+  }, [router]);
 
   const handleMarkRead = async (id: string) => {
     await fetch("/api/notifications", {
@@ -99,49 +113,51 @@ export function SidebarLayout({
     router.push("/login");
   };
 
-  // Cấu trúc phân nhóm chuẩn HoaGiangManager
+  // Cấu trúc phân nhóm chuẩn HoaGiangManager kèm điều kiện phân quyền
   const menuGroups = [
     {
       title: "Tổng quan",
       items: [
         { href: "/", label: "Trang chủ", icon: "fas fa-home", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"] },
-        { href: "/reports", label: "Thống kê tổng hợp", icon: "fas fa-chart-pie", roles: ["SUPER_ADMIN", "ADMIN"] },
+        { href: "/reports", label: "Báo cáo", icon: "fas fa-chart-pie", roles: ["SUPER_ADMIN", "ADMIN"], perm: "finance:view" },
       ],
     },
     {
-      title: "Quản lý tài sản",
+      title: "Tài sản",
       items: [
-        { href: "/equipment", label: "Thiết bị", icon: "fas fa-laptop", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"] },
-        { href: "/contracts", label: "Hợp đồng", icon: "fas fa-file-contract", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"] },
-        { href: "/customers", label: "Khách hàng", icon: "fas fa-building", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"] },
+        { href: "/equipment", label: "Thiết bị", icon: "fas fa-laptop", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perm: "equipment:read" },
+        { href: "/contracts", label: "Hợp đồng", icon: "fas fa-file-contract", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perm: "contract:read" },
+        { href: "/customers", label: "Khách hàng", icon: "fas fa-building", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perm: "customer:read" },
       ],
     },
     {
-      title: "Công việc & Dịch vụ",
+      title: "Dịch vụ",
       items: [
-        { href: "/tickets", label: "Phiếu yêu cầu (Ticket)", icon: "fas fa-exclamation-triangle", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"] },
-        { href: "/dispatch", label: "Điều phối kỹ thuật", icon: "fas fa-map-marked-alt", roles: ["SUPER_ADMIN", "DISPATCHER"] },
-        { href: "/maintenance", label: "Bảo trì định kỳ", icon: "fas fa-wrench", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"] },
+        { href: "/tickets", label: "Phiếu kỹ thuật", icon: "fas fa-tools", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perms: ["ticket:update", "ticket:create", "ticket:assign"] },
+        { href: "/dispatch", label: "Điều phối", icon: "fas fa-map-marked-alt", roles: ["SUPER_ADMIN", "DISPATCHER"], perm: "ticket:assign" },
+        { href: "/maintenance", label: "Bảo trì", icon: "fas fa-wrench", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perm: "equipment:read" },
       ],
     },
     {
-      title: "Quản lý kho",
+      title: "Kho",
       items: [
-        { href: "/inventory", label: "Vật tư dự phòng", icon: "fas fa-boxes", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"] },
-        { href: "/stock-issues", label: "Nhập / Xuất kho", icon: "fas fa-exchange-alt", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"] },
+        { href: "/inventory", label: "Kho linh kiện", icon: "fas fa-boxes", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perm: "stock:read" },
+        { href: "/stock-issues", label: "Xuất nhập kho", icon: "fas fa-exchange-alt", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perms: ["stock:read", "stock:request", "stock:approve-technical", "stock:approve-retail"] },
       ],
     },
     {
-      title: "Tài chính & Thanh toán",
+      title: "Tài chính",
       items: [
-        { href: "/finance/invoices", label: "Chốt Counter & Hóa đơn", icon: "fas fa-receipt", roles: ["SUPER_ADMIN", "ADMIN"] },
+        { href: "/finance/invoices", label: "Hóa đơn cước", icon: "fas fa-receipt", roles: ["SUPER_ADMIN", "ADMIN"], perms: ["finance:view", "invoice:manage"] },
       ],
     },
     {
       title: "Hệ thống",
       items: [
-        { href: "/admin", label: "Tài khoản người dùng", icon: "fas fa-user-shield", roles: ["SUPER_ADMIN"] },
-        { href: "/admin/audit-logs", label: "Nhật ký thao tác", icon: "fas fa-history", roles: ["SUPER_ADMIN"] },
+        { href: "/media", label: "Thư viện Media", icon: "fas fa-photo-video", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perm: "media:view" },
+        { href: "/admin", label: "Tài khoản", icon: "fas fa-user-shield", roles: ["SUPER_ADMIN"], perm: "user:manage" },
+        { href: "/admin/permissions", label: "Phân quyền", icon: "fas fa-key", roles: ["SUPER_ADMIN"], perm: "user:manage" },
+        { href: "/admin/audit-logs", label: "Nhật ký", icon: "fas fa-history", roles: ["SUPER_ADMIN"], perm: "audit:view" },
       ],
     },
   ];
@@ -187,9 +203,14 @@ export function SidebarLayout({
 
         <nav className="sidebar-nav">
           {menuGroups.map((group, groupIdx) => {
-            const accessibleItems = group.items.filter((item) =>
-              item.roles.includes(user.role)
-            );
+            const accessibleItems = group.items.filter((item) => {
+              if (!item.roles.includes(user.role)) return false;
+              if (user.role === "SUPER_ADMIN") return true;
+              if (!user.permissions) return true;
+              if ("perm" in item && item.perm && !user.permissions[item.perm as string]) return false;
+              if ("perms" in item && Array.isArray(item.perms) && !item.perms.some((p: string) => user.permissions?.[p])) return false;
+              return true;
+            });
             if (accessibleItems.length === 0) return null;
 
             return (
@@ -270,6 +291,24 @@ export function SidebarLayout({
           </div>
 
           <div className="d-flex align-items-center gap-3 position-relative">
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  localStorage.removeItem("preferred_view");
+                  document.cookie = "preferred_view=; path=/; max-age=0";
+                }
+                router.push("/tech");
+              }}
+              className="btn btn-sm btn-outline-success rounded-pill px-2.5 py-1 fw-semibold d-flex align-items-center gap-1 shadow-sm"
+              style={{ fontSize: "12px" }}
+              title="Mở ứng dụng Mobile PWA dành cho Kỹ thuật viên & Quản lý"
+            >
+              <i className="fas fa-mobile-alt text-success"></i>
+              <span className="d-none d-sm-inline">App Kỹ thuật</span>
+              <span className="d-sm-none">App Mobile</span>
+            </button>
+
             <div className="position-relative">
               <button
                 type="button"
@@ -386,6 +425,14 @@ export function SidebarLayout({
             </div>
 
             <button
+              onClick={() => setChangePasswordOpen(true)}
+              className="btn btn-outline-secondary btn-sm ms-2"
+              title="Đổi mật khẩu"
+            >
+              <i className="fas fa-key"></i>
+            </button>
+
+            <button
               onClick={handleLogout}
               className="btn btn-outline-primary btn-sm ms-2"
               title="Đăng xuất"
@@ -398,6 +445,11 @@ export function SidebarLayout({
         {/* Dynamic Page Content */}
         <div className="container-fluid px-3 pb-4">{children}</div>
       </div>
+
+      <ChangePasswordModal
+        isOpen={changePasswordOpen}
+        onClose={() => setChangePasswordOpen(false)}
+      />
     </div>
   );
 }

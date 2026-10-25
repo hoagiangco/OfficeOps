@@ -4,11 +4,90 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "react-toastify";
 import { Loading } from "@/components/Loading";
+import { TicketDetailModal } from "@/components/TicketDetailModal";
 import {
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
   TICKET_TYPE_LABELS,
 } from "@/lib/labels";
+import { getDirectionsUrl } from "@/lib/location";
+
+function formatRelativeTime(dateStr: string): string {
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  if (diffMs < 0) return "Vừa xong";
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return "Vừa xong";
+  if (diffMins < 60) return `${diffMins} phút trước`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours} giờ trước`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays <= 3) return `${diffDays} ngày trước`;
+  return new Date(dateStr).toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
+function formatCompactDateTime(dateStr?: string | null): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  return `${time} ${day}/${month}`;
+}
+
+function formatCompactDateOnly(dateStr?: string | null): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}`;
+}
+
+function getSlaStatus(slaDueAt: string | null, resolvedAt?: string | null) {
+  if (!slaDueAt) return null;
+  const dueTime = new Date(slaDueAt).getTime();
+  const slaFormatted = formatCompactDateOnly(slaDueAt);
+
+  if (resolvedAt) {
+    const isLate = new Date(resolvedAt).getTime() > dueTime;
+    return {
+      isOverdue: isLate,
+      text: slaFormatted,
+      className: isLate ? "badge bg-danger text-white" : "badge bg-secondary-subtle text-secondary border",
+    };
+  }
+
+  const now = Date.now();
+  const diffMs = dueTime - now;
+
+  if (diffMs < 0) {
+    return {
+      isOverdue: true,
+      text: slaFormatted,
+      className: "badge bg-danger text-white",
+    };
+  }
+
+  const remainingMins = Math.floor(diffMs / 60000);
+  const remainingHours = Math.floor(remainingMins / 60);
+  if (remainingHours < 3) {
+    return {
+      isOverdue: false,
+      text: `${slaFormatted} (còn ${remainingHours > 0 ? `${remainingHours}h` : ""}${remainingMins % 60}p)`,
+      className: "badge bg-warning text-dark",
+    };
+  }
+
+  return {
+    isOverdue: false,
+    text: slaFormatted,
+    className: "badge bg-secondary-subtle text-secondary border",
+  };
+}
 
 interface DispatchTicket {
   id: string;
@@ -18,9 +97,10 @@ interface DispatchTicket {
   priority: string;
   description: string;
   slaDueAt: string | null;
+  resolvedAt: string | null;
   createdAt: string;
   assigneeId: string | null;
-  customer: { id: string; name: string; phone: string; address: string };
+  customer: { id: string; name: string; phone: string; address: string; latitude?: number | null; longitude?: number | null };
   equipment: {
     id: string;
     serialNumber: string;
@@ -59,7 +139,9 @@ export default function DispatchPage() {
   const [loading, setLoading] = useState(true);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [showOnlyUnassigned, setShowOnlyUnassigned] = useState(false);
+  const [sortBy, setSortBy] = useState<"urgent" | "oldest" | "newest">("urgent");
   const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [viewTicketId, setViewTicketId] = useState<string | null>(null);
 
   const fetchDispatchData = async () => {
     setLoading(true);
@@ -92,8 +174,43 @@ export default function DispatchPage() {
   }, []);
 
   const displayedTickets = useMemo(() => {
-    return showOnlyUnassigned ? tickets.filter((t) => !t.assigneeId) : tickets;
-  }, [tickets, showOnlyUnassigned]);
+    const list = showOnlyUnassigned ? tickets.filter((t) => !t.assigneeId) : [...tickets];
+
+    const priorityWeight: Record<string, number> = {
+      URGENT: 4,
+      HIGH: 3,
+      NORMAL: 2,
+      LOW: 1,
+    };
+
+    return list.sort((a, b) => {
+      if (sortBy === "urgent") {
+        // 1. Chưa giao KTV ưu tiên trước
+        const aUnassigned = !a.assigneeId ? 1 : 0;
+        const bUnassigned = !b.assigneeId ? 1 : 0;
+        if (aUnassigned !== bUnassigned) return bUnassigned - aUnassigned;
+
+        // 2. SLA quá hạn hoặc gần hạn nhất lên trước
+        const aDue = a.slaDueAt ? new Date(a.slaDueAt).getTime() : Infinity;
+        const bDue = b.slaDueAt ? new Date(b.slaDueAt).getTime() : Infinity;
+        if (aDue !== bDue) return aDue - bDue;
+
+        // 3. Mức độ ưu tiên cao hơn lên trước
+        const pwDiff = (priorityWeight[b.priority] || 0) - (priorityWeight[a.priority] || 0);
+        if (pwDiff !== 0) return pwDiff;
+
+        // 4. Tạo lâu hơn (cũ hơn) lên trước
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+
+      if (sortBy === "oldest") {
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      }
+
+      // newest
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [tickets, showOnlyUnassigned, sortBy]);
 
   const selectedTicket = useMemo(
     () => tickets.find((t) => t.id === selectedTicketId) || null,
@@ -166,7 +283,7 @@ export default function DispatchPage() {
         <div className="d-flex align-items-center gap-3 flex-wrap">
           <h5 className="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
             <i className="fas fa-map-marked-alt text-primary"></i>
-            <span>Bảng Điều phối Kỹ thuật viên Thông minh</span>
+            <span>Điều phối kỹ thuật</span>
           </h5>
           <span className="badge bg-danger-subtle text-danger border border-danger-subtle">
             Chưa giao KTV: <strong>{unassignedCount}</strong>
@@ -179,8 +296,24 @@ export default function DispatchPage() {
           </span>
         </div>
 
-        <div className="d-flex gap-2 align-items-center">
-          <div className="form-check form-switch mb-0 me-2">
+        <div className="d-flex gap-2 align-items-center flex-wrap">
+          <div className="d-flex align-items-center gap-1">
+            <span className="small text-muted text-nowrap">
+              <i className="fas fa-sort me-1"></i>Xếp theo:
+            </span>
+            <select
+              className="form-select form-select-sm py-0"
+              style={{ width: "auto", fontSize: "12px", height: "31px" }}
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as "urgent" | "oldest" | "newest")}
+            >
+              <option value="urgent">Cấp bách & Hạn SLA</option>
+              <option value="oldest">Chờ lâu nhất (Cũ nhất)</option>
+              <option value="newest">Mới phát sinh</option>
+            </select>
+          </div>
+
+          <div className="form-check form-switch mb-0 ms-2">
             <input
               className="form-check-input"
               type="checkbox"
@@ -188,12 +321,12 @@ export default function DispatchPage() {
               checked={showOnlyUnassigned}
               onChange={(e) => setShowOnlyUnassigned(e.target.checked)}
             />
-            <label className="form-check-label small fw-semibold" htmlFor="unassignedSwitch">
-              Chỉ hiện phiếu chưa giao
+            <label className="form-check-label small fw-semibold text-nowrap" htmlFor="unassignedSwitch">
+              Chỉ chưa giao
             </label>
           </div>
-          <Link href="/tickets" className="btn btn-sm btn-outline-secondary">
-            <i className="fas fa-list me-1"></i> Danh sách Ticket
+          <Link href="/tickets" className="btn btn-sm btn-outline-secondary text-nowrap">
+            <i className="fas fa-list me-1"></i> DS Phiếu kỹ thuật
           </Link>
         </div>
       </div>
@@ -208,7 +341,7 @@ export default function DispatchPage() {
               <div className="card-header bg-dark text-white py-2 d-flex justify-content-between align-items-center">
                 <span className="fw-bold small">
                   <i className="fas fa-clipboard-list me-2"></i>
-                  1. Chọn Phiếu yêu cầu cần điều phối ({displayedTickets.length})
+                  1. Chọn phiếu điều phối ({displayedTickets.length})
                 </span>
                 <small className="text-white-50">
                   Nhấp vào dòng để hệ thống gợi ý KTV tối ưu bên phải
@@ -218,22 +351,24 @@ export default function DispatchPage() {
                 <table className="table table-hover table-bordered mb-0 custom-dense-table align-middle">
                   <thead className="bg-light">
                     <tr>
-                      <th>Mã phiếu</th>
+                      <th style={{ minWidth: "155px" }}>Mã phiếu & Thời gian</th>
                       <th>Khách hàng & Khu vực</th>
                       <th>Thiết bị & Lỗi</th>
-                      <th>KTV hiện tại</th>
+                      <th style={{ minWidth: "135px" }}>KTV hiện tại</th>
                     </tr>
                   </thead>
                   <tbody>
                     {displayedTickets.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="text-center py-4 text-muted">
-                          Tất cả các phiếu đều đã được điều phối!
+                          Tất cả các phiếu kỹ thuật đều đã được điều phối!
                         </td>
                       </tr>
                     ) : (
                       displayedTickets.map((t) => {
                         const isSelected = t.id === selectedTicketId;
+                        const sla = getSlaStatus(t.slaDueAt, t.resolvedAt);
+
                         return (
                           <tr
                             key={t.id}
@@ -248,24 +383,97 @@ export default function DispatchPage() {
                             }
                           >
                             <td>
-                              <div className="fw-bold font-monospace text-primary">{t.code}</div>
-                              <span
-                                className={`badge ${
-                                  t.priority === "URGENT"
-                                    ? "bg-danger"
-                                    : t.priority === "HIGH"
-                                    ? "bg-warning text-dark"
-                                    : "bg-secondary"
-                                }`}
+                              <button
+                                type="button"
+                                className="btn btn-link p-0 fw-bold font-monospace text-primary text-decoration-none border-0 text-start d-inline-flex align-items-center gap-1"
+                                style={{ fontSize: "14px", cursor: "pointer" }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedTicketId(t.id);
+                                  setViewTicketId(t.id);
+                                }}
+                                title="Nhấp để mở xem chi tiết phiếu kỹ thuật"
+                                onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
+                                onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
                               >
-                                {TICKET_PRIORITY_LABELS[t.priority]}
-                              </span>
+                                <span>{t.code}</span>
+                                <i className="fas fa-external-link-alt text-primary opacity-50" style={{ fontSize: "10px" }}></i>
+                              </button>
+                              <div className="d-flex flex-wrap gap-1 align-items-center mt-1">
+                                <span
+                                  className={`badge ${
+                                    t.priority === "URGENT"
+                                      ? "bg-danger"
+                                      : t.priority === "HIGH"
+                                      ? "bg-warning text-dark"
+                                      : "bg-secondary"
+                                  }`}
+                                >
+                                  {TICKET_PRIORITY_LABELS[t.priority]}
+                                </span>
+                                {sla && (
+                                  <span
+                                    className={sla.className}
+                                    style={{ fontSize: "10.5px" }}
+                                    title={
+                                      t.slaDueAt
+                                        ? (sla.isOverdue
+                                            ? `Trễ hạn SLA: ${new Date(t.slaDueAt).toLocaleString("vi-VN")}`
+                                            : `Hạn SLA: ${new Date(t.slaDueAt).toLocaleString("vi-VN")}`)
+                                        : undefined
+                                    }
+                                  >
+                                    <i className="far fa-clock me-1"></i>
+                                    {sla.text}
+                                  </span>
+                                )}
+                                {t.resolvedAt && (
+                                  <span
+                                    className="badge bg-success-subtle text-success border border-success-subtle"
+                                    style={{ fontSize: "10.5px" }}
+                                    title={`Thời gian hoàn thành: ${new Date(t.resolvedAt).toLocaleString("vi-VN")}`}
+                                  >
+                                    <i className="fas fa-check-circle me-1"></i>
+                                    {formatCompactDateOnly(t.resolvedAt)}
+                                  </span>
+                                )}
+                              </div>
+                              <div
+                                className="text-muted mt-1 d-flex align-items-center gap-1"
+                                style={{ fontSize: "11px" }}
+                                title={`Thời gian phát sinh: ${new Date(t.createdAt).toLocaleString("vi-VN")}`}
+                              >
+                                <i className="far fa-clock text-secondary"></i>
+                                <span className="fw-medium text-dark">{formatRelativeTime(t.createdAt)}</span>
+                                <span className="text-muted">
+                                  ({new Date(t.createdAt).toLocaleDateString("vi-VN", {
+                                    day: "2-digit",
+                                    month: "2-digit",
+                                  })})
+                                </span>
+                              </div>
                             </td>
                             <td>
                               <div className="fw-bold text-dark">{t.customer.name}</div>
-                              <div className="small text-muted">
-                                <i className="fas fa-map-marker-alt text-danger me-1"></i>
-                                {t.customer.address}
+                              <div className="small text-muted d-flex align-items-center gap-1.5 flex-wrap">
+                                <span>
+                                  <i className="fas fa-map-marker-alt text-danger me-1"></i>
+                                  {t.customer.address}
+                                </span>
+                                {t.customer.address && (
+                                  <a
+                                    href={getDirectionsUrl(t.customer)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary fw-semibold text-decoration-none d-inline-flex align-items-center gap-0.5 ms-1"
+                                    style={{ fontSize: "11px" }}
+                                    title="Mở chỉ đường Google Maps"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <i className="fas fa-location-arrow text-danger" style={{ fontSize: "9px" }}></i>
+                                    <span>Chỉ đường</span>
+                                  </a>
+                                )}
                               </div>
                             </td>
                             <td>
@@ -316,12 +524,67 @@ export default function DispatchPage() {
               <div className="card-body p-2" style={{ maxHeight: "calc(100vh - 220px)", overflowY: "auto" }}>
                 {selectedTicket && (
                   <div className="alert alert-primary py-2 px-3 mb-2 small">
-                    <div className="fw-bold">
-                      Phiếu đang chọn: {selectedTicket.code} - {selectedTicket.customer.name}
+                    <div className="d-flex justify-content-between align-items-start gap-2 mb-1">
+                      <div className="fw-bold d-flex align-items-center gap-1 flex-wrap">
+                        <span>Phiếu đang chọn:</span>
+                        <button
+                          type="button"
+                          className="btn btn-link p-0 fw-bold font-monospace text-primary border-0 text-decoration-underline"
+                          onClick={() => setViewTicketId(selectedTicket.id)}
+                          title="Nhấp để mở chi tiết phiếu này"
+                        >
+                          {selectedTicket.code}
+                        </button>
+                        <span>- {selectedTicket.customer.name}</span>
+                        <button
+                          type="button"
+                          className="btn btn-xs btn-outline-primary py-0 px-2 fw-semibold ms-1"
+                          style={{ fontSize: "11px" }}
+                          onClick={() => setViewTicketId(selectedTicket.id)}
+                          title="Mở toàn bộ hồ sơ xử lý phiếu kỹ thuật"
+                        >
+                          <i className="fas fa-folder-open me-1"></i>Xem phiếu
+                        </button>
+                      </div>
+                      <span
+                        className="badge bg-white text-dark border text-nowrap"
+                        title="Thời điểm phát sinh yêu cầu"
+                      >
+                        <i className="far fa-clock me-1 text-primary"></i>
+                        {new Date(selectedTicket.createdAt).toLocaleString("vi-VN", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                        })}
+                      </span>
                     </div>
                     <div>
                       Địa chỉ: <strong>{selectedTicket.customer.address}</strong> | Máy:{" "}
                       <strong>{selectedTicket.equipment.model}</strong>
+                      {selectedTicket.slaDueAt && (
+                        <span className="ms-2">
+                          | Hạn SLA:{" "}
+                          <strong
+                            className={
+                              (selectedTicket.resolvedAt
+                                ? new Date(selectedTicket.resolvedAt).getTime() > new Date(selectedTicket.slaDueAt).getTime()
+                                : new Date(selectedTicket.slaDueAt).getTime() < Date.now())
+                                ? "text-danger"
+                                : "text-dark"
+                            }
+                          >
+                            {formatCompactDateTime(selectedTicket.slaDueAt)}
+                          </strong>
+                        </span>
+                      )}
+                      {selectedTicket.resolvedAt && (
+                        <span className="ms-2 text-success">
+                          | Hoàn thành:{" "}
+                          <strong>{formatCompactDateTime(selectedTicket.resolvedAt)}</strong>
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
@@ -428,13 +691,20 @@ export default function DispatchPage() {
                             </div>
                             <div className="d-flex flex-wrap gap-1">
                               {tech.assignedTickets.map((at) => (
-                                <span
+                                <button
                                   key={at.id}
-                                  className="badge bg-white text-dark border font-monospace"
-                                  title={`${at.customer.name} - ${at.equipment.model}`}
+                                  type="button"
+                                  className="badge bg-white text-dark border font-monospace btn btn-sm p-1 text-decoration-none"
+                                  style={{ cursor: "pointer" }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setViewTicketId(at.id);
+                                  }}
+                                  title={`Nhấp để mở chi tiết phiếu: ${at.customer.name} - ${at.equipment.model}`}
                                 >
+                                  <i className="fas fa-ticket-alt text-secondary me-1"></i>
                                   {at.code}: {at.customer.name}
-                                </span>
+                                </button>
                               ))}
                             </div>
                           </div>
@@ -448,6 +718,13 @@ export default function DispatchPage() {
           </div>
         </div>
       )}
+
+      {/* Modal xem / xử lý chi tiết phiếu kỹ thuật */}
+      <TicketDetailModal
+        ticketId={viewTicketId}
+        onClose={() => setViewTicketId(null)}
+        onTicketUpdated={fetchDispatchData}
+      />
     </div>
   );
 }

@@ -44,6 +44,36 @@ export default function MaintenancePage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<MaintenanceScheduleItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [runningCron, setRunningCron] = useState(false);
+  const [cronResult, setCronResult] = useState<{
+    timestamp: string;
+    maintenanceTicketsCreated: number;
+    lowStockAlerts: number;
+    expiringContractsAlerts: number;
+    slaBreachAlerts: number;
+    details: {
+      tickets: string[];
+      lowStockParts: string[];
+      expiringContracts: string[];
+      slaBreachedTickets: string[];
+    };
+  } | null>(null);
+
+  const handleRunDailyCron = async () => {
+    setRunningCron(true);
+    try {
+      const res = await fetch("/api/cron/daily", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Không thể thực thi Cron Job");
+      setCronResult(data);
+      toast.success("Đã hoàn tất quét tự động toàn hệ thống!");
+      fetchData();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Lỗi khi chạy quét hệ thống");
+    } finally {
+      setRunningCron(false);
+    }
+  };
   const [form, setForm] = useState({
     equipmentId: "",
     intervalDays: 30,
@@ -219,7 +249,7 @@ export default function MaintenancePage() {
         <div className="d-flex align-items-center gap-3 flex-wrap">
           <h5 className="mb-0 fw-bold text-dark d-flex align-items-center gap-2">
             <i className="fas fa-wrench text-primary"></i>
-            <span>Kế hoạch Bảo trì & Bảo dưỡng Định kỳ</span>
+            <span>Bảo trì định kỳ</span>
           </h5>
           <span className="badge bg-light text-dark border">
             Tổng lịch: <strong>{schedules.length}</strong>
@@ -242,11 +272,21 @@ export default function MaintenancePage() {
           </button>
           <button
             type="button"
+            className="btn btn-sm btn-dark fw-semibold shadow-sm d-flex align-items-center gap-1.5"
+            disabled={runningCron || submitting}
+            onClick={handleRunDailyCron}
+            title="Kích hoạt Cron Job quét tự động: Sinh phiếu bảo trì, cảnh báo tồn kho, hợp đồng sắp hết hạn & SLA"
+          >
+            <i className={`fas fa-${runningCron ? "spinner fa-spin" : "bolt"} text-warning`}></i>
+            <span>{runningCron ? "Đang quét..." : "Quét tự động (Cron)"}</span>
+          </button>
+          <button
+            type="button"
             className="btn btn-sm btn-warning fw-semibold"
-            disabled={submitting}
+            disabled={submitting || runningCron}
             onClick={() => handleGenerateTickets()}
           >
-            <i className="fas fa-magic me-1"></i> Sinh tự động Ticket đến hạn
+            <i className="fas fa-magic me-1"></i> Tạo phiếu đến hạn
           </button>
           <button
             type="button"
@@ -264,7 +304,7 @@ export default function MaintenancePage() {
               setShowCreateModal(true);
             }}
           >
-            <i className="fas fa-plus me-1"></i> Thêm lịch bảo trì
+            <i className="fas fa-plus me-1"></i> Tạo lịch
           </button>
         </div>
       </div>
@@ -516,6 +556,103 @@ export default function MaintenancePage() {
             </div>
           </div>
         </form>
+      </ModalShell>
+
+      {/* Modal Kết Quả Quét Tự Động Toàn Hệ Thống (Cron Daily) */}
+      <ModalShell
+        open={!!cronResult}
+        onClose={() => setCronResult(null)}
+        title="Kết Quả Quét Tự Động Toàn Hệ Thống (Cron Job)"
+        size="lg"
+        footer={
+          <button
+            type="button"
+            className="btn btn-sm btn-dark px-4 fw-bold"
+            onClick={() => setCronResult(null)}
+          >
+            Đóng
+          </button>
+        }
+      >
+        {cronResult && (
+          <div>
+            <div className="alert alert-success d-flex align-items-center gap-2 py-2 mb-3 small">
+              <i className="fas fa-check-circle fa-lg text-success"></i>
+              <div>
+                Tác vụ quét hệ thống đã chạy xong lúc <strong>{new Date(cronResult.timestamp).toLocaleString("vi-VN")}</strong>. Các cảnh báo và phiếu mới đã được phát hành tự động.
+              </div>
+            </div>
+
+            <div className="row g-2 mb-3 text-center small">
+              <div className="col-3">
+                <div className="p-2 border rounded bg-light">
+                  <div className="text-muted">Phiếu bảo trì tạo mới</div>
+                  <div className="fs-5 fw-bold text-primary font-monospace">{cronResult.maintenanceTicketsCreated}</div>
+                </div>
+              </div>
+              <div className="col-3">
+                <div className="p-2 border rounded bg-light">
+                  <div className="text-muted">Linh kiện tồn thấp</div>
+                  <div className="fs-5 fw-bold text-danger font-monospace">{cronResult.lowStockAlerts}</div>
+                </div>
+              </div>
+              <div className="col-3">
+                <div className="p-2 border rounded bg-light">
+                  <div className="text-muted">HĐ sắp hết hạn (&le;30d)</div>
+                  <div className="fs-5 fw-bold text-warning font-monospace">{cronResult.expiringContractsAlerts}</div>
+                </div>
+              </div>
+              <div className="col-3">
+                <div className="p-2 border rounded bg-light">
+                  <div className="text-muted">Phiếu quá hạn SLA</div>
+                  <div className="fs-5 fw-bold text-danger font-monospace">{cronResult.slaBreachAlerts}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Danh sách chi tiết */}
+            <div className="d-flex flex-column gap-2 small">
+              {cronResult.details.tickets.length > 0 && (
+                <div className="border rounded p-2 bg-light">
+                  <strong className="text-primary d-block mb-1">
+                    <i className="fas fa-wrench me-1"></i> Phiếu kỹ thuật bảo trì vừa sinh:
+                  </strong>
+                  <ul className="mb-0 ps-3">
+                    {cronResult.details.tickets.map((t, i) => (
+                      <li key={i}>{t}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {cronResult.details.lowStockParts.length > 0 && (
+                <div className="border rounded p-2 bg-light">
+                  <strong className="text-danger d-block mb-1">
+                    <i className="fas fa-exclamation-triangle me-1"></i> Cảnh báo linh kiện dưới ngưỡng tồn:
+                  </strong>
+                  <ul className="mb-0 ps-3">
+                    {cronResult.details.lowStockParts.map((p, i) => (
+                      <li key={i}>{p}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {cronResult.details.expiringContracts.length > 0 && (
+                <div className="border rounded p-2 bg-light">
+                  <strong className="text-warning-emphasis d-block mb-1">
+                    <i className="fas fa-file-contract me-1"></i> Hợp đồng cần lưu ý tái ký:
+                  </strong>
+                  <ul className="mb-0 ps-3">
+                    {cronResult.details.expiringContracts.map((c, i) => (
+                      <li key={i}>{c}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </ModalShell>
     </div>
   );

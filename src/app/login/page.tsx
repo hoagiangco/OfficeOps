@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
 
@@ -20,6 +20,28 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Nếu đã đăng nhập, tự động chuyển trang tương ứng (mobile -> /tech, desktop -> /)
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((user) => {
+        if (user) {
+          const isMobile =
+            typeof window !== "undefined" &&
+            (window.innerWidth <= 768 ||
+              /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+          const preferred =
+            typeof window !== "undefined" ? localStorage.getItem("preferred_view") : null;
+          if ((isMobile || user.role === "FIELD_TECH") && preferred !== "desktop") {
+            router.replace("/tech");
+          } else {
+            router.replace("/");
+          }
+        }
+      })
+      .catch(() => {});
+  }, [router]);
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
@@ -37,8 +59,24 @@ export default function LoginPage() {
       toast.error(msg);
       return;
     }
+    const data = await res.json().catch(() => ({}));
     toast.success("Đăng nhập thành công!");
-    router.replace("/");
+
+    // Khi đăng nhập trên thiết bị di động hoặc tài khoản KTV, mặc định kích hoạt giao diện mobile
+    const isMobileDevice =
+      typeof window !== "undefined" &&
+      (window.innerWidth <= 768 ||
+        /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+
+    if (isMobileDevice || data?.role === "FIELD_TECH") {
+      if (typeof window !== "undefined") {
+        document.cookie = "preferred_view=; path=/; max-age=0";
+        localStorage.removeItem("preferred_view");
+      }
+      router.replace("/tech");
+    } else {
+      router.replace("/");
+    }
     router.refresh();
   }
 
