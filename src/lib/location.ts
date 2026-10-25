@@ -325,3 +325,90 @@ export function parseCoordinates(input: string): { latitude: number; longitude: 
 function isValidLatLng(lat: number, lng: number): boolean {
   return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 }
+
+/**
+ * Tính khoảng cách địa lý đường chim bay giữa 2 tọa độ GPS (km) theo công thức Haversine
+ */
+export function calculateDistanceKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371; // Bán kính Trái Đất (km)
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c;
+  return Number(d.toFixed(1));
+}
+
+/**
+ * Tọa độ trung tâm các quận/huyện tại TP.HCM & các tỉnh thành chính
+ */
+export const DISTRICT_COORDINATES: Record<string, { lat: number; lng: number }> = {
+  "quận 1": { lat: 10.7769, lng: 106.7009 },
+  "quận 3": { lat: 10.7844, lng: 106.6844 },
+  "quận 4": { lat: 10.7578, lng: 106.7013 },
+  "quận 5": { lat: 10.7554, lng: 106.6669 },
+  "quận 6": { lat: 10.7481, lng: 106.6353 },
+  "quận 7": { lat: 10.7340, lng: 106.7219 },
+  "quận 8": { lat: 10.7240, lng: 106.6286 },
+  "quận 10": { lat: 10.7679, lng: 106.6670 },
+  "quận 11": { lat: 10.7629, lng: 106.6504 },
+  "quận 12": { lat: 10.8672, lng: 106.6413 },
+  "bình thạnh": { lat: 10.8106, lng: 106.7091 },
+  "tân bình": { lat: 10.8015, lng: 106.6547 },
+  "tân phú": { lat: 10.7901, lng: 106.6281 },
+  "phú nhuận": { lat: 10.7992, lng: 106.6803 },
+  "gò vấp": { lat: 10.8387, lng: 106.6653 },
+  "thủ đức": { lat: 10.8494, lng: 106.7537 },
+  "bình tân": { lat: 10.7654, lng: 106.6038 },
+  "hóc môn": { lat: 10.8845, lng: 106.5928 },
+  "nhà bè": { lat: 10.6953, lng: 106.7301 },
+  "bình chánh": { lat: 10.6874, lng: 106.5938 },
+  "hà nội": { lat: 21.0285, lng: 105.8542 },
+  "đà nẵng": { lat: 16.0544, lng: 108.2022 },
+};
+
+/**
+ * Ước lượng tọa độ từ địa chỉ khách hàng nếu chưa được ghim GPS chính xác
+ */
+export function estimateCoordinatesFromAddress(
+  address: string,
+  seed: string = ""
+): { latitude: number; longitude: number; isEstimated: boolean } {
+  const lower = (address || "").toLowerCase();
+  for (const [key, coords] of Object.entries(DISTRICT_COORDINATES)) {
+    if (lower.includes(key)) {
+      let hash = 0;
+      for (let i = 0; i < seed.length; i++) {
+        hash = (hash << 5) - hash + seed.charCodeAt(i);
+      }
+      const jitterLat = ((hash % 80) / 10000);
+      const jitterLng = (((hash >> 2) % 80) / 10000);
+      return {
+        latitude: Number((coords.lat + jitterLat).toFixed(6)),
+        longitude: Number((coords.lng + jitterLng).toFixed(6)),
+        isEstimated: true,
+      };
+    }
+  }
+
+  // Mặc định trung tâm TP.HCM
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+  }
+  return {
+    latitude: Number((10.7769 + ((hash % 100) / 5000)).toFixed(6)),
+    longitude: Number((106.7009 + (((hash >> 2) % 100) / 5000)).toFixed(6)),
+    isEstimated: true,
+  };
+}

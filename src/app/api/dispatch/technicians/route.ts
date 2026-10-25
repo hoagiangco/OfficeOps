@@ -38,10 +38,41 @@ export const GET = withErrors(async () => {
     orderBy: [{ role: "desc" }, { name: "asc" }],
   });
 
-  const result = technicians.map((t) => ({
-    ...t,
-    openTicketsCount: t.assignedTickets.length,
-  }));
+  const result = await Promise.all(
+    technicians.map(async (t) => {
+      // Tìm vị trí check-in GPS gần nhất của KTV
+      const latestCheckInTicket = await prisma.ticket.findFirst({
+        where: {
+          assigneeId: t.id,
+          checkInLat: { not: null },
+          checkInLng: { not: null },
+        },
+        orderBy: { checkInAt: "desc" },
+        select: {
+          checkInLat: true,
+          checkInLng: true,
+          checkInAt: true,
+          code: true,
+          customer: { select: { name: true, address: true } },
+        },
+      });
+
+      return {
+        ...t,
+        openTicketsCount: t.assignedTickets.length,
+        lastLocation: latestCheckInTicket
+          ? {
+              latitude: latestCheckInTicket.checkInLat,
+              longitude: latestCheckInTicket.checkInLng,
+              checkInAt: latestCheckInTicket.checkInAt,
+              ticketCode: latestCheckInTicket.code,
+              customerName: latestCheckInTicket.customer?.name || "",
+              customerAddress: latestCheckInTicket.customer?.address || "",
+            }
+          : null,
+      };
+    })
+  );
 
   return NextResponse.json(result);
 });

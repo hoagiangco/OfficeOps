@@ -70,7 +70,16 @@ export const GET = withErrors(async (req: Request) => {
         : {}),
     },
     include: {
-      customer: { select: { id: true, name: true, phone: true, address: true } },
+      customer: {
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          address: true,
+          latitude: true,
+          longitude: true,
+        },
+      },
       equipment: {
         select: {
           id: true,
@@ -80,7 +89,14 @@ export const GET = withErrors(async (req: Request) => {
           status: true,
           currentCounter: true,
           locationNote: true,
-          branch: { select: { id: true, name: true } },
+          branch: {
+            select: {
+              id: true,
+              name: true,
+              latitude: true,
+              longitude: true,
+            },
+          },
           building: { select: { id: true, name: true, branch: { select: { name: true } } } },
           department: {
             include: {

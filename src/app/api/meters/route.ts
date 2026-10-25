@@ -63,7 +63,7 @@ export const GET = withErrors(async (req: Request) => {
       },
       recordedBy: { select: { id: true, name: true, role: true } },
       approvedBy: { select: { id: true, name: true, role: true } },
-      ticket: { select: { id: true, code: true, title: true } },
+      ticket: { select: { id: true, code: true, description: true } },
       invoiceItem: {
         select: {
           id: true,

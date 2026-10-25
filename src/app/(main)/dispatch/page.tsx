@@ -10,7 +10,12 @@ import {
   TICKET_STATUS_LABELS,
   TICKET_TYPE_LABELS,
 } from "@/lib/labels";
-import { getDirectionsUrl } from "@/lib/location";
+import {
+  getDirectionsUrl,
+  calculateDistanceKm,
+  estimateCoordinatesFromAddress,
+} from "@/lib/location";
+import { DispatchMap, MapTicket, MapTechnician } from "@/components/dispatch/DispatchMap";
 
 function formatRelativeTime(dateStr: string): string {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -123,6 +128,14 @@ interface Technician {
   region: string | null;
   skills: string[];
   openTicketsCount: number;
+  lastLocation?: {
+    latitude: number;
+    longitude: number;
+    checkInAt: string;
+    ticketCode?: string;
+    customerName?: string;
+    customerAddress?: string;
+  } | null;
   assignedTickets: {
     id: string;
     code: string;
@@ -138,6 +151,7 @@ export default function DispatchPage() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [leftView, setLeftView] = useState<"map" | "table">("map");
   const [showOnlyUnassigned, setShowOnlyUnassigned] = useState(false);
   const [sortBy, setSortBy] = useState<"urgent" | "oldest" | "newest">("urgent");
   const [assigningId, setAssigningId] = useState<string | null>(null);
@@ -217,25 +231,62 @@ export default function DispatchPage() {
     [tickets, selectedTicketId]
   );
 
-  // Tính điểm gợi ý kỹ thuật viên thông minh theo Khu vực + Kỹ năng dòng máy + Tải công việc
+  // Tính điểm gợi ý kỹ thuật viên thông minh theo Khoảng cách GPS + Khu vực + Kỹ năng dòng máy + Tải công việc
   const rankedTechnicians = useMemo(() => {
     return technicians
       .map((tech) => {
         let score = 50;
         const reasons: string[] = [];
+        let distKm: number | null = null;
 
         if (selectedTicket) {
+          // 1. Khoảng cách địa lý thực tế (GPS)
+          let tLat = selectedTicket.customer.latitude;
+          let tLng = selectedTicket.customer.longitude;
+          if (!tLat || !tLng) {
+            const est = estimateCoordinatesFromAddress(selectedTicket.customer.address, selectedTicket.id);
+            tLat = est.latitude;
+            tLng = est.longitude;
+          }
+
+          let techLat = tech.lastLocation?.latitude;
+          let techLng = tech.lastLocation?.longitude;
+          if (!techLat || !techLng) {
+            const est = estimateCoordinatesFromAddress(tech.region || "Quận 1", tech.id);
+            techLat = est.latitude;
+            techLng = est.longitude;
+          }
+
+          distKm = calculateDistanceKm(tLat, tLng, techLat, techLng);
+
+          if (distKm <= 3) {
+            score += 40;
+            reasons.push(`Rất gần (${distKm} km)`);
+          } else if (distKm <= 7) {
+            score += 25;
+            reasons.push(`Gần (${distKm} km)`);
+          } else if (distKm <= 15) {
+            score += 10;
+            reasons.push(`Cách ${distKm} km`);
+          } else {
+            score -= 10;
+            reasons.push(`Khá xa (${distKm} km)`);
+          }
+
+          // 2. Tuyến phụ trách
           const addr = selectedTicket.customer.address.toLowerCase();
           if (tech.region && addr.includes(tech.region.toLowerCase())) {
-            score += 30;
+            score += 20;
             reasons.push(`Đúng tuyến (${tech.region})`);
           }
+
+          // 3. Kỹ năng chuyên môn
           const eqText = `${selectedTicket.equipment.brand || ""} ${
             selectedTicket.equipment.model
           }`.toLowerCase();
           const matchedSkill = tech.skills.find((s) => eqText.includes(s.toLowerCase()));
           if (matchedSkill) {
-            score += 25;
+            score += 20;
             reasons.push(`Chuyên môn ${matchedSkill}`);
           }
         }
@@ -246,9 +297,13 @@ export default function DispatchPage() {
           reasons.push("Đang rảnh (0 phiếu)");
         }
 
-        return { ...tech, matchScore: Math.max(10, Math.min(99, score)), reasons };
+        return { ...tech, matchScore: Math.max(10, Math.min(99, score)), reasons, distKm };
       })
-      .sort((a, b) => b.matchScore - a.matchScore);
+      .sort((a, b) => {
+        if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+        if (a.distKm != null && b.distKm != null) return a.distKm - b.distKm;
+        return 0;
+      });
   }, [technicians, selectedTicket]);
 
   const handleAssign = async (ticketId: string, techId: string, techName: string) => {
@@ -335,19 +390,53 @@ export default function DispatchPage() {
         <Loading text="Đang phân tích tải công việc & vị trí kỹ thuật viên..." />
       ) : (
         <div className="row g-3">
-          {/* Cột trái: Danh sách phiếu cần điều phối */}
+          {/* Cột trái: Bản đồ điều phối Leaflet hoặc Danh sách phiếu */}
           <div className="col-lg-7">
             <div className="card shadow-sm border h-100">
-              <div className="card-header bg-dark text-white py-2 d-flex justify-content-between align-items-center">
-                <span className="fw-bold small">
-                  <i className="fas fa-clipboard-list me-2"></i>
-                  1. Chọn phiếu điều phối ({displayedTickets.length})
-                </span>
+              <div className="card-header bg-dark text-white py-1.5 px-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div className="d-flex align-items-center gap-2">
+                  <div className="btn-group btn-group-sm">
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${
+                        leftView === "map" ? "btn-primary fw-bold" : "btn-outline-light text-white"
+                      }`}
+                      onClick={() => setLeftView("map")}
+                    >
+                      <i className="fas fa-map-marked-alt me-1"></i> Bản đồ điều phối
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${
+                        leftView === "table" ? "btn-primary fw-bold" : "btn-outline-light text-white"
+                      }`}
+                      onClick={() => setLeftView("table")}
+                    >
+                      <i className="fas fa-list me-1"></i> Danh sách ({displayedTickets.length})
+                    </button>
+                  </div>
+                </div>
                 <small className="text-white-50">
-                  Nhấp vào dòng để hệ thống gợi ý KTV tối ưu bên phải
+                  {leftView === "map"
+                    ? "Nhấp vào điểm sự cố trên bản đồ để xem gợi ý KTV gần nhất"
+                    : "Nhấp vào dòng để xem gợi ý KTV tối ưu bên phải"}
                 </small>
               </div>
-              <div className="table-responsive" style={{ maxHeight: "calc(100vh - 220px)" }}>
+
+              {leftView === "map" ? (
+                <div className="p-2">
+                  <DispatchMap
+                    tickets={displayedTickets}
+                    technicians={technicians}
+                    selectedTicketId={selectedTicketId}
+                    onSelectTicket={(id) => setSelectedTicketId(id)}
+                    onAssignTicket={(tId, techId, techName) => handleAssign(tId, techId, techName)}
+                    onViewTicketDetail={(tId) => setViewTicketId(tId)}
+                    height="calc(100vh - 240px)"
+                  />
+                </div>
+              ) : (
+                <div className="table-responsive" style={{ maxHeight: "calc(100vh - 220px)" }}>
                 <table className="table table-hover table-bordered mb-0 custom-dense-table align-middle">
                   <thead className="bg-light">
                     <tr>
@@ -504,6 +593,7 @@ export default function DispatchPage() {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           </div>
 
@@ -624,11 +714,25 @@ export default function DispatchPage() {
                                 <i className="fas fa-map-pin text-danger me-1"></i>
                                 Khu vực: <strong>{tech.region || "Đa tuyến"}</strong>
                               </span>
+                              {tech.distKm != null && (
+                                <span className="badge bg-primary-subtle text-primary border border-primary-subtle me-2" style={{ fontSize: "11px" }}>
+                                  <i className="fas fa-motorcycle me-1"></i>
+                                  Cách ~{tech.distKm} km
+                                </span>
+                              )}
                               <span>
                                 <i className="fas fa-phone me-1"></i>
                                 {tech.phone || "Chưa cập nhật"}
                               </span>
                             </div>
+                            {tech.lastLocation && (
+                              <div className="text-secondary mt-1" style={{ fontSize: "11px" }}>
+                                <i className="fas fa-map-marker-alt text-success me-1"></i>
+                                <span>Vị trí check-in: </span>
+                                <strong>{tech.lastLocation.customerName || tech.lastLocation.customerAddress || "GPS"}</strong>
+                                <span className="ms-1 text-muted">({formatRelativeTime(tech.lastLocation.checkInAt)})</span>
+                              </div>
+                            )}
                             <div className="mt-1 d-flex flex-wrap gap-1">
                               {tech.skills.map((sk) => (
                                 <span
