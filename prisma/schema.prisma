@@ -128,24 +128,64 @@ model User {
   notifications   Notification[]
   auditLogs       AuditLog[]
   meterLogs       MeterLog[]
+  userPermissions UserPermission[]
 }
 
 model Customer {
-  id        String   @id @default(cuid())
-  name      String
-  taxCode   String?
-  phone     String
-  email     String?
-  zaloId    String?
-  address   String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String             @id @default(cuid())
+  code         String?            @unique
+  name         String
+  group        String             @default("Khách thường")
+  status       String             @default("ACTIVE")
+  taxCode      String?
+  phone        String             @default("")
+  email        String?
+  zaloId       String?
+  address      String
+  latitude     Float?
+  longitude    Float?
+  managerName  String?
+  managerPhone String?
+  contactName  String?
+  contactPhone String?
+  notes        String?
+  locationConfig Json?            // Cấu hình nhãn phân cấp: { preset, level1, level2, level3 }
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
-  branches  Branch[]
-  equipment Equipment[]
-  contracts Contract[]
-  tickets   Ticket[]
-  invoices  Invoice[]
+  branches     Branch[]
+  equipment    Equipment[]
+  contracts    Contract[]
+  tickets      Ticket[]
+  invoices     Invoice[]
+  feedbacks    CustomerFeedback[]
+
+  @@index([group])
+  @@index([status])
+}
+
+model CustomerFeedback {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  content    String
+  authorName String?
+  createdAt  DateTime @default(now())
+
+  @@index([customerId])
+}
+
+model CustomerGroup {
+  id          String   @id @default(cuid())
+  code        String?  @unique
+  name        String   @unique
+  description String?
+  color       String?  @default("#2563eb")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([sortOrder])
 }
 
 // Chi nhánh -> Tòa nhà -> Phòng ban (vị trí lắp đặt có cấu trúc)
@@ -158,6 +198,7 @@ model Branch {
   latitude   Float?
   longitude  Float?
   buildings  Building[]
+  equipment  Equipment[]
 }
 
 model Building {
@@ -166,6 +207,7 @@ model Building {
   branch      Branch       @relation(fields: [branchId], references: [id])
   name        String
   departments Department[]
+  equipment   Equipment[]
 }
 
 model Department {
@@ -177,6 +219,68 @@ model Department {
 }
 
 // ============ CONTRACT & EQUIPMENT ============
+model EquipmentCategory {
+  id          String              @id @default(cuid())
+  code        String?             @unique
+  name        String
+  description String?
+  parentId    String?
+  parent      EquipmentCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children    EquipmentCategory[] @relation("CategoryHierarchy")
+  equipment   Equipment[]
+  sortOrder   Int                 @default(0)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([parentId])
+}
+
+model EquipmentBrand {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model EquipmentType {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model EquipmentGroup {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Warehouse {
+  id           String      @id @default(cuid())
+  code         String?     @unique // Mã kho (VD: KHO-TONG, KHO-KT, KHO-HN)
+  name         String      @unique // Tên kho (VD: Kho Tổng TP.HCM, Kho Kỹ thuật...)
+  address      String?     // Địa chỉ thực tế
+  managerName  String?     // Thủ kho / Người phụ trách
+  managerPhone String?     // Số điện thoại liên hệ
+  isDefault    Boolean     @default(false) // Đánh dấu kho mặc định
+  isActive     Boolean     @default(true)
+  notes        String?
+  sortOrder    Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  equipment    Equipment[]
+
+  @@index([isActive])
+}
+
 model Contract {
   id                      String   @id @default(cuid())
   code                    String   @unique
@@ -199,29 +303,43 @@ model Contract {
 }
 
 model Equipment {
-  id             String          @id @default(cuid())
-  serialNumber   String          @unique
-  qrCode         String          @unique @default(cuid()) // Mã QR/Barcode duy nhất
+  id             String             @id @default(cuid())
+  code           String?            @unique // Mã quản lý thiết bị (VD: TB-2026-0001)
+  serialNumber   String             @unique
+  qrCode         String             @unique @default(cuid()) // Mã QR/Barcode duy nhất
   model          String
-  brand          String?
+  brand          String? // Hãng sản xuất (Ricoh, Canon, Toshiba, Xerox, HP...)
+  type           String             @default("Máy Photocopy") // Loại thiết bị (Máy Photocopy, Máy in, Máy Scan...)
+  group          String             @default("Máy văn phòng") // Nhóm thiết bị (Máy văn phòng, Máy tốc độ cao, Máy màu...)
+  relationType   String             @default("Cho thuê") // Quan hệ với KH: Cho thuê, Bảo trì định kỳ, Sửa chữa dịch vụ, Bảo hành máy bán, hoặc tùy chỉnh
+  categoryId     String?
+  category       EquipmentCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  warehouseId    String?
+  warehouse      Warehouse?         @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   specs          Json? // Cấu hình, thông số kỹ thuật
   customerId     String?
-  customer       Customer?       @relation(fields: [customerId], references: [id])
+  customer       Customer?          @relation(fields: [customerId], references: [id])
   contractId     String?
-  contract       Contract?       @relation(fields: [contractId], references: [id])
+  contract       Contract?          @relation(fields: [contractId], references: [id])
+  branchId       String?
+  branch         Branch?            @relation(fields: [branchId], references: [id])
+  buildingId     String?
+  building       Building?          @relation(fields: [buildingId], references: [id])
   departmentId   String?
-  department     Department?     @relation(fields: [departmentId], references: [id])
+  department     Department?        @relation(fields: [departmentId], references: [id])
   locationNote   String? // Ghi chú vị trí chi tiết
-  status         EquipmentStatus @default(IN_STOCK)
-  healthScore    Int             @default(100)
-  currentCounter Int             @default(0)
+  notes          String? // Ghi chú kỹ thuật / dịch vụ
+  status         EquipmentStatus    @default(IN_STOCK)
+  healthScore    Int                @default(100)
+  currentCounter Int                @default(0)
   baseQuota      Int? // Định mức riêng của máy (bản/tháng); null = chưa cấu hình
-  overagePrice   Decimal?        @db.Decimal(14, 4) // Đơn giá vượt riêng của máy; null = dùng đơn giá hợp đồng
+  overagePrice   Decimal?           @db.Decimal(14, 4) // Đơn giá vượt riêng của máy; null = dùng đơn giá hợp đồng
   importedAt     DateTime? // Ngày nhập kho
   installedAt    DateTime?
+  warrantyUntil  DateTime? // Hạn bảo hành / bảo trì
   scrappedAt     DateTime?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   tickets       Ticket[]
   meterLogs     MeterLog[]
@@ -230,7 +348,16 @@ model Equipment {
   statusHistory EquipmentStatusHistory[]
 
   @@index([customerId])
+  @@index([categoryId])
+  @@index([brand])
+  @@index([type])
+  @@index([group])
+  @@index([relationType])
   @@index([status])
+  @@index([warehouseId])
+  @@index([branchId])
+  @@index([buildingId])
+  @@index([departmentId])
 }
 
 model EquipmentStatusHistory {
@@ -480,3 +607,58 @@ model AuditLog {
   meta      Json?
   createdAt DateTime @default(now())
 }
+
+model RolePermission {
+  id         String   @id @default(cuid())
+  role       Role
+  permission String
+  granted    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([role, permission])
+  @@index([role])
+}
+
+model UserPermission {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission String
+  granted    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, permission])
+  @@index([userId])
+}
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ipAddress String?
+  success   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ipAddress, createdAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  email     String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([email])
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+

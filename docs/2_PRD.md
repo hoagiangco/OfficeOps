@@ -41,7 +41,7 @@ Hệ thống Quản lý Máy văn phòng được xây dựng nhằm tối ưu h
 1. **Giám đốc (Super Admin):** Quản trị toàn bộ hệ thống, xem báo cáo doanh thu, chi phí, lợi nhuận và phê duyệt chính sách.
 2. **Kế toán (Admin):** Quản lý tài chính, hợp đồng, số liệu thanh toán, duyệt xuất kho bán hàng/thay thế và theo dõi công nợ.
 3. **Điều phối viên / Thủ kho (Dispatcher / Warehouse):** Quản lý tồn kho thực tế, tiếp nhận yêu cầu sự cố, điều phối kỹ thuật viên và duyệt phiếu xuất kho kỹ thuật.
-4. **Kỹ thuật viên (Field Tech):** Tiếp nhận nhiệm vụ được giao, thực hiện xử lý tại hiện trường, lập đề xuất linh kiện và cập nhật trạng thái phiếu.
+4. **Kỹ thuật viên (Field Tech):** Tiếp nhận nhiệm vụ được giao, thực hiện xử lý sự cố thiết bị tại nơi lắp đặt, lập đề xuất linh kiện và cập nhật trạng thái phiếu.
 
 ### 3.2 Ma trận Phân quyền Chức năng
 | Chức năng / Hành động | Giám đốc | Kế toán | Điều phối / Thủ kho | Kỹ thuật viên |
@@ -109,7 +109,7 @@ Mã hóa mật khẩu bcrypt, HTTPS, validate đầu vào (zod), phân trang & i
 | Quản lý user & phân quyền | Toàn quyền | Không | Không | Không |
 | CRUD khách hàng | Có | Có | Xem + sửa liên hệ | Xem khách của ticket mình |
 | CRUD hợp đồng | Có | Có | Xem | Không |
-| CRUD thiết bị | Có | Xem | Có | Xem thiết bị trong ticket |
+| CRUD thiết bị | Có | Có | Có | Xem thiết bị trong ticket |
 | Giao việc / điều phối | Có | Không | Chính | Không |
 | Đề xuất linh kiện | – | – | Có | Có |
 | Duyệt xuất kho kỹ thuật | Có | Có | Chính | Không |

@@ -473,7 +473,7 @@ async function main() {
                 userId: seededUsers.FIELD_TECH.id,
                 fromStatus: "ASSIGNED",
                 toStatus: "IN_PROGRESS",
-                note: "KTV đã Check-in GPS tại hiện trường",
+                note: "KTV đã Check-in GPS",
               },
             ],
           },
@@ -497,10 +497,313 @@ async function main() {
           userId: null,
           channel: "IN_APP",
           title: "Phiếu sự cố khẩn cấp TK-2026-0001 tại Hội sở ACB",
-          body: "Máy Canon DX 4745i báo lỗi cụm sấy, KTV Phạm Minh đã Check-in GPS tại hiện trường.",
+          body: "Máy Canon DX 4745i báo lỗi cụm sấy, KTV Phạm Minh đã Check-in GPS.",
           sentAt: new Date(),
         },
       ],
+    });
+  }
+
+  // Seed Danh mục thiết bị đa cấp (3 cấp)
+  const catRootPrint = await prisma.equipmentCategory.upsert({
+    where: { code: "DM-IN-AN" },
+    update: {},
+    create: {
+      code: "DM-IN-AN",
+      name: "Thiết bị In ấn & Sao chụp",
+      description: "Danh mục gốc cho máy photocopy và máy in văn phòng",
+      sortOrder: 1,
+    },
+  });
+
+  const catRootDigitize = await prisma.equipmentCategory.upsert({
+    where: { code: "DM-SO-HOA" },
+    update: {},
+    create: {
+      code: "DM-SO-HOA",
+      name: "Thiết bị Số hóa & Văn phòng",
+      description: "Máy scan tài liệu, máy hủy giấy và thiết bị phụ trợ",
+      sortOrder: 2,
+    },
+  });
+
+  const catCopier = await prisma.equipmentCategory.upsert({
+    where: { code: "DM-PHOTOCOPY" },
+    update: { parentId: catRootPrint.id },
+    create: {
+      code: "DM-PHOTOCOPY",
+      name: "Máy Photocopy",
+      description: "Máy photocopy đa chức năng A3/A4",
+      parentId: catRootPrint.id,
+      sortOrder: 1,
+    },
+  });
+
+  const catPrinter = await prisma.equipmentCategory.upsert({
+    where: { code: "DM-MAY-IN" },
+    update: { parentId: catRootPrint.id },
+    create: {
+      code: "DM-MAY-IN",
+      name: "Máy In Văn Phòng",
+      description: "Máy in laser đen trắng, máy in màu",
+      parentId: catRootPrint.id,
+      sortOrder: 2,
+    },
+  });
+
+  const catScanner = await prisma.equipmentCategory.upsert({
+    where: { code: "DM-MAY-SCAN" },
+    update: { parentId: catRootDigitize.id },
+    create: {
+      code: "DM-MAY-SCAN",
+      name: "Máy Scan Chuyên Dụng",
+      description: "Máy scan tài liệu tốc độ cao",
+      parentId: catRootDigitize.id,
+      sortOrder: 1,
+    },
+  });
+
+  const catCopierBW = await prisma.equipmentCategory.upsert({
+    where: { code: "DM-PHOTO-BW" },
+    update: { parentId: catCopier.id },
+    create: {
+      code: "DM-PHOTO-BW",
+      name: "Photocopy Đen Trắng Tốc Độ Cao",
+      description: "Dòng máy trắng đen công suất lớn 45-90 trang/phút",
+      parentId: catCopier.id,
+      sortOrder: 1,
+    },
+  });
+
+  const catCopierColor = await prisma.equipmentCategory.upsert({
+    where: { code: "DM-PHOTO-COLOR" },
+    update: { parentId: catCopier.id },
+    create: {
+      code: "DM-PHOTO-COLOR",
+      name: "Photocopy Màu Đa Chức Năng",
+      description: "Dòng máy photocopy màu độ phân giải cao",
+      parentId: catCopier.id,
+      sortOrder: 2,
+    },
+  });
+
+  const catLaserBW = await prisma.equipmentCategory.upsert({
+    where: { code: "DM-LASER-BW" },
+    update: { parentId: catPrinter.id },
+    create: {
+      code: "DM-LASER-BW",
+      name: "Máy In Laser Đen Trắng",
+      description: "Máy in để bàn A4 tốc độ ổn định",
+      parentId: catPrinter.id,
+      sortOrder: 1,
+    },
+  });
+
+  // Cập nhật danh mục & thông tin mở rộng cho các thiết bị hiện có
+  const allEquip = await prisma.equipment.findMany();
+  for (let i = 0; i < allEquip.length; i++) {
+    const eq = allEquip[i];
+    if (!eq.categoryId || !eq.code) {
+      const isColor = eq.model.toLowerCase().includes("c") || eq.model.toLowerCase().includes("color");
+      await prisma.equipment.update({
+        where: { id: eq.id },
+        data: {
+          code: eq.code || `TB2026000${i + 1}`,
+          categoryId: eq.categoryId || (isColor ? catCopierColor.id : catCopierBW.id),
+          type: eq.type || "Máy Photocopy",
+          group: i === 0 ? "Máy tốc độ cao" : "Máy văn phòng",
+          relationType: eq.relationType || "Cho thuê",
+        },
+      });
+    }
+  }
+
+  // Thêm các thiết bị mẫu đa dạng về Hãng, Nhóm, Loại và Quan hệ (Bảo trì định kỳ, Sửa chữa dịch vụ, Trong kho)
+  const firstCustomer = await prisma.customer.findFirst();
+  const sampleServiceEquip = [
+    {
+      code: "TB20260101",
+      serialNumber: "XR-C8155-7712",
+      qrCode: "QR-XR-C8155-7712",
+      model: "Xerox AltaLink C8155",
+      brand: "Xerox",
+      type: "Máy đa chức năng (MFP)",
+      group: "Máy màu chuyên dụng",
+      relationType: "Bảo trì định kỳ",
+      categoryId: catCopierColor.id,
+      customerId: firstCustomer?.id ?? null,
+      status: "ACTIVE" as const,
+      healthScore: 92,
+      currentCounter: 64200,
+      locationNote: "Phòng Thiết kế & Marketing",
+      notes: "Máy thuộc sở hữu khách hàng, ký gói bảo trì định kỳ hàng tháng",
+      warrantyUntil: new Date("2027-06-30"),
+    },
+    {
+      code: "TB20260102",
+      serialNumber: "HP-M404DN-5520",
+      qrCode: "QR-HP-M404DN-5520",
+      model: "HP LaserJet Pro M404dn",
+      brand: "HP",
+      type: "Máy in Laser",
+      group: "Máy nhỏ gọn (Desktop)",
+      relationType: "Sửa chữa dịch vụ",
+      categoryId: catLaserBW.id,
+      customerId: firstCustomer?.id ?? null,
+      status: "WAITING_PARTS" as const,
+      healthScore: 68,
+      currentCounter: 15800,
+      locationNote: "Quầy Giao dịch Tầng Trệt",
+      notes: "Máy của khách gửi sửa chữa cụm sấy & nạp mực",
+    },
+    {
+      code: "TB20260103",
+      serialNumber: "RC-IM5000-9988",
+      qrCode: "QR-RC-IM5000-9988",
+      model: "Ricoh IM 5000",
+      brand: "Ricoh",
+      type: "Máy Photocopy",
+      group: "Máy tốc độ cao",
+      relationType: "Cho thuê",
+      categoryId: catCopierBW.id,
+      customerId: null,
+      status: "IN_STOCK" as const,
+      healthScore: 100,
+      currentCounter: 5200,
+      locationNote: "Kho Tổng - Khu A2",
+      notes: "Máy sẵn sàng xuất cho thuê hợp đồng mới",
+    },
+    {
+      code: "TB20260104",
+      serialNumber: "BR-ADS3100-4410",
+      qrCode: "QR-BR-ADS3100-4410",
+      model: "Brother ADS-3100 High-Speed Scanner",
+      brand: "Brother",
+      type: "Máy Scan",
+      group: "Máy văn phòng",
+      relationType: "Bảo hành máy bán",
+      categoryId: catScanner.id,
+      customerId: firstCustomer?.id ?? null,
+      status: "ACTIVE" as const,
+      healthScore: 98,
+      currentCounter: 8400,
+      locationNote: "Phòng Lưu trữ Hồ sơ",
+      notes: "Máy bán đứt cho khách, bảo hành chính hãng 12 tháng",
+      warrantyUntil: new Date("2027-03-15"),
+    },
+  ];
+
+  for (const item of sampleServiceEquip) {
+    await prisma.equipment.upsert({
+      where: { serialNumber: item.serialNumber },
+      update: {
+        categoryId: item.categoryId,
+        type: item.type,
+        group: item.group,
+        relationType: item.relationType,
+      },
+      create: item,
+    });
+  }
+
+  // Seed Loại thiết bị mẫu
+  const defaultTypes = [
+    { name: "Máy Photocopy", description: "Máy photocopy đa chức năng A3/A4", sortOrder: 1 },
+    { name: "Máy in Laser", description: "Máy in laser đen trắng để bàn hoặc mạng", sortOrder: 2 },
+    { name: "Máy in màu", description: "Máy in laser màu / in phun màu chất lượng cao", sortOrder: 3 },
+    { name: "Máy Scan", description: "Máy quét tài liệu tốc độ cao, quét 2 mặt tự động", sortOrder: 4 },
+    { name: "Máy đa chức năng (MFP)", description: "Thiết bị tích hợp In, Scan, Copy, Fax", sortOrder: 5 },
+    { name: "Máy hủy tài liệu", description: "Máy hủy giấy bảo mật cấp văn phòng", sortOrder: 6 },
+    { name: "Thiết bị phụ trợ", description: "Khay nạp tự động, khay giấy phụ, finisher", sortOrder: 7 },
+  ];
+  for (const t of defaultTypes) {
+    await prisma.equipmentType.upsert({
+      where: { name: t.name },
+      update: { description: t.description, sortOrder: t.sortOrder },
+      create: t,
+    });
+  }
+
+  // Seed Nhóm thiết bị mẫu
+  const defaultGroups = [
+    { name: "Máy văn phòng", description: "Dành cho văn phòng tiêu chuẩn quy mô vừa & nhỏ", sortOrder: 1 },
+    { name: "Máy tốc độ cao", description: "Công suất lớn từ 45 trang/phút trở lên", sortOrder: 2 },
+    { name: "Máy công nghiệp", description: "Dành cho xưởng in hoặc trung tâm tài liệu", sortOrder: 3 },
+    { name: "Máy màu chuyên dụng", description: "In đồ họa, thiết kế, bản vẽ kiến trúc", sortOrder: 4 },
+    { name: "Máy nhỏ gọn (Desktop)", description: "Đặt bàn làm việc cá nhân hoặc quầy giao dịch", sortOrder: 5 },
+    { name: "Máy dự phòng kho", description: "Máy sẵn sàng thay thế khẩn cấp khi máy khách gặp sự cố", sortOrder: 6 },
+  ];
+  for (const g of defaultGroups) {
+    await prisma.equipmentGroup.upsert({
+      where: { name: g.name },
+      update: { description: g.description, sortOrder: g.sortOrder },
+      create: g,
+    });
+  }
+
+  // Seed Kho bãi công ty mẫu
+  const defaultWarehouses = [
+    {
+      code: "KHO-TONG",
+      name: "Kho Tổng TP.HCM",
+      address: "123 Nguyễn Văn Cừ, Quận 5, TP.HCM",
+      managerName: "Lê Hoàng Điều Phối",
+      managerPhone: "0901000003",
+      isDefault: true,
+      notes: "Kho trung tâm lưu trữ máy nhập khẩu & máy sẵn sàng bàn giao",
+      sortOrder: 1,
+    },
+    {
+      code: "KHO-KT",
+      name: "Kho Kỹ Thuật & Sửa Chữa",
+      address: "456 Hoàng Diệu, Quận 4, TP.HCM",
+      managerName: "Phạm Minh Kỹ Thuật",
+      managerPhone: "0901000004",
+      isDefault: false,
+      notes: "Kho chuyên lưu trữ máy thu hồi cần đại tu, kiểm tra, thay linh kiện",
+      sortOrder: 2,
+    },
+    {
+      code: "KHO-HN",
+      name: "Kho Chi Nhánh Hà Nội",
+      address: "789 Giải Phóng, Quận Hai Bà Trưng, Hà Nội",
+      managerName: "Nguyễn Văn Đại Diện",
+      managerPhone: "0901000008",
+      isDefault: false,
+      notes: "Kho trung chuyển khu vực miền Bắc",
+      sortOrder: 3,
+    },
+  ];
+
+  let mainWarehouseId = "";
+  for (const wh of defaultWarehouses) {
+    const upserted = await prisma.warehouse.upsert({
+      where: { name: wh.name },
+      update: {
+        code: wh.code,
+        address: wh.address,
+        managerName: wh.managerName,
+        managerPhone: wh.managerPhone,
+        isDefault: wh.isDefault,
+        notes: wh.notes,
+        sortOrder: wh.sortOrder,
+      },
+      create: wh,
+    });
+    if (wh.isDefault) mainWarehouseId = upserted.id;
+  }
+
+  // Gán tất cả thiết bị chưa thuộc khách hàng nào về Kho Tổng TP.HCM
+  if (mainWarehouseId) {
+    await prisma.equipment.updateMany({
+      where: {
+        customerId: null,
+        warehouseId: null,
+      },
+      data: {
+        warehouseId: mainWarehouseId,
+        locationNote: "Khu vực máy sẵn sàng - Kệ A1",
+      },
     });
   }
 
