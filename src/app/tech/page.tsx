@@ -18,6 +18,7 @@ import { getDirectionsUrl } from "@/lib/location";
 import { ChangePasswordModal } from "@/components/ChangePasswordModal";
 import { OfflineSyncManager } from "@/components/tech/OfflineSyncManager";
 import { enqueueAction } from "@/lib/offlineQueue";
+import { MeterOcrModal } from "@/components/ocr/MeterOcrModal";
 
 interface TechTicketAttachment {
   id: string;
@@ -143,6 +144,7 @@ export default function TechMobilePage() {
   // Form xử lý ticket
   const [diagnosis, setDiagnosis] = useState("");
   const [newCounter, setNewCounter] = useState<number | "">("");
+  const [meterSource, setMeterSource] = useState<"TECH" | "OCR">("TECH");
   const [adjustmentReason, setAdjustmentReason] = useState("");
   const [signature, setSignature] = useState<string | null>(null);
   const [closingNote, setClosingNote] = useState("");
@@ -150,6 +152,8 @@ export default function TechMobilePage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [showTechMediaPicker, setShowTechMediaPicker] = useState(false);
   const [techMediaKind, setTechMediaKind] = useState<"PHOTO" | "COUNTER_PHOTO">("PHOTO");
+  const [showOcrModal, setShowOcrModal] = useState(false);
+  const [ocrTargetImage, setOcrTargetImage] = useState<string | null>(null);
 
   // Đề xuất linh kiện
   const [parts, setParts] = useState<PartItem[]>([]);
@@ -283,6 +287,7 @@ export default function TechMobilePage() {
     setSelectedTicket(t);
     setDiagnosis(t.diagnosis || "");
     setNewCounter(t.equipment.currentCounter);
+    setMeterSource("TECH");
     setSignature(t.customerSignature || null);
     setClosingNote("");
     setAdjustmentReason("");
@@ -487,6 +492,7 @@ export default function TechMobilePage() {
     const payload = {
       action: "COMPLETE",
       counterAtClose: Number(newCounter),
+      meterSource: meterSource,
       customerSignature: signature || undefined,
       diagnosis: diagnosis || undefined,
       note: closingNote || undefined,
@@ -1854,19 +1860,45 @@ export default function TechMobilePage() {
                   </div>
 
                   <div>
-                    <label className="form-label small fw-bold text-dark">
-                      Chỉ số Counter chốt sau khi xử lý (*):
-                    </label>
-                    <input
-                      type="number"
-                      className="form-control form-control-sm font-monospace fw-bold fs-6"
-                      value={newCounter}
-                      disabled={isSelectedLocked}
-                      onChange={(e) =>
-                        setNewCounter(e.target.value === "" ? "" : Number(e.target.value))
-                      }
-                      placeholder="Nhập số counter mới..."
-                    />
+                    <div className="d-flex justify-content-between align-items-center mb-1">
+                      <label className="form-label small fw-bold text-dark mb-0">
+                        Chỉ số Counter chốt sau khi xử lý (*):
+                      </label>
+                      {meterSource === "OCR" && (
+                        <span className="badge bg-success-subtle text-success border border-success-subtle" style={{ fontSize: "11px" }}>
+                          <i className="fas fa-magic me-1"></i>Nguồn: AI OCR
+                        </span>
+                      )}
+                    </div>
+                    <div className="input-group input-group-sm">
+                      <input
+                        type="number"
+                        className="form-control form-control-sm font-monospace fw-bold fs-6"
+                        value={newCounter}
+                        disabled={isSelectedLocked}
+                        onChange={(e) => {
+                          setNewCounter(e.target.value === "" ? "" : Number(e.target.value));
+                          setMeterSource("TECH");
+                        }}
+                        placeholder="Nhập số counter mới..."
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-warning text-dark fw-bold d-inline-flex align-items-center gap-1"
+                        disabled={isSelectedLocked}
+                        onClick={() => {
+                          const latestCounterPhoto = selectedTicket.attachments?.filter(
+                            (a) => a.kind === "COUNTER_PHOTO"
+                          ).pop();
+                          setOcrTargetImage(latestCounterPhoto?.url || null);
+                          setShowOcrModal(true);
+                        }}
+                        title="Quét số tự động qua AI OCR từ ảnh đồng hồ"
+                      >
+                        <i className="fas fa-magic"></i>
+                        <span>Quét OCR</span>
+                      </button>
+                    </div>
                     {newCounter !== "" &&
                     selectedTicket.equipment?.currentCounter != null &&
                     Number(newCounter) < selectedTicket.equipment.currentCounter ? (
@@ -1941,18 +1973,45 @@ export default function TechMobilePage() {
                     {selectedTicket.attachments && selectedTicket.attachments.filter(a => a.kind === "COUNTER_PHOTO").length > 0 ? (
                       <div className="d-flex gap-2 overflow-auto py-1">
                         {selectedTicket.attachments.filter(a => a.kind === "COUNTER_PHOTO").map((att) => (
-                          <div key={att.id} className="position-relative flex-shrink-0" style={{ width: "90px", height: "90px" }}>
+                          <div key={att.id} className="position-relative flex-shrink-0" style={{ width: "95px", height: "95px" }}>
                             <img
                               src={att.url}
                               alt="Counter"
                               className="w-100 h-100 object-fit-cover rounded border border-warning"
                             />
+                            {!isSelectedLocked && (
+                              <button
+                                type="button"
+                                className="btn btn-warning btn-xs position-absolute bottom-0 start-0 end-0 py-0 text-center fw-bold text-dark border-0 rounded-bottom opacity-95 shadow-xs"
+                                style={{ fontSize: "10px", height: "20px" }}
+                                title="Quét số từ ảnh này qua AI OCR"
+                                onClick={() => {
+                                  setOcrTargetImage(att.url);
+                                  setShowOcrModal(true);
+                                }}
+                              >
+                                <i className="fas fa-magic me-0.5"></i>Quét OCR
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="text-muted text-center py-1.5" style={{ fontSize: "11px" }}>
-                        Chụp ảnh màn hình hiển thị Counter để đối chiếu chính xác.
+                      <div className="text-muted text-center py-2" style={{ fontSize: "11px" }}>
+                        <span>Chụp hoặc tải ảnh màn hình Counter để đối chiếu và quét số tự động.</span>
+                        <div className="mt-1">
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-outline-warning text-dark fw-semibold"
+                            style={{ fontSize: "11px" }}
+                            onClick={() => {
+                              setOcrTargetImage(null);
+                              setShowOcrModal(true);
+                            }}
+                          >
+                            <i className="fas fa-magic me-1"></i>Mở máy quét AI OCR
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2367,6 +2426,28 @@ export default function TechMobilePage() {
             ? "Thư viện Media — Chọn ảnh thiết bị máy hỏng"
             : "Thư viện Media — Chọn ảnh chỉ số Counter"
         }
+      />
+
+      {/* Modal AI OCR Quét số Counter */}
+      <MeterOcrModal
+        isOpen={showOcrModal}
+        onClose={() => setShowOcrModal(false)}
+        imageSrc={ocrTargetImage}
+        previousCounter={selectedTicket?.equipment?.currentCounter ?? null}
+        equipmentModel={
+          selectedTicket
+            ? `${selectedTicket.equipment.brand || ""} ${selectedTicket.equipment.model}`.trim()
+            : null
+        }
+        onApplyCounter={(val, _src, details) => {
+          setNewCounter(val);
+          setMeterSource("OCR");
+          toast.success(
+            `Đã nhận diện thành công: ${val.toLocaleString("vi-VN")}${
+              details?.candidateLabel ? ` (${details.candidateLabel})` : ""
+            }`
+          );
+        }}
       />
 
       {/* Quản lý Hàng đợi Đồng bộ Ngoại tuyến */}

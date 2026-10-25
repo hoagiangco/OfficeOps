@@ -28,6 +28,7 @@ const patchSchema = z.object({
   checkInLat: z.number().optional().nullable(),
   checkInLng: z.number().optional().nullable(),
   counterAtClose: z.number().int().min(0).optional().nullable(),
+  meterSource: z.enum(["MANUAL", "OCR", "TECH"]).optional(),
   customerSignature: z.string().optional().nullable(),
   adjustmentReason: z.string().optional().nullable(),
   photoUrl: z.string().optional().nullable(),
@@ -354,7 +355,7 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
             ticketId: existing.id,
             recordedById: session.userId,
             counterValue: data.counterAtClose,
-            source: "TECH",
+            source: data.meterSource || "TECH",
             photoUrl: counterPhotoUrl,
             status: isLowerCounter ? "PENDING_APPROVAL" : "APPROVED",
             adjustmentReason: isLowerCounter ? data.adjustmentReason?.trim() || null : null,
@@ -525,7 +526,7 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
           ticketId: existing.id,
           recordedById: session.userId,
           counterValue: data.counterAtClose,
-          source: (session.role === "SUPER_ADMIN" ? "MANUAL" : "TECH") as MeterSource,
+          source: (data.meterSource || (session.role === "SUPER_ADMIN" ? "MANUAL" : "TECH")) as MeterSource,
         },
       });
     }

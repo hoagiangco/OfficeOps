@@ -6,6 +6,7 @@ import { ModalShell } from "@/components/ModalShell";
 import { Loading } from "@/components/Loading";
 import { METER_SOURCE_LABELS } from "@/lib/labels";
 import { exportToCsv } from "@/lib/csv";
+import { MeterOcrModal } from "@/components/ocr/MeterOcrModal";
 
 interface MeterLogItem {
   id: string;
@@ -45,6 +46,7 @@ interface EquipmentOption {
   id: string;
   serialNumber: string;
   model: string;
+  brand?: string | null;
   currentCounter: number;
   customer?: { id: string; name: string } | null;
 }
@@ -62,16 +64,23 @@ export default function MeterManagementPage() {
 
   // Modal 1: Ghi nhận counter mới
   const [showAddModal, setShowAddModal] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    equipmentId: string;
+    counterValue: string;
+    source: "MANUAL" | "OCR" | "TECH" | "CUSTOMER";
+    photoUrl: string;
+    adjustmentReason: string;
+  }>({
     equipmentId: "",
     counterValue: "",
-    source: "MANUAL" as const,
+    source: "MANUAL",
     photoUrl: "",
     adjustmentReason: "",
   });
 
   // Modal 2: Phóng to ảnh minh chứng counter
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+  const [showOcrModal, setShowOcrModal] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -641,9 +650,20 @@ export default function MeterManagementPage() {
 
           <div className="row g-3 mb-3">
             <div className="col-md-6">
-              <label className="form-label small fw-bold">
-                Chỉ số Counter mới <span className="text-danger">*</span>
-              </label>
+              <div className="d-flex justify-content-between align-items-center mb-1">
+                <label className="form-label small fw-bold mb-0">
+                  Chỉ số Counter mới <span className="text-danger">*</span>
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-xs btn-outline-warning text-dark fw-bold py-0 px-2 shadow-2xs"
+                  style={{ fontSize: "11px" }}
+                  onClick={() => setShowOcrModal(true)}
+                  title="Tải ảnh hoặc quét số tự động từ ảnh qua AI OCR"
+                >
+                  <i className="fas fa-magic text-warning me-1"></i>Quét OCR
+                </button>
+              </div>
               <input
                 type="number"
                 className="form-control form-control-sm font-monospace fw-bold"
@@ -770,6 +790,31 @@ export default function MeterManagementPage() {
           </div>
         </div>
       )}
+
+      {/* Modal AI OCR Quét số Counter */}
+      <MeterOcrModal
+        isOpen={showOcrModal}
+        onClose={() => setShowOcrModal(false)}
+        imageSrc={form.photoUrl || null}
+        previousCounter={selectedEquipment?.currentCounter ?? null}
+        equipmentModel={
+          selectedEquipment
+            ? `${selectedEquipment.brand || ""} ${selectedEquipment.model}`.trim()
+            : null
+        }
+        onApplyCounter={(val, _src, details) => {
+          setForm((prev) => ({
+            ...prev,
+            counterValue: String(val),
+            source: "OCR",
+          }));
+          toast.success(
+            `Đã nhận diện thành công: ${val.toLocaleString("vi-VN")}${
+              details?.candidateLabel ? ` (${details.candidateLabel})` : ""
+            }`
+          );
+        }}
+      />
     </div>
   );
 }
