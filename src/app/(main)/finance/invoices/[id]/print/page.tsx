@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, use } from "react";
 import Link from "next/link";
+import { toast } from "react-toastify";
 import { INVOICE_STATUS_LABELS } from "@/lib/labels";
+import { exportElementToPdf } from "@/lib/pdfExport";
 
 interface InvoicePrintData {
   id: string;
@@ -106,6 +108,7 @@ function InvoicePrintContent({
 
   const [invoice, setInvoice] = useState<InvoicePrintData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -165,9 +168,28 @@ function InvoicePrintContent({
               onClick={() => window.print()}
             >
               <i className="fas fa-print"></i>
-              <span>In Bảng Kê / Xuất PDF (Ctrl + P)</span>
+              <span>In Bảng Kê (Ctrl + P)</span>
             </button>
-            <span className="text-muted small ms-2">
+            <button
+              type="button"
+              className="btn btn-success fw-bold d-flex align-items-center gap-2 shadow-sm text-white"
+              disabled={downloadingPdf}
+              onClick={async () => {
+                setDownloadingPdf(true);
+                try {
+                  await exportElementToPdf("invoice-print-content", `Hoa_don_${invoice.code}.pdf`);
+                  toast.success("Tải file PDF thành công!");
+                } catch {
+                  toast.error("Không thể tạo file PDF");
+                } finally {
+                  setDownloadingPdf(false);
+                }
+              }}
+            >
+              <i className={`fas ${downloadingPdf ? "fa-spinner fa-spin" : "fa-file-pdf"}`}></i>
+              <span>{downloadingPdf ? "Đang tạo PDF..." : "Tải file PDF"}</span>
+            </button>
+            <span className="text-muted small ms-2 d-none d-md-inline">
               Khổ in: <strong>A4</strong>, Tỷ lệ: <strong>Mặc định (100%)</strong>
             </span>
           </div>
@@ -182,7 +204,7 @@ function InvoicePrintContent({
       </div>
 
       {/* TỜ IN BẢNG KÊ QUYẾT TOÁN CƯỚC KHỔ A4 */}
-      <div className="a4-document-container mx-auto bg-white p-5 shadow rounded border">
+      <div id="invoice-print-content" className="a4-document-container mx-auto bg-white p-5 shadow rounded border">
         {/* Header Đơn vị cho thuê */}
         <div className="row border-bottom pb-3 mb-4 align-items-start">
           <div className="col-8">

@@ -15,6 +15,7 @@ export const GET = withErrors(async () => {
     batches,
     parts,
     technicians,
+    partReplacements,
   ] = await Promise.all([
     prisma.invoice.findMany({
       include: {
@@ -50,6 +51,11 @@ export const GET = withErrors(async () => {
         assignedTickets: {
           select: { id: true, status: true, slaDueAt: true, resolvedAt: true },
         },
+      },
+    }),
+    prisma.partReplacement.findMany({
+      include: {
+        part: { select: { id: true, partCode: true, name: true, unit: true } },
       },
     }),
   ]);
@@ -123,6 +129,81 @@ export const GET = withErrors(async () => {
     };
   });
 
+  // ========== DỮ LIỆU BIỂU ĐỒ (CHARTS DATA) ==========
+
+  // 1. Biểu đồ doanh thu 6 tháng gần nhất
+  const now = new Date();
+  const monthlyRevenueChart: Array<{ month: string; paid: number; total: number }> = [];
+
+  for (let offset = 5; offset >= 0; offset--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    const monthKey = `T${d.getMonth() + 1}/${d.getFullYear()}`;
+    const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+    const endOfMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const invoicesInMonth = invoices.filter((inv) => {
+      const invDate = new Date(inv.createdAt);
+      return invDate >= startOfMonth && invDate <= endOfMonth;
+    });
+
+    const paidInMonth = invoicesInMonth
+      .filter((i) => i.status === "PAID")
+      .reduce((sum, i) => sum + Number(i.total), 0);
+
+    const totalInMonth = invoicesInMonth
+      .filter((i) => i.status !== "CANCELLED")
+      .reduce((sum, i) => sum + Number(i.total), 0);
+
+    monthlyRevenueChart.push({
+      month: monthKey,
+      paid: paidInMonth,
+      total: totalInMonth,
+    });
+  }
+
+  // 2. Biểu đồ phân bổ Ticket theo trạng thái
+  const ticketStatusMap: Record<string, { label: string; count: number; color: string }> = {
+    PENDING: { label: "Chờ tiếp nhận", count: 0, color: "#f59e0b" },
+    ASSIGNED: { label: "Đã phân công", count: 0, color: "#3b82f6" },
+    IN_PROGRESS: { label: "Đang xử lý", count: 0, color: "#8b5cf6" },
+    WAITING_PARTS: { label: "Chờ linh kiện", count: 0, color: "#ec4899" },
+    COMPLETED: { label: "Hoàn tất", count: 0, color: "#10b981" },
+    CANCELLED: { label: "Đã hủy", count: 0, color: "#64748b" },
+  };
+
+  tickets.forEach((t) => {
+    if (ticketStatusMap[t.status]) {
+      ticketStatusMap[t.status].count += 1;
+    }
+  });
+
+  const ticketStatusChart = Object.entries(ticketStatusMap).map(([status, item]) => ({
+    status,
+    name: item.label,
+    value: item.count,
+    color: item.color,
+  }));
+
+  // 3. Biểu đồ Top 5 Linh kiện tiêu thụ nhiều nhất
+  const partConsumptionMap: Record<string, { name: string; partCode: string; count: number; unit: string }> = {};
+
+  partReplacements.forEach((pr) => {
+    const pId = pr.partId;
+    if (!partConsumptionMap[pId]) {
+      partConsumptionMap[pId] = {
+        name: pr.part.name,
+        partCode: pr.part.partCode,
+        count: 0,
+        unit: pr.part.unit || "cái",
+      };
+    }
+    partConsumptionMap[pId].count += pr.quantity;
+  });
+
+  const topPartsConsumed = Object.values(partConsumptionMap)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
   return NextResponse.json({
     finance: {
       paidRevenue,
@@ -148,6 +229,11 @@ export const GET = withErrors(async () => {
       open: tickets.filter((t) => !["COMPLETED", "CANCELLED"].includes(t.status)).length,
       slaRate,
       techPerformance,
+    },
+    charts: {
+      monthlyRevenue: monthlyRevenueChart,
+      ticketStatus: ticketStatusChart,
+      topParts: topPartsConsumed,
     },
   });
 });

@@ -7,6 +7,7 @@ import Loading from "@/components/Loading";
 import ActiveFilterChips, { FilterChipItem } from "@/components/ActiveFilterChips";
 import BatchActionBar from "@/components/BatchActionBar";
 import ModalShell from "@/components/ModalShell";
+import { MailTestModal } from "@/components/MailTestModal";
 import { ROLE_LABELS, type Role } from "@/lib/rbac";
 
 interface UserItem {
@@ -42,6 +43,7 @@ export default function AdminUsersPage() {
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [showMailModal, setShowMailModal] = useState(false);
   const [editing, setEditing] = useState<UserItem | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -294,6 +296,13 @@ export default function AdminUsersPage() {
         >
           <i className="fas fa-history me-1"></i> Nhật ký hoạt động
         </Link>
+        <button
+          type="button"
+          onClick={() => setShowMailModal(true)}
+          className="pb-2 btn btn-link text-decoration-none small fw-semibold text-secondary px-2 border-0 shadow-none"
+        >
+          <i className="fas fa-envelope me-1 text-primary"></i> Kiểm tra Email (SMTP)
+        </button>
       </div>
 
       {/* Dense Filter Bar */}
@@ -675,6 +684,11 @@ export default function AdminUsersPage() {
           </div>
         </form>
       </ModalShell>
+
+      <MailTestModal
+        isOpen={showMailModal}
+        onClose={() => setShowMailModal(false)}
+      />
     </div>
   );
 }

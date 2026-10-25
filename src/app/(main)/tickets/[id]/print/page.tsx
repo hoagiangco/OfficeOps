@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect, use } from "react";
 import Link from "next/link";
+import { toast } from "react-toastify";
 import { TICKET_TYPE_LABELS, TICKET_STATUS_LABELS } from "@/lib/labels";
 import { formatLocationPath } from "@/lib/location";
+import { exportElementToPdf } from "@/lib/pdfExport";
 
 interface TicketPrintData {
   id: string;
@@ -94,6 +96,7 @@ function TicketPrintContent({
 
   const [ticket, setTicket] = useState<TicketPrintData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -150,10 +153,29 @@ function TicketPrintContent({
               onClick={() => window.print()}
             >
               <i className="fas fa-print"></i>
-              <span>In Biên Bản Ngay (Ctrl + P)</span>
+              <span>In Biên Bản (Ctrl + P)</span>
             </button>
-            <span className="text-muted small ms-2">
-              Khổ giấy khuyến nghị: <strong>A4</strong>, Tỷ lệ: <strong>Mặc định (100%)</strong>
+            <button
+              type="button"
+              className="btn btn-success fw-bold d-flex align-items-center gap-2 shadow-sm text-white"
+              disabled={downloadingPdf}
+              onClick={async () => {
+                setDownloadingPdf(true);
+                try {
+                  await exportElementToPdf("ticket-print-content", `Bien_ban_${ticket.code}.pdf`);
+                  toast.success("Tải file PDF thành công!");
+                } catch {
+                  toast.error("Không thể tạo file PDF");
+                } finally {
+                  setDownloadingPdf(false);
+                }
+              }}
+            >
+              <i className={`fas ${downloadingPdf ? "fa-spinner fa-spin" : "fa-file-pdf"}`}></i>
+              <span>{downloadingPdf ? "Đang tạo PDF..." : "Tải file PDF"}</span>
+            </button>
+            <span className="text-muted small ms-2 d-none d-md-inline">
+              Khổ giấy: <strong>A4</strong>, Tỷ lệ: <strong>Mặc định (100%)</strong>
             </span>
           </div>
           <div className="d-flex gap-2">
@@ -169,7 +191,7 @@ function TicketPrintContent({
       </div>
 
       {/* TỜ IN KHỔ A4 CHUẨN */}
-      <div className="a4-document-container mx-auto bg-white p-5 shadow rounded border">
+      <div id="ticket-print-content" className="a4-document-container mx-auto bg-white p-5 shadow rounded border">
         {/* Header Công ty & Tiêu đề */}
         <div className="row border-bottom pb-3 mb-4 align-items-start">
           <div className="col-7">
