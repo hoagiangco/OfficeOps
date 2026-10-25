@@ -151,7 +151,7 @@ export default function DispatchPage() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
-  const [leftView, setLeftView] = useState<"map" | "table">("map");
+  const [leftView, setLeftView] = useState<"map" | "table">("table");
   const [showOnlyUnassigned, setShowOnlyUnassigned] = useState(false);
   const [sortBy, setSortBy] = useState<"urgent" | "oldest" | "newest">("urgent");
   const [assigningId, setAssigningId] = useState<string | null>(null);
@@ -399,20 +399,20 @@ export default function DispatchPage() {
                     <button
                       type="button"
                       className={`btn btn-sm ${
-                        leftView === "map" ? "btn-primary fw-bold" : "btn-outline-light text-white"
-                      }`}
-                      onClick={() => setLeftView("map")}
-                    >
-                      <i className="fas fa-map-marked-alt me-1"></i> Bản đồ điều phối
-                    </button>
-                    <button
-                      type="button"
-                      className={`btn btn-sm ${
                         leftView === "table" ? "btn-primary fw-bold" : "btn-outline-light text-white"
                       }`}
                       onClick={() => setLeftView("table")}
                     >
                       <i className="fas fa-list me-1"></i> Danh sách ({displayedTickets.length})
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${
+                        leftView === "map" ? "btn-primary fw-bold" : "btn-outline-light text-white"
+                      }`}
+                      onClick={() => setLeftView("map")}
+                    >
+                      <i className="fas fa-map-marked-alt me-1"></i> Bản đồ điều phối
                     </button>
                   </div>
                 </div>
