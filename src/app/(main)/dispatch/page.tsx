@@ -687,7 +687,7 @@ export default function DispatchPage() {
                     return (
                       <div
                         key={tech.id}
-                        className={`p-3 rounded border ${
+                        className={`p-3 rounded border overflow-hidden ${
                           isCurrentAssignee
                             ? "border-success bg-success-subtle"
                             : idx === 0 && selectedTicket
@@ -695,27 +695,26 @@ export default function DispatchPage() {
                             : "bg-white"
                         }`}
                       >
-                        <div className="d-flex justify-content-between align-items-start">
-                          <div>
-                            <div className="d-flex align-items-center gap-2">
-                              <span className="fw-bold text-dark">{tech.name}</span>
+                        <div className="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                          <div style={{ minWidth: 0 }} className="flex-grow-1">
+                            <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                              <span className="fw-bold text-dark text-nowrap fs-6">{tech.name}</span>
                               {idx === 0 && selectedTicket && (
                                 <span className="badge bg-primary">
-                                  <i className="fas fa-star me-1"></i>Gợi ý số 1 (
-                                  {tech.matchScore}% phù hợp)
+                                  <i className="fas fa-star me-1"></i>Gợi ý số 1 ({tech.matchScore}% phù hợp)
                                 </span>
                               )}
                               {isCurrentAssignee && (
                                 <span className="badge bg-success">Đang phụ trách phiếu này</span>
                               )}
                             </div>
-                            <div className="small text-muted mt-1">
-                              <span className="me-3">
+                            <div className="small text-muted mt-1 d-flex flex-wrap gap-2 align-items-center">
+                              <span>
                                 <i className="fas fa-map-pin text-danger me-1"></i>
                                 Khu vực: <strong>{tech.region || "Đa tuyến"}</strong>
                               </span>
                               {tech.distKm != null && (
-                                <span className="badge bg-primary-subtle text-primary border border-primary-subtle me-2" style={{ fontSize: "11px" }}>
+                                <span className="badge bg-primary-subtle text-primary border border-primary-subtle" style={{ fontSize: "11px" }}>
                                   <i className="fas fa-motorcycle me-1"></i>
                                   Cách ~{tech.distKm} km
                                 </span>
@@ -726,7 +725,7 @@ export default function DispatchPage() {
                               </span>
                             </div>
                             {tech.lastLocation && (
-                              <div className="text-secondary mt-1" style={{ fontSize: "11px" }}>
+                              <div className="text-secondary mt-1 text-truncate" style={{ fontSize: "11px", maxWidth: "100%" }}>
                                 <i className="fas fa-map-marker-alt text-success me-1"></i>
                                 <span>Vị trí check-in: </span>
                                 <strong>{tech.lastLocation.customerName || tech.lastLocation.customerAddress || "GPS"}</strong>
@@ -756,7 +755,7 @@ export default function DispatchPage() {
                             </div>
                           </div>
 
-                          <div className="text-end">
+                          <div className="text-end flex-shrink-0">
                             <div className="mb-2">
                               <span
                                 className={`badge ${
@@ -789,25 +788,34 @@ export default function DispatchPage() {
                         </div>
 
                         {tech.assignedTickets.length > 0 && (
-                          <div className="mt-2 pt-2 border-top small">
-                            <div className="text-muted mb-1" style={{ fontSize: "11px" }}>
-                              Công việc đang đảm nhận:
+                          <div className="mt-2.5 pt-2 border-top small">
+                            <div className="text-muted mb-1.5 fw-semibold d-flex align-items-center justify-content-between" style={{ fontSize: "11px" }}>
+                              <span>
+                                <i className="fas fa-tasks text-primary me-1"></i>
+                                Công việc đang đảm nhận ({tech.assignedTickets.length}):
+                              </span>
                             </div>
-                            <div className="d-flex flex-wrap gap-1">
+                            <div className="d-flex flex-column gap-1.5 w-100">
                               {tech.assignedTickets.map((at) => (
                                 <button
                                   key={at.id}
                                   type="button"
-                                  className="badge bg-white text-dark border font-monospace btn btn-sm p-1 text-decoration-none"
-                                  style={{ cursor: "pointer" }}
+                                  className="btn btn-sm btn-light border text-start d-flex align-items-center gap-1.5 py-1 px-2 text-decoration-none w-100 shadow-2xs"
+                                  style={{ cursor: "pointer", fontSize: "12px", minWidth: 0 }}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setViewTicketId(at.id);
                                   }}
-                                  title={`Nhấp để mở chi tiết phiếu: ${at.customer.name} - ${at.equipment.model}`}
+                                  title={`Nhấp để mở chi tiết phiếu: ${at.code} - ${at.customer.name} - ${at.equipment.model}`}
                                 >
-                                  <i className="fas fa-ticket-alt text-secondary me-1"></i>
-                                  {at.code}: {at.customer.name}
+                                  <i className="fas fa-ticket-alt text-primary flex-shrink-0" style={{ fontSize: "11px" }}></i>
+                                  <span className="font-monospace fw-bold text-primary flex-shrink-0">{at.code}:</span>
+                                  <span className="text-dark text-truncate flex-grow-1" style={{ minWidth: 0 }}>
+                                    {at.customer.name}
+                                  </span>
+                                  <span className="badge bg-secondary-subtle text-secondary border flex-shrink-0 ms-auto" style={{ fontSize: "10.5px" }}>
+                                    {at.equipment.model}
+                                  </span>
                                 </button>
                               ))}
                             </div>
