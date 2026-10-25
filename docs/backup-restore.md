@@ -8,9 +8,16 @@ Tài liệu này hướng dẫn quy trình vận hành sao lưu (backup) và ph�
 
 - **Script thực thi:** `scripts/backup-db.ps1`
 - **Công cụ:** `pg_dump` của PostgreSQL
-- **Vị trí lưu trữ:** `E:\Backup\officeops\`
+- **Tùy chỉnh thư mục lưu trữ qua `.env`:**
+  Người quản trị có thể thay đổi đường dẫn lưu trữ bất cứ lúc nào trong file `.env`:
+  ```ini
+  # Thư mục lưu trữ file sao lưu (tùy chỉnh theo ổ đĩa mong muốn)
+  BACKUP_DIR="E:\Backup\officeops"
+  # Số ngày lưu trữ trước khi tự động dọn dẹp file cũ
+  BACKUP_RETENTION_DAYS="14"
+  ```
 - **Quy tắc đặt tên file:** `officeops-YYYYMMDD_HHmmss.sql`
-- **Chính sách lưu trữ (Retention Policy):** Giữ bản sao lưu trong vòng 14 ngày. Script tự động xóa các file `.sql` cũ hơn 14 ngày khi chạy.
+- **Chính sách lưu trữ (Retention Policy):** Mặc định giữ bản sao lưu trong 14 ngày (hoặc theo cấu hình `BACKUP_RETENTION_DAYS`). Script tự động xóa các file `.sql` cũ khi chạy.
 
 ### 1.1 Chạy sao lưu thủ công bằng PowerShell
 ```powershell
