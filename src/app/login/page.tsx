@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
+import { ForgotPasswordModal } from "@/components/ForgotPasswordModal";
 
 const DEMO_ACCOUNTS = [
   { role: "Giám đốc (SuperAdmin)", email: "giamdoc@officeops.local" },
@@ -17,6 +18,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [showForgotModal, setShowForgotModal] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -160,8 +162,8 @@ export default function LoginPage() {
                     </div>
                   </div>
 
-                  <div className="form-group mb-4">
-                    <div className="form-check">
+                  <div className="form-group mb-4 d-flex justify-content-between align-items-center">
+                    <div className="form-check mb-0">
                       <input
                         className="form-check-input"
                         type="checkbox"
@@ -173,6 +175,13 @@ export default function LoginPage() {
                         Ghi nhớ đăng nhập
                       </label>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotModal(true)}
+                      className="btn btn-link p-0 text-decoration-none small text-primary fw-semibold"
+                    >
+                      Quên mật khẩu?
+                    </button>
                   </div>
 
                   <button
@@ -227,6 +236,11 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
+
+      <ForgotPasswordModal
+        isOpen={showForgotModal}
+        onClose={() => setShowForgotModal(false)}
+      />
     </div>
   );
 }

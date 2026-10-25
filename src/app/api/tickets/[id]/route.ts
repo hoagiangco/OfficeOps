@@ -5,6 +5,8 @@ import { getSession, requirePermission, audit } from "@/lib/auth";
 import { checkUserPermission } from "@/lib/rbacService";
 import { maskCustomerPhones } from "@/lib/maskUtils";
 import { parseBody, withErrors, HttpError } from "@/lib/http";
+import { sendMail } from "@/lib/mailer";
+import { getTicketAssignedEmailHtml, getTicketCompletionEmailHtml } from "@/lib/mail-templates";
 import type { TicketPriority, TicketStatus, MeterSource } from "@prisma/client";
 
 const patchSchema = z.object({
@@ -171,13 +173,44 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
       return t;
     });
 
+    // B5: Gửi Email thông báo phân công cho Kỹ thuật viên (chỉ gửi cho KTV mới được gán)
+    let emailSentToTech = false;
+    if (tech.email) {
+      try {
+        const emailHtml = getTicketAssignedEmailHtml({
+          technicianName: tech.name,
+          ticketCode: existing.code,
+          customerName: existing.customer.name,
+          customerAddress: existing.customer.address,
+          customerPhone: existing.customer.phone,
+          equipmentModel: `${existing.equipment.brand || ""} ${existing.equipment.model} (SN: ${existing.equipment.serialNumber})`,
+          priority: data.priority || existing.priority,
+          issueDescription: existing.description,
+          slaDueAt: existing.slaDueAt,
+          ticketId: existing.id,
+        });
+
+        const mailRes = await sendMail({
+          to: tech.email,
+          subject: `[OfficeOps] Lệnh điều phối ca kỹ thuật: ${existing.code} - ${existing.customer.name}`,
+          html: emailHtml,
+          text: `Bạn được phân công ca xử lý ${existing.code} tại ${existing.customer.name}. Địa chỉ: ${existing.customer.address}`,
+          userId: tech.id,
+        });
+        emailSentToTech = mailRes.success;
+      } catch (mailErr) {
+        console.error("[Ticket Assign Email] Lỗi khi gửi email cho KTV:", mailErr);
+      }
+    }
+
     await audit(session.userId, "TICKET_ASSIGN", "Ticket", id, {
       code: existing.code,
       assigneeId: data.assigneeId,
       assigneeName: tech.name,
+      emailSentToTech,
     });
 
-    return NextResponse.json(updated);
+    return NextResponse.json({ ...updated, emailSentToTech });
   }
 
   // Kỹ thuật viên chỉ được thao tác trên phiếu mình được phân công
@@ -331,11 +364,50 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
       return t;
     });
 
+    // B4: Gửi biên bản nghiệm thu điện tử cho Khách hàng khi đóng phiếu
+    // Chỉ gửi duy nhất 1 lần khi chuyển sang COMPLETED lần đầu
+    let emailSentToCustomer = false;
+    if (existing.status !== "COMPLETED" && existing.customer?.email) {
+      try {
+        const partsReplaced = await prisma.partReplacement.findMany({
+          where: { ticketId: id },
+          include: { part: { select: { name: true } } },
+        });
+
+        const emailHtml = getTicketCompletionEmailHtml({
+          customerName: existing.customer.name,
+          ticketCode: existing.code,
+          equipmentModel: `${existing.equipment.brand || ""} ${existing.equipment.model}`,
+          serialNumber: existing.equipment.serialNumber,
+          completedAt: new Date(),
+          counterAtClose: data.counterAtClose ?? existing.counterAtClose,
+          technicianName: session.name,
+          partsReplaced: partsReplaced.map((pr) => ({
+            name: pr.part.name,
+            quantity: pr.quantity,
+          })),
+          ticketId: existing.id,
+        });
+
+        const mailRes = await sendMail({
+          to: existing.customer.email,
+          subject: `[OfficeOps] Biên bản nghiệm thu kỹ thuật ${existing.code} - Thiết bị ${existing.equipment.model}`,
+          html: emailHtml,
+          text: `Phiếu kỹ thuật ${existing.code} đã hoàn tất bàn giao. Thiết bị: ${existing.equipment.model}. Chỉ số counter chốt: ${data.counterAtClose ?? existing.counterAtClose ?? "N/A"}.`,
+          userId: session.userId,
+        });
+        emailSentToCustomer = mailRes.success;
+      } catch (mailErr) {
+        console.error("[Ticket Complete Email] Lỗi khi gửi biên bản nghiệm thu:", mailErr);
+      }
+    }
+
     await audit(session.userId, "TICKET_COMPLETE", "Ticket", id, {
       code: existing.code,
       counterAtClose: data.counterAtClose,
+      emailSentToCustomer,
     });
-    return NextResponse.json(updated);
+    return NextResponse.json({ ...updated, emailSentToCustomer });
   }
 
   if (data.action === "CANCEL") {
