@@ -150,6 +150,7 @@ export function SidebarLayout({
       title: "Tài chính",
       items: [
         { href: "/finance/invoices", label: "Hóa đơn cước", icon: "fas fa-receipt", roles: ["SUPER_ADMIN", "ADMIN"], perms: ["finance:view", "invoice:manage"] },
+        { href: "/meters", label: "Duyệt Counter", icon: "fas fa-tachometer-alt", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perm: "finance:view" },
       ],
     },
     {

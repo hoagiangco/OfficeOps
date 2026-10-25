@@ -85,6 +85,12 @@ enum MeterSource {
   CUSTOMER
 }
 
+enum MeterApprovalStatus {
+  APPROVED
+  PENDING_APPROVAL
+  REJECTED
+}
+
 enum InvoiceStatus {
   DRAFT
   SENT
@@ -128,6 +134,7 @@ model User {
   notifications   Notification[]
   auditLogs       AuditLog[]
   meterLogs       MeterLog[]
+  approvedMeterLogs MeterLog[] @relation("MeterApprovals")
   userPermissions UserPermission[]
 }
 
@@ -444,22 +451,29 @@ model TicketLog {
 
 // ============ METER & BILLING ============
 model MeterLog {
-  id            String       @id @default(cuid())
-  equipmentId   String
-  equipment     Equipment    @relation(fields: [equipmentId], references: [id])
-  ticketId      String?
-  ticket        Ticket?      @relation(fields: [ticketId], references: [id])
-  recordedById  String?
-  recordedBy    User?        @relation(fields: [recordedById], references: [id])
-  counterValue  Int
-  source        MeterSource  @default(MANUAL)
-  photoUrl      String?
-  logDate       DateTime     @default(now())
-  isBilled      Boolean      @default(false)
-  invoiceItemId String?
-  invoiceItem   InvoiceItem? @relation(fields: [invoiceItemId], references: [id])
+  id              String              @id @default(cuid())
+  equipmentId     String
+  equipment       Equipment           @relation(fields: [equipmentId], references: [id])
+  ticketId        String?
+  ticket          Ticket?             @relation(fields: [ticketId], references: [id])
+  recordedById    String?
+  recordedBy      User?               @relation(fields: [recordedById], references: [id])
+  counterValue    Int
+  source          MeterSource         @default(MANUAL)
+  photoUrl        String?
+  logDate         DateTime            @default(now())
+  isBilled        Boolean             @default(false)
+  invoiceItemId   String?
+  invoiceItem     InvoiceItem?        @relation(fields: [invoiceItemId], references: [id])
+  status          MeterApprovalStatus @default(APPROVED)
+  adjustmentReason String?
+  approvedById    String?
+  approvedBy      User?               @relation("MeterApprovals", fields: [approvedById], references: [id])
+  approvedAt      DateTime?
+  rejectionReason String?
 
   @@index([equipmentId, logDate])
+  @@index([status])
 }
 
 model Invoice {

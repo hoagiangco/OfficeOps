@@ -16,6 +16,8 @@ import {
 import { ROLE_LABELS, type Role } from "@/lib/rbac";
 import { getDirectionsUrl } from "@/lib/location";
 import { ChangePasswordModal } from "@/components/ChangePasswordModal";
+import { OfflineSyncManager } from "@/components/tech/OfflineSyncManager";
+import { enqueueAction } from "@/lib/offlineQueue";
 
 interface TechTicketAttachment {
   id: string;
@@ -141,6 +143,7 @@ export default function TechMobilePage() {
   // Form xử lý ticket
   const [diagnosis, setDiagnosis] = useState("");
   const [newCounter, setNewCounter] = useState<number | "">("");
+  const [adjustmentReason, setAdjustmentReason] = useState("");
   const [signature, setSignature] = useState<string | null>(null);
   const [closingNote, setClosingNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -282,6 +285,7 @@ export default function TechMobilePage() {
     setNewCounter(t.equipment.currentCounter);
     setSignature(t.customerSignature || null);
     setClosingNote("");
+    setAdjustmentReason("");
     setActionStep("detail");
   };
 
@@ -304,6 +308,11 @@ export default function TechMobilePage() {
           const lat = pos.coords.latitude;
           const lng = pos.coords.longitude;
           const acc = Math.round(pos.coords.accuracy);
+
+          if (!navigator.onLine) {
+            throw new TypeError("Failed to fetch (offline)");
+          }
+
           const res = await fetch(`/api/tickets/${selectedTicket.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -332,7 +341,34 @@ export default function TechMobilePage() {
           setSelectedTicket((prev) => (prev ? { ...prev, ...data } : data));
           loadTickets();
         } catch (e: unknown) {
-          toast.error(e instanceof Error ? e.message : "Lỗi check-in");
+          if (!navigator.onLine || (e instanceof TypeError && e.message.includes("fetch"))) {
+            await enqueueAction({
+              type: "CHECK_IN",
+              title: `Check-in GPS phiếu ${selectedTicket.code}`,
+              url: `/api/tickets/${selectedTicket.id}`,
+              method: "PATCH",
+              body: {
+                action: "CHECK_IN",
+                checkInLat: pos.coords.latitude,
+                checkInLng: pos.coords.longitude,
+              },
+              ticketId: selectedTicket.id,
+            });
+            setSelectedTicket((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    checkInAt: new Date().toISOString(),
+                    checkInLat: pos.coords.latitude,
+                    checkInLng: pos.coords.longitude,
+                    status: "IN_PROGRESS",
+                  }
+                : null
+            );
+            toast.info("📱 Đang ngoại tuyến: Đã lưu vị trí check-in vào Hàng đợi trên thiết bị!");
+          } else {
+            toast.error(e instanceof Error ? e.message : "Lỗi check-in");
+          }
         } finally {
           setSubmitting(false);
         }
@@ -424,32 +460,73 @@ export default function TechMobilePage() {
       return;
     }
     const currentCounter = selectedTicket.equipment?.currentCounter ?? 0;
-    if (newCounter === "" || Number(newCounter) < currentCounter) {
-      toast.error(
-        `Số Counter mới (${newCounter}) không được nhỏ hơn Counter hiện tại (${currentCounter})`
-      );
+    const isLowerCounter = newCounter !== "" && Number(newCounter) < currentCounter;
+
+    if (newCounter === "") {
+      toast.error("Vui lòng nhập số Counter chốt sau khi xử lý");
       return;
     }
+
+    if (isLowerCounter) {
+      if (!adjustmentReason.trim()) {
+        toast.warning(
+          "Chỉ số counter mới nhỏ hơn counter ban đầu. Vui lòng nhập Lý do điều chỉnh để gửi cấp trên phê duyệt!"
+        );
+        return;
+      }
+      const hasCounterPhoto = selectedTicket.attachments?.some(
+        (a) => a.kind === "COUNTER_PHOTO"
+      );
+      if (!hasCounterPhoto) {
+        toast.warning("Vui lòng chụp ảnh màn hình Counter thực tế để gửi kèm hồ sơ phê duyệt giảm chỉ số!");
+        return;
+      }
+    }
+
     setSubmitting(true);
+    const payload = {
+      action: "COMPLETE",
+      counterAtClose: Number(newCounter),
+      customerSignature: signature || undefined,
+      diagnosis: diagnosis || undefined,
+      note: closingNote || undefined,
+      adjustmentReason: isLowerCounter ? adjustmentReason.trim() : undefined,
+    };
+
     try {
+      if (!navigator.onLine) {
+        throw new TypeError("Failed to fetch (offline)");
+      }
       const res = await fetch(`/api/tickets/${selectedTicket.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "COMPLETE",
-          counterAtClose: Number(newCounter),
-          customerSignature: signature || undefined,
-          diagnosis: diagnosis || undefined,
-          note: closingNote || undefined,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Không thể hoàn tất phiếu");
-      toast.success("Đã hoàn tất đóng phiếu kỹ thuật thành công!");
+      toast.success(
+        isLowerCounter
+          ? "Đã đóng phiếu kỹ thuật & gửi yêu cầu điều chỉnh Counter chờ duyệt!"
+          : "Đã hoàn tất đóng phiếu kỹ thuật thành công!"
+      );
       setSelectedTicket(null);
       loadTickets();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Lỗi hoàn tất phiếu");
+      if (!navigator.onLine || (e instanceof TypeError && e.message.includes("fetch"))) {
+        await enqueueAction({
+          type: "COMPLETE_TICKET",
+          title: `Đóng phiếu ${selectedTicket.code} (Counter: ${newCounter})`,
+          url: `/api/tickets/${selectedTicket.id}`,
+          method: "PATCH",
+          body: payload,
+          ticketId: selectedTicket.id,
+        });
+        toast.info("📱 Đang ngoại tuyến: Đã lưu kết quả hoàn thành vào Hàng đợi trên thiết bị!");
+        setSelectedTicket(null);
+        loadTickets();
+      } else {
+        toast.error(e instanceof Error ? e.message : "Lỗi hoàn tất phiếu");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -464,6 +541,9 @@ export default function TechMobilePage() {
     }
     setUploadingPhoto(true);
     try {
+      if (!navigator.onLine) {
+        throw new TypeError("Failed to fetch (offline)");
+      }
       const fd = new FormData();
       fd.append("file", file);
       fd.append("folder", "tickets");
@@ -495,7 +575,46 @@ export default function TechMobilePage() {
       });
       loadTickets();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Lỗi chụp ảnh");
+      if (!navigator.onLine || (err instanceof TypeError && err.message.includes("fetch"))) {
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const base64Data = reader.result as string;
+          await enqueueAction({
+            type: "UPLOAD_PHOTO",
+            title: `${kind === "PHOTO" ? "Ảnh thiết bị" : "Ảnh Counter"} phiếu ${selectedTicket.code}`,
+            url: `/api/tickets/${selectedTicket.id}/attachments`,
+            method: "POST",
+            body: {
+              isBase64: true,
+              base64: base64Data,
+              fileName: file.name,
+              mimeType: file.type,
+              ticketId: selectedTicket.id,
+              kind,
+            },
+            ticketId: selectedTicket.id,
+          });
+
+          const mockAtt = {
+            id: `offline_${Date.now()}`,
+            url: base64Data,
+            kind,
+            createdAt: new Date().toISOString(),
+          };
+          setSelectedTicket((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  attachments: [...(prev.attachments || []), mockAtt as any],
+                }
+              : null
+          );
+          toast.info("📱 Đang ngoại tuyến: Đã lưu ảnh vào Hàng đợi trên thiết bị!");
+        };
+        reader.readAsDataURL(file);
+      } else {
+        toast.error(err instanceof Error ? err.message : "Lỗi chụp ảnh");
+      }
     } finally {
       setUploadingPhoto(false);
     }
@@ -1748,9 +1867,34 @@ export default function TechMobilePage() {
                       }
                       placeholder="Nhập số counter mới..."
                     />
-                    <div className="text-muted mt-1" style={{ fontSize: "11px" }}>
-                      * Chỉ số mới phải lớn hơn hoặc bằng Counter ban đầu.
-                    </div>
+                    {newCounter !== "" &&
+                    selectedTicket.equipment?.currentCounter != null &&
+                    Number(newCounter) < selectedTicket.equipment.currentCounter ? (
+                      <div className="p-2.5 rounded-3 border border-warning bg-warning-subtle mt-2">
+                        <div className="small fw-bold text-warning-emphasis mb-1">
+                          <i className="fas fa-exclamation-triangle me-1"></i>
+                          Chỉ số thấp hơn Counter hiện tại ({selectedTicket.equipment.currentCounter.toLocaleString("vi-VN")})
+                        </div>
+                        <div className="text-muted mb-2" style={{ fontSize: "11px" }}>
+                          Trường hợp thay bo mạch/reset số counter sẽ được gửi Kế toán / Giám đốc phê duyệt.
+                        </div>
+                        <label className="form-label small fw-bold text-dark mb-1">
+                          Lý do điều chỉnh giảm (*):
+                        </label>
+                        <input
+                          type="text"
+                          className="form-control form-control-sm"
+                          value={adjustmentReason}
+                          disabled={isSelectedLocked}
+                          onChange={(e) => setAdjustmentReason(e.target.value)}
+                          placeholder="VD: Thay bo mạch chính mới, reset counter..."
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-muted mt-1" style={{ fontSize: "11px" }}>
+                        * Thông thường chỉ số mới phải lớn hơn hoặc bằng Counter ban đầu.
+                      </div>
+                    )}
                   </div>
 
                   {/* Chụp ảnh đồng hồ Counter xác thực */}
@@ -2224,6 +2368,9 @@ export default function TechMobilePage() {
             : "Thư viện Media — Chọn ảnh chỉ số Counter"
         }
       />
+
+      {/* Quản lý Hàng đợi Đồng bộ Ngoại tuyến */}
+      <OfflineSyncManager />
     </div>
   );
 }

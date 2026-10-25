@@ -29,6 +29,8 @@ const patchSchema = z.object({
   checkInLng: z.number().optional().nullable(),
   counterAtClose: z.number().int().min(0).optional().nullable(),
   customerSignature: z.string().optional().nullable(),
+  adjustmentReason: z.string().optional().nullable(),
+  photoUrl: z.string().optional().nullable(),
   note: z.string().optional().nullable(),
 });
 
@@ -108,7 +110,7 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
 
   const existing = await prisma.ticket.findUnique({
     where: { id },
-    include: { equipment: true, customer: true },
+    include: { equipment: true, customer: true, attachments: true },
   });
   if (!existing) throw new HttpError(404, "Không tìm thấy phiếu kỹ thuật");
 
@@ -285,15 +287,27 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
   }
 
   if (data.action === "COMPLETE") {
-    if (
+    const isLowerCounter =
       data.counterAtClose !== undefined &&
       data.counterAtClose !== null &&
-      data.counterAtClose < existing.equipment.currentCounter
-    ) {
-      throw new HttpError(
-        400,
-        `Chỉ số counter đóng phiếu (${data.counterAtClose.toLocaleString("vi-VN")}) không được nhỏ hơn counter hiện tại của máy (${existing.equipment.currentCounter.toLocaleString("vi-VN")})`
-      );
+      data.counterAtClose < existing.equipment.currentCounter;
+
+    if (isLowerCounter) {
+      if (!data.adjustmentReason || data.adjustmentReason.trim().length < 3) {
+        throw new HttpError(
+          400,
+          `Chỉ số counter đóng phiếu (${data.counterAtClose!.toLocaleString("vi-VN")}) thấp hơn counter ban đầu (${existing.equipment.currentCounter.toLocaleString("vi-VN")}). Vui lòng nhập lý do điều chỉnh để gửi cấp trên phê duyệt.`
+        );
+      }
+      const hasCounterPhoto =
+        data.photoUrl ||
+        existing.attachments.some((a) => a.kind === "COUNTER_PHOTO");
+      if (!hasCounterPhoto) {
+        throw new HttpError(
+          400,
+          "Vui lòng chụp ảnh màn hình Counter thực tế để minh chứng cho yêu cầu hạ chỉ số counter."
+        );
+      }
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -320,13 +334,20 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
             data.note ||
             `Hoàn thành xử lý phiếu.${
               data.counterAtClose != null
-                ? ` Counter chốt: ${data.counterAtClose.toLocaleString("vi-VN")}.`
+                ? ` Counter chốt: ${data.counterAtClose.toLocaleString("vi-VN")}${
+                    isLowerCounter ? " (Đang chờ duyệt giảm counter)" : ""
+                  }.`
                 : ""
             }${data.customerSignature ? ` Đã có xác nhận khách hàng.` : ""}`,
         },
       });
 
       if (data.counterAtClose !== undefined && data.counterAtClose !== null) {
+        const counterPhotoUrl =
+          data.photoUrl ||
+          existing.attachments.find((a) => a.kind === "COUNTER_PHOTO")?.url ||
+          null;
+
         await tx.meterLog.create({
           data: {
             equipmentId: existing.equipmentId,
@@ -334,13 +355,19 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
             recordedById: session.userId,
             counterValue: data.counterAtClose,
             source: "TECH",
+            photoUrl: counterPhotoUrl,
+            status: isLowerCounter ? "PENDING_APPROVAL" : "APPROVED",
+            adjustmentReason: isLowerCounter ? data.adjustmentReason?.trim() || null : null,
           },
         });
 
-        await tx.equipment.update({
-          where: { id: existing.equipmentId },
-          data: { currentCounter: data.counterAtClose },
-        });
+        // Chỉ cập nhật counter thiết bị ngay nếu counter không bị giảm
+        if (!isLowerCounter) {
+          await tx.equipment.update({
+            where: { id: existing.equipmentId },
+            data: { currentCounter: data.counterAtClose },
+          });
+        }
       }
 
       if (

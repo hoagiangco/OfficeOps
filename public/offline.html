@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Đang ngoại tuyến | OfficeOps Tech</title>
+  <link rel="icon" type="image/png" href="/icons/icon-192.png">
+  <meta name="theme-color" content="#0284c7">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      text-align: center;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 20px;
+      padding: 32px 24px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .icon-box {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 20px;
+      background: rgba(2, 132, 199, 0.15);
+      border: 2px solid rgba(2, 132, 199, 0.3);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .icon-box svg {
+      width: 40px;
+      height: 40px;
+      color: #38bdf8;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #f1f5f9;
+    }
+    p {
+      font-size: 14px;
+      line-height: 1.6;
+      color: #94a3b8;
+      margin-bottom: 20px;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      margin-bottom: 16px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f59e0b;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 0.4; }
+      50% { opacity: 1; }
+      100% { opacity: 0.4; }
+    }
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .btn {
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+      border: none;
+    }
+    .btn-primary {
+      background: #0284c7;
+      color: #ffffff;
+    }
+    .btn-primary:active {
+      background: #0369a1;
+    }
+    .btn-secondary {
+      background: #334155;
+      color: #cbd5e1;
+    }
+    .btn-secondary:active {
+      background: #475569;
+    }
+    .footer-note {
+      margin-top: 24px;
+      font-size: 11px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-box">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18M1 10.5A16.94 16.94 0 0112 6c3.18 0 6.13.88 8.65 2.41M5 14.5a12.07 12.07 0 017-2.5c2.3 0 4.44.65 6.26 1.77M9 18.5a7.1 7.1 0 013-.75c1.17 0 2.27.28 3.25.78M12 21h.01"></path>
+      </svg>
+    </div>
+    
+    <div class="status-badge">
+      <span class="dot"></span>
+      Chế độ ngoại tuyến (Offline)
+    </div>
+
+    <h1>Chưa có kết nối mạng</h1>
+    <p>
+      Thiết bị đang mất kết nối Internet. Bạn vẫn có thể mở lại trang ứng dụng đã lưu trong máy. Mọi tác vụ ghi nhận dữ liệu sẽ được lưu tạm an toàn trong hàng đợi.
+    </p>
+
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="window.location.reload()">
+        Thử kết nối lại
+      </button>
+      <a href="/tech" class="btn btn-secondary">
+        Mở ứng dụng Kỹ thuật viên (/tech)
+      </a>
+    </div>
+
+    <div class="footer-note">
+      OfficeOps Mobile PWA • Tự động đồng bộ khi có Internet
+    </div>
+  </div>
+
+  <script>
+    // Tự động reload khi có mạng trở lại
+    window.addEventListener('online', () => {
+      window.location.href = '/tech';
+    });
+  </script>
+</body>
+</html>
