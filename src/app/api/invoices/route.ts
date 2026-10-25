@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requirePermission, audit } from "@/lib/auth";
+import { checkUserPermission } from "@/lib/rbacService";
+import { maskCustomerPhones } from "@/lib/maskUtils";
 import { parseBody, withErrors, HttpError } from "@/lib/http";
 import type { InvoiceStatus } from "@prisma/client";
 
@@ -45,7 +47,15 @@ export const GET = withErrors(async (req: Request) => {
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json(invoices);
+  const canViewPhone = await checkUserPermission(session.userId, session.role, "customer:view-phone");
+  const items = canViewPhone
+    ? invoices
+    : invoices.map((inv) => ({
+        ...inv,
+        customer: inv.customer ? maskCustomerPhones(inv.customer, false) : inv.customer,
+      }));
+
+  return NextResponse.json(items);
 });
 
 export const POST = withErrors(async (req: Request) => {

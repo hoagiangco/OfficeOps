@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, requirePermission, audit } from "@/lib/auth";
+import { checkUserPermission } from "@/lib/rbacService";
+import { maskCustomerPhones } from "@/lib/maskUtils";
 import { parseBody, withErrors, HttpError } from "@/lib/http";
-import type { TicketPriority, TicketStatus } from "@prisma/client";
+import type { TicketPriority, TicketStatus, MeterSource } from "@prisma/client";
 
 const patchSchema = z.object({
   action: z.enum(["ASSIGN", "CHECK_IN", "UPDATE", "COMPLETE", "CANCEL"]),
@@ -39,6 +41,8 @@ export const GET = withErrors(async (_req: Request, ctx: { params: Promise<{ id:
       customer: true,
       equipment: {
         include: {
+          branch: { select: { id: true, name: true } },
+          building: { select: { id: true, name: true, branch: { select: { name: true } } } },
           department: {
             include: {
               building: {
@@ -69,14 +73,32 @@ export const GET = withErrors(async (_req: Request, ctx: { params: Promise<{ id:
       meterLogs: {
         orderBy: { logDate: "desc" },
       },
+      attachments: {
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
 
-  if (!ticket) throw new HttpError(404, "Không tìm thấy phiếu yêu cầu");
-  return NextResponse.json(ticket);
+  if (!ticket) throw new HttpError(404, "Không tìm thấy phiếu kỹ thuật");
+
+  // Kỹ thuật viên (FIELD_TECH) chỉ được xem phiếu mình được phân công
+  if (session.role === "FIELD_TECH" && ticket.assigneeId !== session.userId) {
+    throw new HttpError(403, "Bạn chỉ có quyền xem phiếu kỹ thuật được phân công cho mình");
+  }
+
+  const canViewPhone = await checkUserPermission(session.userId, session.role, "customer:view-phone");
+  const data = {
+    ...ticket,
+    customer: ticket.customer ? maskCustomerPhones(ticket.customer, canViewPhone) : ticket.customer,
+  };
+
+  return NextResponse.json(data);
 });
 
 export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
+  const session = await getSession();
+  if (!session) throw new HttpError(401, "Chưa đăng nhập");
+
   const { id } = await ctx.params;
   const parsed = await parseBody(req, patchSchema);
   if (parsed.error) return parsed.error;
@@ -86,11 +108,23 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
     where: { id },
     include: { equipment: true, customer: true },
   });
-  if (!existing) throw new HttpError(404, "Không tìm thấy phiếu yêu cầu");
+  if (!existing) throw new HttpError(404, "Không tìm thấy phiếu kỹ thuật");
 
+  // Phiếu đã hoàn thành rồi thì không được sửa nội dung trừ superadmin (giám đốc)
+  if (existing.status === "COMPLETED" && session.role !== "SUPER_ADMIN") {
+    throw new HttpError(
+      403,
+      "Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc (Super Admin) mới có quyền chỉnh sửa nội dung"
+    );
+  }
+
+  // Kỹ thuật viên không có quyền giao việc
   if (data.action === "ASSIGN") {
-    const session = await requirePermission("ticket:assign");
-    if (session instanceof NextResponse) return session;
+    if (session.role === "FIELD_TECH") {
+      throw new HttpError(403, "Kỹ thuật viên không có quyền giao việc hoặc điều phối");
+    }
+    const checkPerm = await requirePermission("ticket:assign");
+    if (checkPerm instanceof NextResponse) return checkPerm;
     if (!data.assigneeId) throw new HttpError(400, "Vui lòng chọn kỹ thuật viên");
 
     const tech = await prisma.user.findUnique({ where: { id: data.assigneeId } });
@@ -146,8 +180,13 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
     return NextResponse.json(updated);
   }
 
-  const session = await requirePermission("ticket:update");
-  if (session instanceof NextResponse) return session;
+  // Kỹ thuật viên chỉ được thao tác trên phiếu mình được phân công
+  if (session.role === "FIELD_TECH" && existing.assigneeId !== session.userId) {
+    throw new HttpError(403, "Bạn chỉ có quyền thao tác trên phiếu kỹ thuật được phân công cho mình");
+  }
+
+  const checkUpdatePerm = await requirePermission("ticket:update");
+  if (checkUpdatePerm instanceof NextResponse) return checkUpdatePerm;
 
   if (data.action === "CHECK_IN") {
     const nextStatus: TicketStatus = "IN_PROGRESS";
@@ -161,7 +200,35 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
           status: nextStatus,
           ...(existing.assigneeId ? {} : { assigneeId: session.userId }),
         },
+        include: {
+          customer: true,
+          equipment: {
+            include: {
+              department: {
+                include: {
+                  building: {
+                    include: { branch: true },
+                  },
+                },
+              },
+            },
+          },
+          attachments: true,
+        },
       });
+
+      // Tự động lưu tọa độ GPS cho khách hàng nếu khách hàng chưa có tọa độ
+      if (data.checkInLat && data.checkInLng && existing.customerId) {
+        if (existing.customer && (existing.customer.latitude === null || existing.customer.longitude === null)) {
+          await tx.customer.update({
+            where: { id: existing.customerId },
+            data: {
+              latitude: data.checkInLat,
+              longitude: data.checkInLng,
+            },
+          });
+        }
+      }
 
       await tx.ticketLog.create({
         data: {
@@ -171,7 +238,9 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
           toStatus: nextStatus,
           note:
             data.note ||
-            `KTV Check-in GPS tại hiện trường (${(data.checkInLat ?? 10.7769).toFixed(4)}, ${(data.checkInLng ?? 106.7009).toFixed(4)})`,
+            (existing.checkInAt
+              ? `${session.name || "KTV"} Cập nhật lại Check-in GPS (${(data.checkInLat ?? 10.7769).toFixed(4)}, ${(data.checkInLng ?? 106.7009).toFixed(4)})`
+              : `${session.name || "KTV"} Check-in GPS (${(data.checkInLat ?? 10.7769).toFixed(4)}, ${(data.checkInLng ?? 106.7009).toFixed(4)})`),
         },
       });
 
@@ -281,7 +350,7 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
           userId: session.userId,
           fromStatus: existing.status,
           toStatus: "CANCELLED",
-          note: data.note || "Hủy phiếu yêu cầu",
+          note: data.note || "Hủy phiếu kỹ thuật",
         },
       });
       return t;
@@ -300,10 +369,37 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
         status: nextStatus,
         ...(data.priority ? { priority: data.priority as TicketPriority } : {}),
         ...(data.diagnosis !== undefined ? { diagnosis: data.diagnosis } : {}),
+        ...(data.counterAtClose !== undefined ? { counterAtClose: data.counterAtClose } : {}),
+        ...(data.customerSignature !== undefined
+          ? { customerSignature: data.customerSignature }
+          : {}),
+        ...(existing.status === "COMPLETED" && nextStatus !== "COMPLETED"
+          ? { resolvedAt: null }
+          : {}),
+      },
+      include: {
+        customer: true,
+        equipment: {
+          include: {
+            department: {
+              include: {
+                building: {
+                  include: { branch: true },
+                },
+              },
+            },
+          },
+        },
+        attachments: true,
       },
     });
 
-    if (nextStatus !== existing.status || data.note || data.diagnosis !== undefined) {
+    if (
+      nextStatus !== existing.status ||
+      data.note ||
+      data.diagnosis !== undefined ||
+      data.counterAtClose !== undefined
+    ) {
       await tx.ticketLog.create({
         data: {
           ticketId: id,
@@ -314,7 +410,23 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
             data.note ||
             (data.diagnosis
               ? `Cập nhật chẩn đoán: ${data.diagnosis}`
-              : `Chuyển trạng thái sang ${nextStatus}`),
+              : `Cập nhật thông tin phiếu (${nextStatus})`),
+        },
+      });
+    }
+
+    if (data.counterAtClose !== undefined && data.counterAtClose !== null) {
+      await tx.equipment.update({
+        where: { id: existing.equipmentId },
+        data: { currentCounter: data.counterAtClose },
+      });
+      await tx.meterLog.create({
+        data: {
+          equipmentId: existing.equipmentId,
+          ticketId: existing.id,
+          recordedById: session.userId,
+          counterValue: data.counterAtClose,
+          source: (session.role === "SUPER_ADMIN" ? "MANUAL" : "TECH") as MeterSource,
         },
       });
     }

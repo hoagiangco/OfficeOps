@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, requirePermission } from "@/lib/auth";
-import { can } from "@/lib/rbac";
+import { checkUserPermission } from "@/lib/rbacService";
 import { pagingSchema, parseBody, parseQuery, withErrors } from "@/lib/http";
 
 const partSchema = z.object({
@@ -99,7 +99,7 @@ export const POST = withErrors(async (req: Request) => {
 
 export const PATCH = withErrors(async (req: Request) => {
   const s = await getSession();
-  if (!s || !can(s.role, "stock:manage")) {
+  if (!s || !(await checkUserPermission(s.userId, s.role, "stock:manage"))) {
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   }
   const body = await req.json().catch(() => null);

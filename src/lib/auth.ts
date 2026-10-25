@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { decrypt, SESSION_COOKIE, type SessionPayload } from "./session";
 import { can, type Permission } from "./rbac";
+import { checkUserPermission } from "./rbacService";
 import { prisma } from "./prisma";
 
 export async function getSession(): Promise<SessionPayload | null> {
@@ -18,7 +19,8 @@ export async function getSession(): Promise<SessionPayload | null> {
 export async function requirePermission(perm: Permission): Promise<SessionPayload | NextResponse> {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!can(session.role, perm)) {
+  const allowed = await checkUserPermission(session.userId, session.role, perm);
+  if (!allowed) {
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   }
   return session;

@@ -3,12 +3,22 @@ import type { NextRequest } from "next/server";
 import { decrypt, SESSION_COOKIE } from "@/lib/session";
 import { ROUTE_ROLES } from "@/lib/rbac";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login"];
+const isPublicPath = (pathname: string) => {
+  return (
+    pathname === "/login" ||
+    pathname === "/api/auth/login" ||
+    pathname.startsWith("/scan") ||
+    pathname.startsWith("/api/scan") ||
+    pathname.startsWith("/api/cron") ||
+    pathname === "/manifest.webmanifest" ||
+    pathname === "/manifest.json"
+  );
+};
 
 // Kiểm tra lạc quan (optimistic) dựa trên cookie; API vẫn phải kiểm tra quyền riêng bằng requirePermission.
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (PUBLIC_PATHS.includes(pathname)) return NextResponse.next();
+  if (isPublicPath(pathname)) return NextResponse.next();
 
   const session = await decrypt(request.cookies.get(SESSION_COOKIE)?.value);
   const isApi = pathname.startsWith("/api/");

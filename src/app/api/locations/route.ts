@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, audit } from "@/lib/auth";
-import { can } from "@/lib/rbac";
+import { checkUserPermission } from "@/lib/rbacService";
 import { parseBody, withErrors, HttpError } from "@/lib/http";
 
 // Tạo vị trí lắp đặt: Chi nhánh -> Tòa nhà -> Phòng ban
@@ -51,10 +51,67 @@ const deleteSchema = z.object({
   id: z.string().min(1),
 });
 
+export const GET = withErrors(async (req: Request) => {
+  const s = await getSession();
+  if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+
+  const sp = new URL(req.url).searchParams;
+  const customerId = sp.get("customerId");
+  if (!customerId) {
+    throw new HttpError(400, "Thiếu mã khách hàng (customerId)");
+  }
+
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: {
+      id: true,
+      name: true,
+      code: true,
+      locationConfig: true,
+      branches: {
+        include: {
+          equipment: {
+            where: { buildingId: null },
+            select: { id: true, model: true, serialNumber: true, status: true, brand: true },
+          },
+          _count: { select: { buildings: true, equipment: true } },
+          buildings: {
+            include: {
+              equipment: {
+                where: { departmentId: null },
+                select: { id: true, model: true, serialNumber: true, status: true, brand: true },
+              },
+              _count: { select: { departments: true, equipment: true } },
+              departments: {
+                include: {
+                  equipment: {
+                    select: { id: true, model: true, serialNumber: true, status: true, brand: true },
+                  },
+                  _count: { select: { equipment: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!customer) {
+    throw new HttpError(404, "Không tìm thấy khách hàng");
+  }
+
+  return NextResponse.json(customer);
+});
+
 export const POST = withErrors(async (req: Request) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!can(s.role, "customer:write") && !can(s.role, "equipment:write")) {
+  const [canCust, canEquip] = await Promise.all([
+    checkUserPermission(s.userId, s.role, "customer:write"),
+    checkUserPermission(s.userId, s.role, "equipment:write"),
+  ]);
+  if (!canCust && !canEquip) {
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   }
   const r = await parseBody(req, createSchema);
@@ -82,7 +139,11 @@ export const POST = withErrors(async (req: Request) => {
 export const PATCH = withErrors(async (req: Request) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!can(s.role, "customer:write") && !can(s.role, "equipment:write")) {
+  const [canCust, canEquip] = await Promise.all([
+    checkUserPermission(s.userId, s.role, "customer:write"),
+    checkUserPermission(s.userId, s.role, "equipment:write"),
+  ]);
+  if (!canCust && !canEquip) {
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   }
   const r = await parseBody(req, updateSchema);
@@ -112,7 +173,11 @@ export const PATCH = withErrors(async (req: Request) => {
 export const DELETE = withErrors(async (req: Request) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!can(s.role, "customer:write") && !can(s.role, "equipment:write")) {
+  const [canCust, canEquip] = await Promise.all([
+    checkUserPermission(s.userId, s.role, "customer:write"),
+    checkUserPermission(s.userId, s.role, "equipment:write"),
+  ]);
+  if (!canCust && !canEquip) {
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   }
 
@@ -131,18 +196,20 @@ export const DELETE = withErrors(async (req: Request) => {
     if (eqCount > 0) {
       throw new HttpError(
         409,
-        `Phòng ban này đang có ${eqCount} thiết bị lắp đặt, vui lòng chuyển thiết bị trước khi xóa`
+        `Vị trí này đang có ${eqCount} thiết bị lắp đặt, vui lòng chuyển hoặc thu hồi thiết bị trước khi xóa`
       );
     }
     await prisma.department.delete({ where: { id } });
   } else if (level === "building") {
     const eqCount = await prisma.equipment.count({
-      where: { department: { buildingId: id } },
+      where: {
+        OR: [{ buildingId: id }, { department: { buildingId: id } }],
+      },
     });
     if (eqCount > 0) {
       throw new HttpError(
         409,
-        `Tòa nhà này đang có ${eqCount} thiết bị lắp đặt, vui lòng chuyển thiết bị trước khi xóa`
+        `Vị trí này (hoặc các phòng ban con) đang có ${eqCount} thiết bị lắp đặt, vui lòng chuyển hoặc thu hồi thiết bị trước khi xóa`
       );
     }
     await prisma.$transaction([
@@ -151,12 +218,18 @@ export const DELETE = withErrors(async (req: Request) => {
     ]);
   } else {
     const eqCount = await prisma.equipment.count({
-      where: { department: { building: { branchId: id } } },
+      where: {
+        OR: [
+          { branchId: id },
+          { building: { branchId: id } },
+          { department: { building: { branchId: id } } },
+        ],
+      },
     });
     if (eqCount > 0) {
       throw new HttpError(
         409,
-        `Chi nhánh này đang có ${eqCount} thiết bị lắp đặt, vui lòng chuyển thiết bị trước khi xóa`
+        `Vị trí này (hoặc các cấp con bên dưới) đang có ${eqCount} thiết bị lắp đặt, vui lòng chuyển hoặc thu hồi thiết bị trước khi xóa`
       );
     }
     await prisma.$transaction([

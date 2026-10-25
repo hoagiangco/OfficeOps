@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { can } from "@/lib/rbac";
+import { checkUserPermission } from "@/lib/rbacService";
 import { parseBody, withErrors } from "@/lib/http";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -35,7 +35,7 @@ export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
 
   const permNeeded =
     issue.type === "RETAIL" ? "stock:approve-retail" : "stock:approve-technical";
-  if (!can(s.role, permNeeded)) {
+  if (!(await checkUserPermission(s.userId, s.role, permNeeded))) {
     return NextResponse.json({ error: "Bạn không có quyền duyệt loại phiếu này" }, { status: 403 });
   }
 

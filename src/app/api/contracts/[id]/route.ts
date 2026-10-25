@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { can } from "@/lib/rbac";
+import { checkUserPermission } from "@/lib/rbacService";
+import { maskCustomerPhones } from "@/lib/maskUtils";
 import { parseBody, withErrors } from "@/lib/http";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -24,20 +25,24 @@ const patchSchema = z
 export const GET = withErrors(async (_req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!can(s.role, "contract:read")) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
+  if (!(await checkUserPermission(s.userId, s.role, "contract:read"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const { id } = await params;
   const contract = await prisma.contract.findUnique({
     where: { id },
     include: { customer: true, equipment: { select: { id: true, serialNumber: true, model: true, status: true, baseQuota: true, overagePrice: true } } },
   });
   if (!contract) return NextResponse.json({ error: "Không tìm thấy hợp đồng" }, { status: 404 });
-  return NextResponse.json(contract);
+  const canViewPhone = await checkUserPermission(s.userId, s.role, "customer:view-phone");
+  return NextResponse.json({
+    ...contract,
+    customer: maskCustomerPhones(contract.customer, canViewPhone),
+  });
 });
 
 export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!can(s.role, "contract:write")) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
+  if (!(await checkUserPermission(s.userId, s.role, "contract:write"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const r = await parseBody(req, patchSchema);
   if (r.error) return r.error;
   const { id } = await params;
@@ -54,7 +59,7 @@ export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
 export const DELETE = withErrors(async (_req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!can(s.role, "contract:write")) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
+  if (!(await checkUserPermission(s.userId, s.role, "contract:write"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const { id } = await params;
 
   const [eqCount, invCount] = await Promise.all([

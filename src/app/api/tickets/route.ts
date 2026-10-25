@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, requirePermission, audit } from "@/lib/auth";
+import { checkUserPermission } from "@/lib/rbacService";
+import { maskCustomerPhones } from "@/lib/maskUtils";
 import { parseBody, withErrors, HttpError } from "@/lib/http";
 import type { TicketPriority, TicketSource, TicketStatus, TicketType } from "@prisma/client";
 
@@ -39,15 +41,19 @@ export const GET = withErrors(async (req: Request) => {
   const equipmentId = sp.get("equipmentId");
   const q = sp.get("q")?.trim();
 
+  // Kỹ thuật viên (FIELD_TECH) chỉ được xem các phiếu do mình được phân công
+  const isFieldTech = session.role === "FIELD_TECH";
+  const effectiveAssigneeId = isFieldTech ? session.userId : assigneeId;
+
   const tickets = await prisma.ticket.findMany({
     where: {
       ...(status ? { status } : {}),
       ...(priority ? { priority } : {}),
       ...(type ? { type } : {}),
-      ...(assigneeId === "UNASSIGNED"
+      ...(effectiveAssigneeId === "UNASSIGNED"
         ? { assigneeId: null }
-        : assigneeId
-        ? { assigneeId }
+        : effectiveAssigneeId
+        ? { assigneeId: effectiveAssigneeId }
         : {}),
       ...(customerId ? { customerId } : {}),
       ...(equipmentId ? { equipmentId } : {}),
@@ -74,6 +80,8 @@ export const GET = withErrors(async (req: Request) => {
           status: true,
           currentCounter: true,
           locationNote: true,
+          branch: { select: { id: true, name: true } },
+          building: { select: { id: true, name: true, branch: { select: { name: true } } } },
           department: {
             include: {
               building: {
@@ -86,11 +94,23 @@ export const GET = withErrors(async (req: Request) => {
       assignee: { select: { id: true, name: true, phone: true, region: true, skills: true } },
       creator: { select: { id: true, name: true } },
       _count: { select: { stockIssues: true, logs: true, partsUsed: true } },
+      attachments: {
+        select: { id: true, url: true, kind: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      },
     },
     orderBy: [{ createdAt: "desc" }],
   });
 
-  return NextResponse.json(tickets);
+  const canViewPhone = await checkUserPermission(session.userId, session.role, "customer:view-phone");
+  const items = canViewPhone
+    ? tickets
+    : tickets.map((t) => ({
+        ...t,
+        customer: t.customer ? maskCustomerPhones(t.customer, false) : t.customer,
+      }));
+
+  return NextResponse.json(items);
 });
 
 export const POST = withErrors(async (req: Request) => {
@@ -111,7 +131,10 @@ export const POST = withErrors(async (req: Request) => {
   });
   const code = `TK-${year}-${String(countThisYear + 1).padStart(4, "0")}`;
 
-  const initialStatus: TicketStatus = data.assigneeId ? "ASSIGNED" : "PENDING";
+  // Kỹ thuật viên không có quyền giao việc
+  const canAssign = session.role === "SUPER_ADMIN" || session.role === "DISPATCHER";
+  const finalAssigneeId = canAssign ? (data.assigneeId || null) : null;
+  const initialStatus: TicketStatus = finalAssigneeId ? "ASSIGNED" : "PENDING";
   const slaDueAt = computeSlaDueAt(data.priority as TicketPriority);
 
   const created = await prisma.$transaction(async (tx) => {
@@ -120,7 +143,7 @@ export const POST = withErrors(async (req: Request) => {
         code,
         customerId: data.customerId,
         equipmentId: data.equipmentId,
-        assigneeId: data.assigneeId || null,
+        assigneeId: finalAssigneeId,
         creatorId: session.userId,
         type: data.type as TicketType,
         status: initialStatus,
@@ -142,9 +165,9 @@ export const POST = withErrors(async (req: Request) => {
         userId: session.userId,
         fromStatus: null,
         toStatus: initialStatus,
-        note: data.assigneeId
+        note: finalAssigneeId
           ? `Tạo phiếu và giao cho KTV ${ticket.assignee?.name ?? ""}`
-          : "Khởi tạo phiếu yêu cầu mới",
+          : "Khởi tạo phiếu kỹ thuật mới",
       },
     });
 
@@ -168,7 +191,7 @@ export const POST = withErrors(async (req: Request) => {
         data: {
           userId: data.assigneeId,
           channel: "IN_APP",
-          title: `Phiếu công việc mới: ${code}`,
+          title: `Phiếu kỹ thuật mới: ${code}`,
           body: `${ticket.customer.name} - Máy ${ticket.equipment.model} (${ticket.equipment.serialNumber}): ${data.description}`,
           sentAt: new Date(),
         },

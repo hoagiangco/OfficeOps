@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, requirePermission, audit } from "@/lib/auth";
+import { checkUserPermission } from "@/lib/rbacService";
+import { maskCustomerPhones } from "@/lib/maskUtils";
 import { parseBody, withErrors, HttpError } from "@/lib/http";
 
 const createScheduleSchema = z.object({
@@ -41,7 +43,18 @@ export const GET = withErrors(async () => {
     orderBy: { nextDueDate: "asc" },
   });
 
-  return NextResponse.json(schedules);
+  const canViewPhone = await checkUserPermission(session.userId, session.role, "customer:view-phone");
+  const items = canViewPhone
+    ? schedules
+    : schedules.map((s) => ({
+        ...s,
+        equipment: {
+          ...s.equipment,
+          customer: s.equipment.customer ? maskCustomerPhones(s.equipment.customer, false) : s.equipment.customer,
+        },
+      }));
+
+  return NextResponse.json(items);
 });
 
 export const POST = withErrors(async (req: Request) => {

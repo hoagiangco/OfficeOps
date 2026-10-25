@@ -3,7 +3,7 @@ import { z } from "zod";
 import { StockIssueType, ApprovalStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession, requirePermission } from "@/lib/auth";
-import { pagingSchema, parseBody, parseQuery, withErrors } from "@/lib/http";
+import { pagingSchema, parseBody, parseQuery, withErrors, HttpError } from "@/lib/http";
 
 const createIssueSchema = z.object({
   type: z.nativeEnum(StockIssueType).default(StockIssueType.TECHNICAL),
@@ -60,6 +60,19 @@ export const POST = withErrors(async (req: Request) => {
   const r = await parseBody(req, createIssueSchema);
   if (r.error) return r.error;
 
+  if (r.data.ticketId) {
+    const linkedTicket = await prisma.ticket.findUnique({
+      where: { id: r.data.ticketId },
+      select: { id: true, status: true },
+    });
+    if (linkedTicket?.status === "COMPLETED" && s.role !== "SUPER_ADMIN") {
+      throw new HttpError(
+        403,
+        "Phiếu kỹ thuật đã hoàn thành, không thể tạo thêm yêu cầu xuất linh kiện"
+      );
+    }
+  }
+
   const count = await prisma.stockIssue.count();
   const code = `PXK-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
 
@@ -82,10 +95,16 @@ export const POST = withErrors(async (req: Request) => {
     });
 
     if (r.data.ticketId && r.data.type === "TECHNICAL") {
-      await tx.ticket.update({
+      const linked = await tx.ticket.findUnique({
         where: { id: r.data.ticketId },
-        data: { status: "WAITING_PARTS" },
+        select: { status: true },
       });
+      if (linked && linked.status !== "COMPLETED") {
+        await tx.ticket.update({
+          where: { id: r.data.ticketId },
+          data: { status: "WAITING_PARTS" },
+        });
+      }
     }
 
     await tx.auditLog.create({
