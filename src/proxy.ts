@@ -7,6 +7,9 @@ const isPublicPath = (pathname: string) => {
   return (
     pathname === "/login" ||
     pathname === "/api/auth/login" ||
+    pathname === "/api/auth/forgot-password" ||
+    pathname === "/api/auth/reset-password" ||
+    pathname === "/reset-password" ||
     pathname.startsWith("/scan") ||
     pathname.startsWith("/api/scan") ||
     pathname.startsWith("/api/cron") ||

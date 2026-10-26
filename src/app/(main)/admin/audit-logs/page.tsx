@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
 import { toast } from "react-toastify";
 import Loading from "@/components/Loading";
 import ActiveFilterChips, { FilterChipItem } from "@/components/ActiveFilterChips";
@@ -21,6 +20,60 @@ interface AuditLogItem {
     email: string;
     role: Role;
   } | null;
+}
+
+function renderActionBadge(action: string) {
+  const act = action.toUpperCase();
+
+  let bg = "#f1f5f9";
+  let text = "#334155";
+  let border = "#cbd5e1";
+  let icon = "fas fa-cube";
+
+  if (act.includes("DELETE") || act.includes("REMOVE") || act.includes("CANCEL")) {
+    bg = "#fee2e2";
+    text = "#b91c1c";
+    border = "#fca5a5";
+    icon = "fas fa-trash-alt";
+  } else if (act.includes("CREATE") || act.includes("ADD") || act.includes("REGISTER") || act.includes("IMPORT")) {
+    bg = "#dcfce7";
+    text = "#15803d";
+    border = "#86efac";
+    icon = "fas fa-plus-circle";
+  } else if (act.includes("LOGIN") || act.includes("LOGOUT") || act.includes("AUTH")) {
+    bg = "#e0e7ff";
+    text = "#4338ca";
+    border = "#a5b4fc";
+    icon = act.includes("LOGOUT") ? "fas fa-sign-out-alt" : "fas fa-sign-in-alt";
+  } else if (act.includes("PASSWORD") || act.includes("SECURITY") || act.includes("PERM") || act.includes("ROLE") || act.includes("RBAC")) {
+    bg = "#fef3c7";
+    text = "#b45309";
+    border = "#fcd34d";
+    icon = "fas fa-key";
+  } else if (act.includes("UPDATE") || act.includes("EDIT") || act.includes("ASSIGN") || act.includes("CHECKIN") || act.includes("CHANGE") || act.includes("PROFILE")) {
+    bg = "#dbeafe";
+    text = "#1d4ed8";
+    border = "#93c5fd";
+    icon = act.includes("ASSIGN") ? "fas fa-user-tag" : act.includes("CHECKIN") ? "fas fa-map-marker-alt" : "fas fa-edit";
+  }
+
+  return (
+    <span
+      className="d-inline-flex align-items-center gap-1 font-monospace fw-bold px-2 py-1 rounded-2 border"
+      style={{
+        backgroundColor: bg,
+        color: text,
+        borderColor: border,
+        fontSize: "0.74rem",
+        letterSpacing: "0.02em",
+        whiteSpace: "nowrap",
+      }}
+      title={action}
+    >
+      <i className={icon} style={{ fontSize: "0.7rem", opacity: 0.9 }}></i>
+      <span>{action}</span>
+    </span>
+  );
 }
 
 export default function AuditLogsPage() {
@@ -206,36 +259,40 @@ export default function AuditLogsPage() {
                 ) : (
                   logs.map((log) => (
                     <tr key={log.id}>
-                      <td className="px-3 text-muted font-monospace" style={{ fontSize: "0.78rem" }}>
+                      <td className="px-3 text-dark font-monospace" style={{ fontSize: "0.78rem" }}>
                         {new Date(log.createdAt).toLocaleString("vi-VN")}
                       </td>
                       <td>
                         {log.user ? (
-                          <div>
-                            <span className="fw-bold text-dark small">{log.user.name}</span>{" "}
-                            <span className="badge bg-light text-dark border ms-1" style={{ fontSize: "0.68rem" }}>
+                          <div className="d-flex align-items-center flex-wrap gap-1">
+                            <span className="fw-bold text-dark small">{log.user.name}</span>
+                            <span className="badge bg-light text-secondary border" style={{ fontSize: "0.68rem" }}>
                               {ROLE_LABELS[log.user.role]}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-muted small">Hệ thống</span>
+                          <span className="badge bg-light text-muted border small">Hệ thống</span>
                         )}
                       </td>
                       <td>
-                        <span className="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle font-monospace">
-                          {log.action}
-                        </span>
+                        {renderActionBadge(log.action)}
                       </td>
                       <td className="small">
-                        <strong>{log.entity}</strong>
+                        <span className="fw-semibold text-dark">{log.entity}</span>
                         {log.entityId && (
-                          <span className="text-muted font-monospace ms-1" style={{ fontSize: "0.75rem" }}>
+                          <span className="text-muted font-monospace ms-1.5" style={{ fontSize: "0.75rem" }}>
                             #{log.entityId.slice(-8)}
                           </span>
                         )}
                       </td>
-                      <td className="px-3 text-muted font-monospace" style={{ fontSize: "0.75rem" }}>
-                        {log.meta ? JSON.stringify(log.meta) : "—"}
+                      <td className="px-3 text-secondary font-monospace" style={{ fontSize: "0.75rem", maxWidth: "420px", wordBreak: "break-all" }}>
+                        {log.meta ? (
+                          <span title={JSON.stringify(log.meta, null, 2)}>
+                            {JSON.stringify(log.meta)}
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
                       </td>
                     </tr>
                   ))

@@ -311,9 +311,13 @@ export default function CustomerImportModal({
 
           <div
             className={`border rounded-3 p-4 text-center transition-all ${
-              isDragOver ? "border-primary bg-primary bg-opacity-10" : "bg-white border-2 border-dashed"
+              isDragOver ? "border-primary" : "bg-white border-2 border-dashed"
             }`}
-            style={{ borderStyle: "dashed", cursor: "pointer" }}
+            style={{
+              borderStyle: "dashed",
+              cursor: "pointer",
+              backgroundColor: isDragOver ? "#eff6ff" : "white",
+            }}
             onDragOver={(e) => {
               e.preventDefault();
               setIsDragOver(true);

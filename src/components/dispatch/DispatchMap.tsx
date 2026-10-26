@@ -71,7 +71,9 @@ export function DispatchMap({
 }: DispatchMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
-  const [leafletReady, setLeafletReady] = useState(false);
+  const [leafletReady, setLeafletReady] = useState(
+    () => typeof window !== "undefined" && !!(window as any).L
+  );
   const [mapMode, setMapMode] = useState<"street" | "satellite">("street");
   const streetLayerRef = useRef<any>(null);
   const satLayerRef = useRef<any>(null);
@@ -86,7 +88,7 @@ export function DispatchMap({
     if (typeof window === "undefined") return;
 
     if ((window as any).L) {
-      setLeafletReady(true);
+      setTimeout(() => setLeafletReady(true), 0);
       return;
     }
 
@@ -108,7 +110,7 @@ export function DispatchMap({
       script.onload = () => setLeafletReady(true);
       document.body.appendChild(script);
     } else {
-      setLeafletReady(true);
+      setTimeout(() => setLeafletReady(true), 0);
     }
   }, []);
 
@@ -552,7 +554,15 @@ export function DispatchMap({
         polylineGroup.addLayer(polyline);
       }
     }
-  }, [geocodedTickets, geocodedTechs, selectedTicketId, currentSelectedTicket, leafletReady]);
+  }, [
+    geocodedTickets,
+    geocodedTechs,
+    selectedTicketId,
+    currentSelectedTicket,
+    leafletReady,
+    onAssignTicket,
+    onSelectTicket,
+  ]);
 
   // 7. Focus vào phiếu đang chọn khi thay đổi từ danh sách ngoài
   useEffect(() => {
@@ -562,7 +572,7 @@ export function DispatchMap({
       15,
       { animate: true, duration: 0.8 }
     );
-  }, [selectedTicketId]);
+  }, [currentSelectedTicket]);
 
   // Nút Fit toàn cảnh
   const handleFitAll = () => {

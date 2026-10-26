@@ -196,8 +196,11 @@ export function TicketDetailModal({
           ? String(data.counterAtClose)
           : String(data.equipment.currentCounter || 0)
       );
+      const sig = data.customerSignature;
       setSignatureInput(
-        data.customerSignature || `Đã xác nhận - ${data.customer.name}`
+        sig && !sig.includes("[DEMO_SIGNATURE]") && !sig.includes("...")
+          ? sig
+          : `Đã xác nhận - ${data.customer.name}`
       );
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Lỗi tải chi tiết phiếu");

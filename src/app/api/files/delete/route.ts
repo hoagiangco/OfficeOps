@@ -28,24 +28,7 @@ export async function DELETE(request: NextRequest) {
 
     const decodedTarget = decodeURIComponent(rawFileParam).trim();
 
-    // 1. Nếu là link Vercel Blob
-    const hasToken =
-      !!process.env.BLOB_READ_WRITE_TOKEN &&
-      !process.env.BLOB_READ_WRITE_TOKEN.startsWith("YOUR_");
-
-    if (hasToken && (decodedTarget.startsWith("http://") || decodedTarget.startsWith("https://"))) {
-      try {
-        // @ts-ignore
-        const { del } = await import("@vercel/blob");
-        await del(decodedTarget, { token: process.env.BLOB_READ_WRITE_TOKEN });
-        await audit(session.userId, "DELETE", "File", decodedTarget);
-        return NextResponse.json({ success: true, message: "Đã xóa file thành công" });
-      } catch (blobErr: any) {
-        console.warn("Vercel Blob delete failed:", blobErr);
-      }
-    }
-
-    // 2. Local storage
+    // Local storage
     let cleanRelPath = decodedTarget;
     if (cleanRelPath.startsWith("/uploads/")) {
       cleanRelPath = cleanRelPath.replace(/^\/uploads\//, "");
@@ -84,6 +67,9 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: "Đã xóa file thành công" });
   } catch (error: any) {
+    if (error && typeof error === "object" && "digest" in error) {
+      throw error;
+    }
     console.error("Lỗi khi xóa file:", error);
     return NextResponse.json(
       { error: error?.message || "Lỗi khi xóa file" },

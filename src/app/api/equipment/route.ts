@@ -121,6 +121,7 @@ export const GET = withErrors(async (req: Request) => {
   if (q) {
     andConditions.push({
       OR: [
+        { qrCode: { contains: q, mode: "insensitive" as const } },
         { serialNumber: { contains: q, mode: "insensitive" as const } },
         { code: { contains: q, mode: "insensitive" as const } },
         { model: { contains: q, mode: "insensitive" as const } },

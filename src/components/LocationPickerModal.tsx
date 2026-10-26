@@ -37,21 +37,21 @@ export default function LocationPickerModal({
   });
 
   const [mapType, setMapType] = useState<"street" | "satellite">("satellite");
-  const [streetLayer, setStreetLayer] = useState<any>(null);
-  const [satelliteLayer, setSatelliteLayer] = useState<any>(null);
+  const streetLayerRef = useRef<any>(null);
+  const satelliteLayerRef = useRef<any>(null);
 
   const [searchQuery, setSearchQuery] = useState(initialAddress || "");
   const [searching, setSearching] = useState(false);
   const [pasteInput, setPasteInput] = useState("");
   const [accuracy, setAccuracy] = useState<number | null>(null);
-  const [leafletLoaded, setLeafletLoaded] = useState(false);
+  const [leafletLoaded, setLeafletLoaded] = useState(() => typeof window !== "undefined" && !!(window as any).L);
 
   // 1. Tải Leaflet CDN khi mở modal nếu chưa có
   useEffect(() => {
     if (!isOpen) return;
 
     if ((window as any).L) {
-      setLeafletLoaded(true);
+      setTimeout(() => setLeafletLoaded(true), 0);
       return;
     }
 
@@ -117,8 +117,8 @@ export default function LocationPickerModal({
 
     // Mặc định chọn vệ tinh
     sat.addTo(map);
-    setStreetLayer(street);
-    setSatelliteLayer(sat);
+    streetLayerRef.current = street;
+    satelliteLayerRef.current = sat;
     mapInstanceRef.current = map;
 
     // Tạo Icon Marker SVG màu đỏ không phụ thuộc file ảnh ngoài
@@ -142,7 +142,6 @@ export default function LocationPickerModal({
     }).addTo(map);
 
     markerRef.current = marker;
-    setCoords({ lat: startLat, lng: startLng });
 
     // Sự kiện kéo ghim
     marker.on("dragend", (e: any) => {
@@ -171,18 +170,18 @@ export default function LocationPickerModal({
         mapInstanceRef.current = null;
       }
     };
-  }, [isOpen, leafletLoaded]);
+  }, [isOpen, leafletLoaded, initialLat, initialLng]);
 
   // Đổi kiểu hiển thị bản đồ (Vệ tinh vs Đường phố)
   const toggleMapLayer = (type: "street" | "satellite") => {
-    if (!mapInstanceRef.current || !streetLayer || !satelliteLayer) return;
+    if (!mapInstanceRef.current || !streetLayerRef.current || !satelliteLayerRef.current) return;
     setMapType(type);
     if (type === "satellite") {
-      mapInstanceRef.current.removeLayer(streetLayer);
-      satelliteLayer.addTo(mapInstanceRef.current);
+      mapInstanceRef.current.removeLayer(streetLayerRef.current);
+      satelliteLayerRef.current.addTo(mapInstanceRef.current);
     } else {
-      mapInstanceRef.current.removeLayer(satelliteLayer);
-      streetLayer.addTo(mapInstanceRef.current);
+      mapInstanceRef.current.removeLayer(satelliteLayerRef.current);
+      streetLayerRef.current.addTo(mapInstanceRef.current);
     }
   };
 

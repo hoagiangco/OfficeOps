@@ -689,8 +689,12 @@ export default function FileManager({
           {/* Drag & Drop overlay */}
           {isDragging && (
             <div
-              className="position-absolute top-0 start-0 w-100 h-100 bg-primary bg-opacity-10 border border-primary border-3 border-dashed rounded d-flex flex-column align-items-center justify-content-center text-primary"
-              style={{ zIndex: 1000, backdropFilter: "blur(2px)" }}
+              className="position-absolute top-0 start-0 w-100 h-100 border border-primary border-3 border-dashed rounded d-flex flex-column align-items-center justify-content-center text-primary"
+              style={{
+                zIndex: 1000,
+                backgroundColor: "rgba(239, 246, 255, 0.9)",
+                backdropFilter: "blur(2px)",
+              }}
             >
               <i className="fas fa-cloud-upload-alt fa-3x mb-2 animate-bounce"></i>
               <h5 className="fw-bold mb-1">Thả tệp tin vào đây để tải lên</h5>

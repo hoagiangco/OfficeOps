@@ -7,6 +7,7 @@ import { TICKET_TYPE_LABELS, TICKET_STATUS_LABELS } from "@/lib/labels";
 import { formatLocationPath } from "@/lib/location";
 import { exportElementToPdf } from "@/lib/pdfExport";
 import { CompanyProfile, DEFAULT_COMPANY_PROFILE } from "@/lib/companyProfile";
+import { isValidSignatureDataUrl } from "@/components/SignatureCanvas";
 
 interface TicketPrintData {
   id: string;
@@ -404,7 +405,7 @@ function TicketPrintContent({
               <div className="text-muted small fst-italic mb-2">(Ký và xác nhận chất lượng dịch vụ)</div>
 
               {/* Nếu có chữ ký số điện tử của khách hàng */}
-              {ticket.customerSignature ? (
+              {ticket.customerSignature && isValidSignatureDataUrl(ticket.customerSignature) ? (
                 <div className="my-2 d-flex flex-column align-items-center">
                   <div className="border rounded bg-white p-1 shadow-sm d-inline-block">
                     <img

@@ -43,7 +43,8 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
   const role = session.role;
   const showContract = role === "SUPER_ADMIN" || role === "ADMIN";
   const showLocation = true;
-  const showHistory = role !== "ADMIN";
+  const showHistory =
+    role === "SUPER_ADMIN" || (await checkUserPermission(session.userId, session.role, "equipment:history"));
   const loc = formatLocationPath(e) || e.locationNote || "Chưa xác định";
 
   const catParts: string[] = [];

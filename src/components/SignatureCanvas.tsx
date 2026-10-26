@@ -2,6 +2,29 @@
 
 import React, { useRef, useState, useEffect } from "react";
 
+export function isValidSignatureDataUrl(url?: string | null): boolean {
+  if (!url || typeof url !== "string") return false;
+  // Cho phép URL HTTP / HTTPS / Relative đường dẫn tĩnh
+  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("/")) {
+    return true;
+  }
+  // Kiểm tra định dạng data URL hình ảnh
+  if (!url.startsWith("data:image/")) {
+    return false;
+  }
+  // Chặn các chuỗi giả lập lỗi hoặc bị cắt dở chứa [DEMO_SIGNATURE] hoặc dấu ...
+  if (url.includes("[") || url.includes("]") || url.includes("...") || url.includes(" ")) {
+    return false;
+  }
+  const commaIdx = url.indexOf(",");
+  if (commaIdx === -1) return false;
+  const meta = url.slice(0, commaIdx);
+  if (!meta.includes(";base64")) return false;
+  const base64Data = url.slice(commaIdx + 1).trim();
+  if (base64Data.length < 8) return false;
+  return /^[A-Za-z0-9+/=]+$/.test(base64Data);
+}
+
 interface SignatureCanvasProps {
   value?: string | null;
   onChange: (dataUrl: string) => void;
@@ -12,6 +35,12 @@ export function SignatureCanvas({ value, onChange, disabled }: SignatureCanvasPr
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(false);
+  const [imgError, setImgError] = useState(false);
+
+  // Reset lỗi ảnh khi giá trị value thay đổi
+  useEffect(() => {
+    setImgError(false);
+  }, [value]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -92,7 +121,11 @@ export function SignatureCanvas({ value, onChange, disabled }: SignatureCanvasPr
     onChange("");
   };
 
-  const isImageSignature = value && value.startsWith("data:image/");
+  const isImageSignature = Boolean(
+    value &&
+    !imgError &&
+    isValidSignatureDataUrl(value)
+  );
 
   return (
     <div>
@@ -100,9 +133,13 @@ export function SignatureCanvas({ value, onChange, disabled }: SignatureCanvasPr
         <div className="border rounded bg-white p-2 text-center position-relative">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={value}
+            src={value || ""}
             alt="Chữ ký khách hàng"
             style={{ maxHeight: "90px", objectFit: "contain" }}
+            onError={() => {
+              setImgError(true);
+              onChange("");
+            }}
           />
           {!disabled && (
             <button
@@ -115,6 +152,10 @@ export function SignatureCanvas({ value, onChange, disabled }: SignatureCanvasPr
               Ký lại
             </button>
           )}
+        </div>
+      ) : disabled && !value ? (
+        <div className="border rounded bg-light p-3 text-center text-muted small fst-italic">
+          <i className="fas fa-pen-nib text-secondary me-1"></i> Chưa có chữ ký khách hàng
         </div>
       ) : (
         <div className="position-relative border rounded bg-white">

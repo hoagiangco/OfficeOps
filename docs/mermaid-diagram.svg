@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1730.6314999999997 1249.45" width="1730.6314999999997" height="1249.45" style="--bg:#18181B;--fg:#F4F4F5;--line:#71717A;--muted:#A1A1AA;--surface:#27272A;--border:#3F3F46;background:var(--bg)">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap');
+  text { font-family: 'Inter', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" />
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1" />
+  </marker>
+</defs>
+<line class="lifeline" data-actor="Admin" x1="111.809" y1="92.45" x2="111.809" y2="1219.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Tech" x1="547.4229999999999" y1="92.45" x2="547.4229999999999" y2="1219.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="KH" x1="918.8849999999998" y1="92.45" x2="918.8849999999998" y2="1219.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="KT" x1="1245.4969999999998" y1="92.45" x2="1245.4969999999998" y2="1219.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<line class="lifeline" data-actor="Tech/KH" x1="1657.3509999999997" y1="70" x2="1657.3509999999997" y2="1219.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+<g class="block" data-type="alt" data-label="Counter mới &gt;= Counter cũ">
+  <rect x="30" y="500.45000000000005" width="1601.3509999999997" height="224" rx="0" ry="0" fill="none" stroke="var(--_node-stroke)" stroke-width="1" />
+  <rect x="30" y="500.45000000000005" width="200" height="20" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="38" y="510.45000000000005" font-size="11" font-weight="600" fill="var(--_text-sec)" dy="3.8499999999999996">alt [Counter mới &gt;= Counter cũ]</text>
+  <line x1="30" y1="606.45" x2="1631.3509999999997" y2="606.45" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4" />
+  <rect x="35" y="612.3000000000001" width="206" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="38" y="620.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">[Counter mới &lt; Counter cũ (Bất thường)]</text>
+</g>
+<g class="message" data-from="Admin" data-to="Admin" data-label="Tạo Hợp đồng thuê máy (Giá cố định, Định mức bản in, Đơn giá vượt, Ngày chốt)" data-line-style="solid" data-arrow-head="filled" data-self="true" data-step="1">
+  <polyline points="111.809,112.45 141.809,112.45 141.809,132.45 111.809,132.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="146.809" y="114.3" width="404" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="149.809" y="122.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Tạo Hợp đồng thuê máy (Giá cố định, Định mức bản in, Đơn giá vượt, Ngày chốt)</text>
+  <circle class="sequence-number" cx="111.809" cy="112.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="111.809" y="112.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">1</text>
+</g>
+<g class="message" data-from="Admin" data-to="Tech" data-label="Bàn giao máy đến văn phòng KH (Lắp đặt)" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="2">
+  <line x1="111.809" y1="182.45" x2="547.4229999999999" y2="182.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="220.11599999999993" y="164.29999999999998" width="219" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="329.61599999999993" y="172.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Bàn giao máy đến văn phòng KH (Lắp đặt)</text>
+  <circle class="sequence-number" cx="111.809" cy="182.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="111.809" y="182.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">2</text>
+</g>
+<g class="message" data-from="Tech" data-to="Tech" data-label="Ghi nhận chỉ số Counter bàn giao (Start Counter) qua App / PWA" data-line-style="solid" data-arrow-head="filled" data-self="true" data-step="3">
+  <polyline points="547.4229999999999,222.45 577.4229999999999,222.45 577.4229999999999,242.45 547.4229999999999,242.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="582.4229999999999" y="224.29999999999998" width="334" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="585.4229999999999" y="232.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Ghi nhận chỉ số Counter bàn giao (Start Counter) qua App / PWA</text>
+  <circle class="sequence-number" cx="547.4229999999999" cy="222.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="547.4229999999999" y="222.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">3</text>
+</g>
+<g class="message" data-from="Tech" data-to="Admin" data-label="Máy chuyển trạng thái ACTIVE, gắn hợp đồng &amp; vị trí lắp đặt" data-line-style="dashed" data-arrow-head="filled" data-self="false" data-step="4">
+  <line x1="547.4229999999999" y1="292.45" x2="111.809" y2="292.45" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <rect x="172.11599999999993" y="274.3" width="315" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="329.61599999999993" y="282.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Máy chuyển trạng thái ACTIVE, gắn hợp đồng &amp; vị trí lắp đặt</text>
+  <circle class="sequence-number" cx="547.4229999999999" cy="292.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="547.4229999999999" y="292.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">4</text>
+</g>
+<g class="message" data-from="KH" data-to="Tech" data-label="Sử dụng máy (in, scan, photocopy) &amp; gọi bảo trì (nếu có)" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="5">
+  <line x1="918.8849999999998" y1="347.45" x2="547.4229999999999" y2="347.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="588.6539999999998" y="329.3" width="289" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="733.1539999999998" y="337.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Sử dụng máy (in, scan, photocopy) &amp; gọi bảo trì (nếu có)</text>
+  <circle class="sequence-number" cx="918.8849999999998" cy="347.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="918.8849999999998" y="347.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">5</text>
+</g>
+<g class="message" data-from="Tech" data-to="Tech" data-label="Ghi nhận Counter trong các ca bảo trì định kỳ / sửa chữa" data-line-style="solid" data-arrow-head="filled" data-self="true" data-step="6">
+  <polyline points="547.4229999999999,387.45 577.4229999999999,387.45 577.4229999999999,407.45 547.4229999999999,407.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="582.4229999999999" y="389.3" width="299" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="585.4229999999999" y="397.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Ghi nhận Counter trong các ca bảo trì định kỳ / sửa chữa</text>
+  <circle class="sequence-number" cx="547.4229999999999" cy="387.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="547.4229999999999" y="387.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">6</text>
+</g>
+<g class="message" data-from="Tech/KH" data-to="KT" data-label="Chụp ảnh đồng hồ / Nhập số Counter cuối kỳ (End Counter)" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="7">
+  <line x1="1657.3509999999997" y1="472.45" x2="1245.4969999999998" y2="472.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="1298.4239999999998" y="454.3" width="306" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1451.4239999999998" y="462.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Chụp ảnh đồng hồ / Nhập số Counter cuối kỳ (End Counter)</text>
+  <circle class="sequence-number" cx="1657.3509999999997" cy="472.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="1657.3509999999997" y="472.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">7</text>
+</g>
+<g class="message" data-from="KT" data-to="KT" data-label="Hệ thống phê duyệt tự động (APPROVED), cập nhật currentCounter" data-line-style="solid" data-arrow-head="filled" data-self="true" data-step="8">
+  <polyline points="1245.4969999999998,540.45 1275.4969999999998,540.45 1275.4969999999998,560.45 1245.4969999999998,560.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="1280.4969999999998" y="542.3000000000001" width="347" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1283.4969999999998" y="550.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Hệ thống phê duyệt tự động (APPROVED), cập nhật currentCounter</text>
+  <circle class="sequence-number" cx="1245.4969999999998" cy="540.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="1245.4969999999998" y="540.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">8</text>
+</g>
+<g class="message" data-from="KT" data-to="KT" data-label="Đưa vào hàng đợi PENDING_APPROVAL, yêu cầu lý do &amp; ảnh minh chứng" data-line-style="solid" data-arrow-head="filled" data-self="true" data-step="9">
+  <polyline points="1245.4969999999998,634.45 1275.4969999999998,634.45 1275.4969999999998,654.45 1245.4969999999998,654.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="1280.4969999999998" y="636.3000000000001" width="378" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1283.4969999999998" y="644.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Đưa vào hàng đợi PENDING_APPROVAL, yêu cầu lý do &amp; ảnh minh chứng</text>
+  <circle class="sequence-number" cx="1245.4969999999998" cy="634.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="1245.4969999999998" y="634.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">9</text>
+</g>
+<g class="message" data-from="Admin" data-to="KT" data-label="Giám đốc/Kế toán phê duyệt điều chỉnh" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="10">
+  <line x1="111.809" y1="704.45" x2="1245.4969999999998" y2="704.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="574.6529999999999" y="686.3000000000001" width="208" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="678.6529999999999" y="694.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Giám đốc/Kế toán phê duyệt điều chỉnh</text>
+  <circle class="sequence-number" cx="111.809" cy="704.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="111.809" y="704.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">10</text>
+</g>
+<g class="message" data-from="KT" data-to="KT" data-label="Chọn Hợp đồng &amp; Kỳ thanh toán (Period Start → Period End)" data-line-style="solid" data-arrow-head="filled" data-self="true" data-step="11">
+  <polyline points="1245.4969999999998,759.45 1275.4969999999998,759.45 1275.4969999999998,779.45 1245.4969999999998,779.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="1280.4969999999998" y="761.3000000000001" width="306" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1283.4969999999998" y="769.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Chọn Hợp đồng &amp; Kỳ thanh toán (Period Start → Period End)</text>
+  <circle class="sequence-number" cx="1245.4969999999998" cy="759.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="1245.4969999999998" y="759.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">11</text>
+</g>
+<g class="message" data-from="KT" data-to="KT" data-label="Hệ thống tự động tính cước từng máy &amp; sinh Hóa đơn (DRAFT)" data-line-style="solid" data-arrow-head="filled" data-self="true" data-step="12">
+  <polyline points="1245.4969999999998,829.45 1275.4969999999998,829.45 1275.4969999999998,849.45 1245.4969999999998,849.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="1280.4969999999998" y="831.3000000000001" width="317" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1283.4969999999998" y="839.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Hệ thống tự động tính cước từng máy &amp; sinh Hóa đơn (DRAFT)</text>
+  <circle class="sequence-number" cx="1245.4969999999998" cy="829.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="1245.4969999999998" y="829.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">12</text>
+</g>
+<g class="message" data-from="KT" data-to="KT" data-label="Kiểm tra Bảng kê (Phí cố định + Phí vượt định mức + VAT)" data-line-style="solid" data-arrow-head="filled" data-self="true" data-step="13">
+  <polyline points="1245.4969999999998,899.45 1275.4969999999998,899.45 1275.4969999999998,919.45 1245.4969999999998,919.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="1280.4969999999998" y="901.3000000000001" width="307" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1283.4969999999998" y="909.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Kiểm tra Bảng kê (Phí cố định + Phí vượt định mức + VAT)</text>
+  <circle class="sequence-number" cx="1245.4969999999998" cy="899.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="1245.4969999999998" y="899.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">13</text>
+</g>
+<g class="message" data-from="KT" data-to="KH" data-label="Duyệt hóa đơn (SENT), gửi Bảng kê kèm mã thanh toán VietQR" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="14">
+  <line x1="1245.4969999999998" y1="969.45" x2="918.8849999999998" y2="969.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="923.6909999999998" y="951.3000000000001" width="317" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1082.1909999999998" y="959.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Duyệt hóa đơn (SENT), gửi Bảng kê kèm mã thanh toán VietQR</text>
+  <circle class="sequence-number" cx="1245.4969999999998" cy="969.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="1245.4969999999998" y="969.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">14</text>
+</g>
+<g class="message" data-from="KH" data-to="KT" data-label="Chuyển khoản thanh toán theo mã VietQR" data-line-style="solid" data-arrow-head="filled" data-self="false" data-step="15">
+  <line x1="918.8849999999998" y1="1024.45" x2="1245.4969999999998" y2="1024.45" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="974.1909999999998" y="1006.3000000000001" width="216" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1082.1909999999998" y="1014.45" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Chuyển khoản thanh toán theo mã VietQR</text>
+  <circle class="sequence-number" cx="918.8849999999998" cy="1024.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="918.8849999999998" y="1024.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">15</text>
+</g>
+<g class="message" data-from="KT" data-to="KT" data-label="Xác nhận thanh toán (PAID)" data-line-style="solid" data-arrow-head="filled" data-self="true" data-step="16">
+  <polyline points="1245.4969999999998,1064.45 1275.4969999999998,1064.45 1275.4969999999998,1084.45 1245.4969999999998,1084.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)" />
+  <rect x="1280.4969999999998" y="1066.3" width="147" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1283.4969999999998" y="1074.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Xác nhận thanh toán (PAID)</text>
+  <circle class="sequence-number" cx="1245.4969999999998" cy="1064.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="1245.4969999999998" y="1064.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">16</text>
+</g>
+<g class="message" data-from="KT" data-to="KT" data-label="Đánh dấu tất cả MeterLog trong kỳ là `isBilled = true`" data-line-style="dashed" data-arrow-head="filled" data-self="true" data-step="17">
+  <polyline points="1245.4969999999998,1134.45 1275.4969999999998,1134.45 1275.4969999999998,1154.45 1245.4969999999998,1154.45" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)" />
+  <rect x="1280.4969999999998" y="1136.3" width="272" height="16.3" rx="2" ry="2" fill="var(--bg)" />
+  <text x="1283.4969999999998" y="1144.45" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Đánh dấu tất cả MeterLog trong kỳ là `isBilled = true`</text>
+  <circle class="sequence-number" cx="1245.4969999999998" cy="1134.45" r="9" fill="var(--_arrow)" stroke="var(--bg)" stroke-width="1" />
+  <text x="1245.4969999999998" y="1134.45" class="sequence-number-label" font-size="10" text-anchor="middle" font-weight="600" fill="var(--bg)" dy="3.5">17</text>
+</g>
+<g class="note" data-position="over" data-actors="Tech,KH">
+  <polygon points="629.4469999999998,300.45 830.8609999999998,300.45 836.8609999999998,306.45 836.8609999999998,323.45 629.4469999999998,323.45" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <polygon points="830.8609999999998,300.45 836.8609999999998,306.45 830.8609999999998,306.45" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="733.1539999999998" y="311.95" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">GIAI ĐOẠN 2: VẬN HÀNH TRONG THÁNG</text>
+</g>
+<g class="note" data-position="over" data-actors="KT,KH">
+  <polygon points="962.7429999999997,425.45 1195.6389999999997,425.45 1201.6389999999997,431.45 1201.6389999999997,448.45 962.7429999999997,448.45" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <polygon points="1195.6389999999997,425.45 1201.6389999999997,431.45 1195.6389999999997,431.45" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="1082.1909999999998" y="436.95" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">GIAI ĐOẠN 3: CUỐI THÁNG CHỐT SỐ COUNTER</text>
+</g>
+<g class="note" data-position="over" data-actors="KT,KH">
+  <polygon points="948.1899999999998,712.45 1210.192,712.45 1216.192,718.45 1216.192,735.45 948.1899999999998,735.45" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <polygon points="1210.192,712.45 1216.192,718.45 1210.192,718.45" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="1082.1909999999998" y="723.95" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">GIAI ĐOẠN 4: TÍNH CƯỚC &amp; XUẤT HÓA ĐƠN / BẢNG KÊ</text>
+</g>
+<g class="note" data-position="over" data-actors="KT,KH">
+  <polygon points="970.7619999999998,977.45 1187.62,977.45 1193.62,983.45 1193.62,1000.45 970.7619999999998,1000.45" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <polygon points="1187.62,977.45 1193.62,983.45 1187.62,983.45" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="1082.1909999999998" y="988.95" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">GIAI ĐOẠN 5: THANH TOÁN &amp; ĐÓNG CHU KỲ</text>
+</g>
+<g class="note" data-position="over" data-actors="KT,KH">
+  <polygon points="929.4789999999998,1172.45 1228.9029999999998,1172.45 1234.9029999999998,1178.45 1234.9029999999998,1195.45 929.4789999999998,1195.45" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <polygon points="1228.9029999999998,1172.45 1234.9029999999998,1178.45 1228.9029999999998,1178.45" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75" />
+  <text x="1082.1909999999998" y="1183.95" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Kết thúc chu trình tháng 1. Sẵn sàng cho chu kỳ tháng kế tiếp.</text>
+</g>
+<g class="actor" data-id="Admin" data-label="Kinh doanh / Admin" data-type="actor">
+  <g transform="translate(93.809,32) scale(1.5)">
+    <path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+    <path d="M15 10C15 11.6569 13.6569 13 12 13C10.3431 13 9 11.6569 9 10C9 8.34315 10.3431 7 12 7C13.6569 7 15 8.34315 15 10Z" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+    <path d="M5.62842 18.3563C7.08963 17.0398 9.39997 16 12 16C14.6 16 16.9104 17.0398 18.3716 18.3563" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+  </g>
+  <text x="111.809" y="84" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Kinh doanh / Admin</text>
+</g>
+<g class="actor" data-id="Tech" data-label="Kỹ thuật viên (Field Tech)" data-type="actor">
+  <g transform="translate(529.4229999999999,32) scale(1.5)">
+    <path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+    <path d="M15 10C15 11.6569 13.6569 13 12 13C10.3431 13 9 11.6569 9 10C9 8.34315 10.3431 7 12 7C13.6569 7 15 8.34315 15 10Z" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+    <path d="M5.62842 18.3563C7.08963 17.0398 9.39997 16 12 16C14.6 16 16.9104 17.0398 18.3716 18.3563" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+  </g>
+  <text x="547.4229999999999" y="84" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Kỹ thuật viên (Field Tech)</text>
+</g>
+<g class="actor" data-id="KH" data-label="Khách hàng" data-type="actor">
+  <g transform="translate(900.8849999999998,32) scale(1.5)">
+    <path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+    <path d="M15 10C15 11.6569 13.6569 13 12 13C10.3431 13 9 11.6569 9 10C9 8.34315 10.3431 7 12 7C13.6569 7 15 8.34315 15 10Z" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+    <path d="M5.62842 18.3563C7.08963 17.0398 9.39997 16 12 16C14.6 16 16.9104 17.0398 18.3716 18.3563" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+  </g>
+  <text x="918.8849999999998" y="84" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Khách hàng</text>
+</g>
+<g class="actor" data-id="KT" data-label="Kế toán (Admin)" data-type="actor">
+  <g transform="translate(1227.4969999999998,32) scale(1.5)">
+    <path d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+    <path d="M15 10C15 11.6569 13.6569 13 12 13C10.3431 13 9 11.6569 9 10C9 8.34315 10.3431 7 12 7C13.6569 7 15 8.34315 15 10Z" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+    <path d="M5.62842 18.3563C7.08963 17.0398 9.39997 16 12 16C14.6 16 16.9104 17.0398 18.3716 18.3563" fill="none" stroke="var(--_line)" stroke-width="0.6666666666666666" />
+  </g>
+  <text x="1245.4969999999998" y="84" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Kế toán (Admin)</text>
+</g>
+<g class="actor" data-id="Tech/KH" data-label="Tech/KH" data-type="participant">
+  <rect x="1614.0704999999996" y="30" width="86.561" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1" />
+  <text x="1657.3509999999997" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Tech/KH</text>
+</g>
+</svg>

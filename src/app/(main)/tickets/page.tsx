@@ -252,8 +252,11 @@ export default function TicketsPage() {
           ? String(detail.counterAtClose)
           : String(detail.equipment.currentCounter)
       );
+      const sig = detail.customerSignature;
       setSignatureInput(
-        detail.customerSignature || `Đã xác nhận - ${detail.customer.name}`
+        sig && !sig.includes("[DEMO_SIGNATURE]") && !sig.includes("...")
+          ? sig
+          : `Đã xác nhận - ${detail.customer.name}`
       );
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Lỗi tải chi tiết");

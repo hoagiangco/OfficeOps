@@ -257,14 +257,14 @@ async function startUatSuite() {
       throw new Error(`AI OCR không trích xuất đúng số counter. Kỳ vọng: ${expectedNewCounter}, Nhận: ${bestCandidate?.value}`);
     }
 
-    // Đóng phiếu kỹ thuật với số counter và chữ ký điện tử
+    // Đóng phiếu kỹ thuật với số counter và chữ ký điện tử hợp lệ
     const completedTicket = await prisma.ticket.update({
       where: { id: createdTicket.id },
       data: {
         status: "COMPLETED",
         counterAtClose: expectedNewCounter,
         resolvedAt: new Date(),
-        customerSignature: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAABkCAYAAACm/U...[DEMO_SIGNATURE]",
+        customerSignature: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAAwCAYAAACqY7lEAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAABMSURBVHgB7c6xCQBAEMSwr9u5WqK4wA3uH/gEESsDAAAAIbMHAACAcwMNAAAA5wYaAAAAnhtwAAAAODfQAAAA8NyAAwAAwLmBBgAAgHMDDfk2AQEAAHTq13YAAAAASUVORK5CYII=",
         logs: {
           create: {
             userId: testTech.id,

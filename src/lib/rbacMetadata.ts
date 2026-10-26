@@ -157,6 +157,13 @@ export const PERMISSION_MODULES: PermissionModuleMeta[] = [
         riskLevel: "LOW",
       },
       {
+        key: "equipment:history",
+        name: "Xem lịch sử kỹ thuật & sửa chữa thiết bị",
+        description: "Xem toàn bộ các lần sửa chữa, bảo trì, thay thế linh kiện và lịch sử counter của máy",
+        action: "VIEW",
+        riskLevel: "LOW",
+      },
+      {
         key: "equipment:import-stock",
         name: "Nhập máy mới vào kho công ty",
         description: "Nhập máy mới nguyên kiện từ nhà cung cấp về kho lưu trữ",

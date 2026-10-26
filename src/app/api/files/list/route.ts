@@ -49,58 +49,6 @@ async function getFilesRecursively(dir: string, baseDir: string): Promise<FileIt
   return files;
 }
 
-// Hỗ trợ Vercel Blob khi cấu hình BLOB_READ_WRITE_TOKEN
-async function listBlobFiles(): Promise<FileItemInfo[]> {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token || token.startsWith("YOUR_")) return [];
-
-  try {
-    // @ts-ignore
-    const { list } = await import("@vercel/blob");
-    let allBlobs: any[] = [];
-    let cursor: string | undefined = undefined;
-    let hasMore = true;
-    let pageCount = 0;
-
-    while (hasMore && pageCount < 50) {
-      pageCount++;
-      const result: any = await list({
-        cursor,
-        limit: 1000,
-        token,
-      });
-
-      const pageBlobs = result.blobs || [];
-      allBlobs = allBlobs.concat(pageBlobs);
-
-      if (result.cursor && pageBlobs.length > 0) {
-        cursor = result.cursor;
-        hasMore = true;
-      } else {
-        hasMore = false;
-      }
-    }
-
-    return allBlobs.map((blob: any) => {
-      let fileName = blob.pathname || "unnamed";
-      if (fileName.includes("/")) {
-        fileName = fileName.split("/").pop() || fileName;
-      }
-      return {
-        name: fileName,
-        url: blob.url,
-        path: blob.pathname || blob.url,
-        size: blob.size || 0,
-        modified: blob.uploadedAt || blob.createdAt || new Date().toISOString(),
-        isDirectory: false,
-      };
-    });
-  } catch (error) {
-    console.error("Lỗi list Vercel Blob:", error);
-    return [];
-  }
-}
-
 export async function GET(request: NextRequest) {
   try {
     // 1. Kiểm tra xác thực phiên đăng nhập
@@ -115,34 +63,17 @@ export async function GET(request: NextRequest) {
     const q = (searchParams.get("q") || "").trim().toLowerCase();
     const type = (searchParams.get("type") || "").trim().toLowerCase();
 
-    const isVercel = !!(
-      process.env.VERCEL ||
-      process.env.VERCEL_ENV ||
-      process.env.VERCEL_URL ||
-      process.env.NEXT_PUBLIC_VERCEL_URL
-    );
-    const hasToken =
-      !!process.env.BLOB_READ_WRITE_TOKEN &&
-      !process.env.BLOB_READ_WRITE_TOKEN.startsWith("YOUR_");
-
-    let allFiles: FileItemInfo[] = [];
-
-    if (hasToken) {
-      allFiles = await listBlobFiles();
+    // Dùng thư mục cục bộ public/uploads trên máy chủ/host
+    let uploadsDir = path.join(process.cwd(), "public", "uploads");
+    if (process.env.UPLOAD_DIR) {
+      uploadsDir = path.isAbsolute(process.env.UPLOAD_DIR)
+        ? process.env.UPLOAD_DIR
+        : path.join(process.cwd(), process.env.UPLOAD_DIR);
     }
 
-    // Nếu không dùng Blob hoặc Blob rỗng và không chạy Vercel, dùng thư mục cục bộ public/uploads
-    if (allFiles.length === 0 && !isVercel) {
-      let uploadsDir = path.join(process.cwd(), "public", "uploads");
-      if (process.env.UPLOAD_DIR) {
-        uploadsDir = path.isAbsolute(process.env.UPLOAD_DIR)
-          ? process.env.UPLOAD_DIR
-          : path.join(process.cwd(), process.env.UPLOAD_DIR);
-      }
-
-      if (existsSync(uploadsDir)) {
-        allFiles = await getFilesRecursively(uploadsDir, uploadsDir);
-      }
+    let allFiles: FileItemInfo[] = [];
+    if (existsSync(uploadsDir)) {
+      allFiles = await getFilesRecursively(uploadsDir, uploadsDir);
     }
 
     // 2. Lọc theo từ khóa tìm kiếm
@@ -191,6 +122,9 @@ export async function GET(request: NextRequest) {
       }
     );
   } catch (error: any) {
+    if (error && typeof error === "object" && "digest" in error) {
+      throw error;
+    }
     console.error("Lỗi khi lấy danh sách file:", error);
     return NextResponse.json(
       { error: error?.message || "Lỗi khi lấy danh sách file" },

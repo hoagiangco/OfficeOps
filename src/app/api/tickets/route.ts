@@ -5,6 +5,7 @@ import { getSession, requirePermission, audit } from "@/lib/auth";
 import { checkUserPermission } from "@/lib/rbacService";
 import { maskCustomerPhones } from "@/lib/maskUtils";
 import { parseBody, withErrors, HttpError } from "@/lib/http";
+import { getSlaSettings, computeSlaDueAt } from "@/lib/slaSettings";
 import type { TicketPriority, TicketSource, TicketStatus, TicketType } from "@prisma/client";
 
 const createSchema = z.object({
@@ -15,18 +16,8 @@ const createSchema = z.object({
   priority: z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]).default("NORMAL"),
   source: z.enum(["CUSTOMER", "SCHEDULED", "INTERNAL"]).default("CUSTOMER"),
   description: z.string().min(3, "Mô tả sự cố/yêu cầu tối thiểu 3 ký tự"),
+  slaDueAt: z.string().datetime().optional().nullable(),
 });
-
-function computeSlaDueAt(priority: TicketPriority): Date {
-  const hoursMap: Record<TicketPriority, number> = {
-    URGENT: 4,
-    HIGH: 8,
-    NORMAL: 24,
-    LOW: 48,
-  };
-  const hours = hoursMap[priority] ?? 24;
-  return new Date(Date.now() + hours * 3600 * 1000);
-}
 
 export const GET = withErrors(async (req: Request) => {
   const session = await getSession();
@@ -119,12 +110,17 @@ export const GET = withErrors(async (req: Request) => {
   });
 
   const canViewPhone = await checkUserPermission(session.userId, session.role, "customer:view-phone");
-  const items = canViewPhone
-    ? tickets
-    : tickets.map((t) => ({
-        ...t,
-        customer: t.customer ? maskCustomerPhones(t.customer, false) : t.customer,
-      }));
+  const sanitizeSignature = (sig?: string | null) => {
+    if (!sig) return null;
+    if (sig.includes("[DEMO_SIGNATURE]") || sig.includes("...")) return null;
+    return sig;
+  };
+
+  const items = tickets.map((t) => ({
+    ...t,
+    customerSignature: sanitizeSignature(t.customerSignature),
+    customer: t.customer ? maskCustomerPhones(t.customer, canViewPhone) : t.customer,
+  }));
 
   return NextResponse.json(items);
 });
@@ -151,7 +147,10 @@ export const POST = withErrors(async (req: Request) => {
   const canAssign = session.role === "SUPER_ADMIN" || session.role === "DISPATCHER";
   const finalAssigneeId = canAssign ? (data.assigneeId || null) : null;
   const initialStatus: TicketStatus = finalAssigneeId ? "ASSIGNED" : "PENDING";
-  const slaDueAt = computeSlaDueAt(data.priority as TicketPriority);
+  const slaSettings = await getSlaSettings();
+  const slaDueAt = data.slaDueAt
+    ? new Date(data.slaDueAt)
+    : computeSlaDueAt(data.priority as TicketPriority, slaSettings);
 
   const created = await prisma.$transaction(async (tx) => {
     const ticket = await tx.ticket.create({

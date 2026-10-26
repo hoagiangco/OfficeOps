@@ -6,15 +6,16 @@ import 'react-toastify/dist/ReactToastify.css';
 export default function ToastProvider() {
   return (
     <ToastContainer
-      position="top-right"
+      position="bottom-right"
       autoClose={2500}
       hideProgressBar={false}
-      newestOnTop
+      newestOnTop={false}
       closeOnClick
       pauseOnFocusLoss={false}
       draggable
       pauseOnHover
       theme="colored"
+      limit={4}
     />
   );
 }

@@ -69,7 +69,14 @@ export const GET = withErrors(async (_req: Request, { params }: Ctx) => {
       meterLogs: { orderBy: { logDate: "desc" }, take: 20 },
       partHistory: { include: { part: true }, orderBy: { replacedAt: "desc" } },
       tickets: {
-        include: { assignee: { select: { id: true, name: true, phone: true } } },
+        include: {
+          assignee: { select: { id: true, name: true, phone: true } },
+          partsUsed: {
+            include: {
+              part: { select: { id: true, name: true, partCode: true, unit: true } },
+            },
+          },
+        },
         orderBy: { createdAt: "desc" },
         take: 25,
       },
@@ -85,7 +92,12 @@ export const GET = withErrors(async (_req: Request, { params }: Ctx) => {
     relationType: isWh ? "Sẵn hàng" : equipment.relationType,
   };
   if (s.role === "FIELD_TECH") {
-    return NextResponse.json({ ...formatted, contract: null, meterLogs: [] });
+    const canHistory = await checkUserPermission(s.userId, s.role, "equipment:history");
+    return NextResponse.json({
+      ...formatted,
+      contract: null,
+      meterLogs: canHistory ? formatted.meterLogs : [],
+    });
   }
   return NextResponse.json(formatted);
 });

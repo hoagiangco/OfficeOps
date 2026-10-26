@@ -449,7 +449,9 @@ export async function recognizeMeterFromImage(
 function loadImageFromUrl(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    if (!url.startsWith("data:") && !url.startsWith("blob:")) {
+      img.crossOrigin = "anonymous";
+    }
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error("Không thể tải hình ảnh từ URL cung cấp"));
     img.src = url;

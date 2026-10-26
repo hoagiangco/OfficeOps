@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "react-toastify";
@@ -9,11 +9,12 @@ import { Loading } from "@/components/Loading";
 import { CameraQRScanner } from "@/components/CameraQRScanner";
 import FileManager from "@/components/FileManager";
 import {
+  STATUS_LABELS,
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
   TICKET_TYPE_LABELS,
 } from "@/lib/labels";
-import { ROLE_LABELS, type Role } from "@/lib/rbac";
+import { ROLE_LABELS, type Role, can } from "@/lib/rbac";
 import { getDirectionsUrl } from "@/lib/location";
 import { ChangePasswordModal } from "@/components/ChangePasswordModal";
 import { OfflineSyncManager } from "@/components/tech/OfflineSyncManager";
@@ -88,6 +89,75 @@ interface UserProfile {
   phone?: string | null;
   region?: string | null;
   skills?: string[];
+  permissions?: Record<string, boolean>;
+}
+
+interface EquipmentHistoryData {
+  id: string;
+  code: string | null;
+  serialNumber: string;
+  model: string;
+  brand: string | null;
+  status: string;
+  currentCounter: number;
+  qrCode: string;
+  healthScore: number;
+  locationNote: string | null;
+  installedAt: string | null;
+  warrantyUntil: string | null;
+  notes: string | null;
+  customer?: { id: string; name: string; phone: string; address: string } | null;
+  department?: {
+    id: string;
+    name: string;
+    building?: {
+      id: string;
+      name: string;
+      branch?: { id: string; name: string };
+    };
+  } | null;
+  tickets: Array<{
+    id: string;
+    code: string;
+    type: string;
+    status: string;
+    priority: string;
+    description: string;
+    diagnosis: string | null;
+    counterAtClose: number | null;
+    createdAt: string;
+    resolvedAt: string | null;
+    assignee?: { id: string; name: string; phone?: string | null } | null;
+    partsUsed: Array<{
+      id: string;
+      quantity: number;
+      replacedAt: string;
+      oldPartReturned: boolean;
+      part: { id: string; name: string; partCode: string; unit: string };
+    }>;
+  }>;
+  partHistory: Array<{
+    id: string;
+    quantity: number;
+    replacedAt: string;
+    oldPartReturned: boolean;
+    ticket?: { id: string; code: string } | null;
+    part: { id: string; name: string; partCode: string; unit: string };
+  }>;
+  meterLogs: Array<{
+    id: string;
+    counterValue: number;
+    logDate: string;
+    source: string;
+    status?: string;
+  }>;
+  statusHistory: Array<{
+    id: string;
+    fromStatus: string | null;
+    toStatus: string;
+    note: string | null;
+    changedAt: string;
+  }>;
 }
 
 interface EquipmentLookup {
@@ -125,6 +195,15 @@ const formatCompactDateOnly = (dStr?: string | null): string => {
   return `${day}/${month}`;
 };
 
+const formatMilestoneDate = (dStr?: string | null): string => {
+  if (!dStr) return "-";
+  const d = new Date(dStr);
+  if (isNaN(d.getTime())) return "-";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}`;
+};
+
 export default function TechMobilePage() {
   const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -136,6 +215,20 @@ export default function TechMobilePage() {
   const [tickets, setTickets] = useState<TechTicket[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("ACTIVE_ALL");
   const [scopeFilter, setScopeFilter] = useState<"all" | "mine">("all");
+  const [currentTime, setCurrentTime] = useState<number>(0);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setCurrentTime(Date.now());
+    }, 0);
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 60000);
+    return () => {
+      clearTimeout(timeout);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Xử lý chi tiết Ticket được chọn
   const [selectedTicket, setSelectedTicket] = useState<TechTicket | null>(null);
@@ -175,9 +268,24 @@ export default function TechMobilePage() {
   const [quickTicketPriority, setQuickTicketPriority] = useState("NORMAL");
   const [quickTicketDesc, setQuickTicketDesc] = useState("");
 
+  // Lịch sử thiết bị
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [equipmentHistory, setEquipmentHistory] = useState<EquipmentHistoryData | null>(null);
+  const [historyActiveTab, setHistoryActiveTab] = useState<"tickets" | "parts" | "meter" | "status">("tickets");
+
   const isSelectedCompleted = selectedTicket?.status === "COMPLETED";
   const isSuperAdmin = profile?.role === "SUPER_ADMIN";
   const isSelectedLocked = isSelectedCompleted && !isSuperAdmin;
+
+  const hasEquipmentHistoryPerm = useMemo(() => {
+    if (!profile) return false;
+    if (profile.role === "SUPER_ADMIN") return true;
+    if (profile.permissions && typeof profile.permissions["equipment:history"] === "boolean") {
+      return profile.permissions["equipment:history"];
+    }
+    return can(profile.role as Role, "equipment:history");
+  }, [profile]);
 
   const signatureRef = useRef<HTMLDivElement | null>(null);
 
@@ -223,9 +331,38 @@ export default function TechMobilePage() {
   }, []);
 
   useEffect(() => {
-    loadTickets();
-    loadParts();
-  }, [loadTickets, loadParts]);
+    let ignore = false;
+    async function initData() {
+      try {
+        const [ticketsRes, partsRes] = await Promise.all([
+          fetch("/api/tickets?pageSize=100"),
+          fetch("/api/parts?pageSize=100"),
+        ]);
+        if (!ignore) {
+          if (ticketsRes.ok) {
+            const data = await ticketsRes.json();
+            setTickets(Array.isArray(data) ? data : (data.items || []));
+          }
+          if (partsRes.ok) {
+            const data = await partsRes.json();
+            setParts(data.items || []);
+          }
+        }
+      } catch {
+        if (!ignore) {
+          toast.error("Không thể tải dữ liệu khởi tạo");
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
+      }
+    }
+    initData();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   // Quyền: Quản lý / Giám đốc / Điều phối được xem toàn bộ; KTV chỉ xem việc được phân công
   const isManager =
@@ -288,7 +425,10 @@ export default function TechMobilePage() {
     setDiagnosis(t.diagnosis || "");
     setNewCounter(t.equipment.currentCounter);
     setMeterSource("TECH");
-    setSignature(t.customerSignature || null);
+    const sig = t.customerSignature;
+    setSignature(
+      sig && !sig.includes("[DEMO_SIGNATURE]") && !sig.includes("...") ? sig : null
+    );
     setClosingNote("");
     setAdjustmentReason("");
     setActionStep("detail");
@@ -477,13 +617,6 @@ export default function TechMobilePage() {
         toast.warning(
           "Chỉ số counter mới nhỏ hơn counter ban đầu. Vui lòng nhập Lý do điều chỉnh để gửi cấp trên phê duyệt!"
         );
-        return;
-      }
-      const hasCounterPhoto = selectedTicket.attachments?.some(
-        (a) => a.kind === "COUNTER_PHOTO"
-      );
-      if (!hasCounterPhoto) {
-        toast.warning("Vui lòng chụp ảnh màn hình Counter thực tế để gửi kèm hồ sơ phê duyệt giảm chỉ số!");
         return;
       }
     }
@@ -749,6 +882,31 @@ export default function TechMobilePage() {
     }
   };
 
+  const handleOpenHistory = async (equipmentId: string) => {
+    if (!hasEquipmentHistoryPerm) {
+      toast.error("Bạn chưa được cấp quyền xem lịch sử thiết bị (equipment:history)");
+      return;
+    }
+    setShowHistoryModal(true);
+    setHistoryLoading(true);
+    setEquipmentHistory(null);
+    setHistoryActiveTab("tickets");
+    try {
+      const res = await fetch(`/api/equipment/${equipmentId}/history`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Không thể tải lịch sử thiết bị");
+      }
+      const data = await res.json();
+      setEquipmentHistory(data);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Không thể tải lịch sử thiết bị";
+      toast.error(msg);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
@@ -1004,6 +1162,11 @@ export default function TechMobilePage() {
                 {filteredTickets.map((t) => {
                   const isUrgent = t.priority === "URGENT" || t.priority === "HIGH";
                   const isDone = t.status === "COMPLETED";
+                  const isOverdue = t.slaDueAt
+                    ? t.resolvedAt
+                      ? new Date(t.resolvedAt).getTime() > new Date(t.slaDueAt).getTime()
+                      : currentTime > 0 && new Date(t.slaDueAt).getTime() < currentTime
+                    : false;
 
                   return (
                     <div
@@ -1051,40 +1214,6 @@ export default function TechMobilePage() {
                           </div>
 
                           <div className="d-flex align-items-center gap-1 flex-shrink-0 flex-nowrap text-nowrap">
-                            {/* Trạng thái SLA hiển thị Date rút gọn */}
-                            {t.slaDueAt && (() => {
-                              const isOverdue = t.resolvedAt
-                                ? new Date(t.resolvedAt).getTime() > new Date(t.slaDueAt).getTime()
-                                : new Date(t.slaDueAt).getTime() < Date.now();
-                              const formattedSla = formatCompactDateOnly(t.slaDueAt);
-                              return (
-                                <span
-                                  className={`badge px-1.5 py-0.5 rounded-pill text-nowrap ${
-                                    isOverdue
-                                      ? "bg-danger-subtle text-danger border border-danger-subtle fw-bold"
-                                      : "bg-light text-muted border"
-                                  }`}
-                                  style={{ fontSize: "10px" }}
-                                  title={isOverdue ? `Trễ hạn SLA: ${new Date(t.slaDueAt).toLocaleString("vi-VN")}` : `Hạn SLA: ${new Date(t.slaDueAt).toLocaleString("vi-VN")}`}
-                                >
-                                  <i className={`far fa-clock me-1 ${isOverdue ? "text-danger" : "text-secondary"}`}></i>
-                                  {formattedSla}
-                                </span>
-                              );
-                            })()}
-
-                            {/* Đối với ticket đã xong: Hiển thị ngày hoàn thành rút gọn */}
-                            {t.resolvedAt && (
-                              <span
-                                className="badge bg-success-subtle text-success border border-success-subtle px-1.5 py-0.5 rounded-pill text-nowrap fw-semibold"
-                                style={{ fontSize: "10px" }}
-                                title={`Hoàn thành lúc: ${new Date(t.resolvedAt).toLocaleString("vi-VN")}`}
-                              >
-                                <i className="fas fa-check-circle me-1"></i>
-                                {formatCompactDateOnly(t.resolvedAt)}
-                              </span>
-                            )}
-
                             <span
                               className={`badge rounded-pill px-2 py-0.5 fw-bold ${
                                 t.status === "COMPLETED"
@@ -1179,38 +1308,111 @@ export default function TechMobilePage() {
                           </div>
                         )}
 
-                        {/* 5. Cụm nút hành động cân đối 50% - 50% */}
-                        <div className="row g-2 pt-0">
-                          <div className="col-6">
+                        {/* 5. Cụm 3 mốc thời gian (start - sla - end) bên trái & 2 nút thu nhỏ bên phải cách nhau 3px */}
+                        <div className="d-flex justify-content-between align-items-center gap-1.5 pt-1 mt-1 flex-wrap">
+                          {/* Bên trái: 3 mốc ngày theo mẫu: start - sla - end (có màu phân biệt & đồng hồ xoay) */}
+                          <div
+                            className="d-flex align-items-center gap-1 text-nowrap min-w-0"
+                            style={{ fontSize: "11.5px" }}
+                            title={`Tiến độ (Start - SLA - End): ${t.checkInAt ? `Bắt đầu ${new Date(t.checkInAt).toLocaleDateString("vi-VN")}` : `Tạo phiếu ${new Date(t.createdAt).toLocaleDateString("vi-VN")}`} | ${t.slaDueAt ? `Hạn SLA ${new Date(t.slaDueAt).toLocaleDateString("vi-VN")}` : "-"} | ${t.resolvedAt ? `Hoàn tất ${new Date(t.resolvedAt).toLocaleDateString("vi-VN")}` : "Đang chờ hoàn thành"}`}
+                          >
+                            <i className="far fa-calendar-alt text-secondary flex-shrink-0" style={{ fontSize: "11px" }}></i>
+
+                            {/* Start (Xanh dương): Nếu chưa check-in thì lấy ngày tạo kèm đồng hồ xoay */}
+                            {t.checkInAt ? (
+                              <span
+                                className="text-primary fw-bold"
+                                title={`Đã bắt đầu xử lý: ${new Date(t.checkInAt).toLocaleDateString("vi-VN")}`}
+                              >
+                                {formatMilestoneDate(t.checkInAt)}
+                              </span>
+                            ) : (
+                              <span
+                                className="text-primary fw-bold d-inline-flex align-items-center gap-0.5"
+                                title={`Chưa check-in (Ngày tạo: ${new Date(t.createdAt).toLocaleDateString("vi-VN")})`}
+                              >
+                                <i className="far fa-clock fa-spin text-primary" style={{ fontSize: "9.5px" }}></i>
+                                <span>{formatMilestoneDate(t.createdAt)}</span>
+                              </span>
+                            )}
+
+                            <span className="text-muted opacity-50 px-0.5">-</span>
+
+                            {/* SLA (Cam hổ phách hoặc Đỏ khi trễ): Hạn cam kết */}
+                            <span
+                              className={
+                                !t.slaDueAt
+                                  ? "text-muted"
+                                  : isOverdue
+                                  ? "text-danger fw-bold"
+                                  : "fw-bold"
+                              }
+                              style={{
+                                color: !t.slaDueAt ? undefined : isOverdue ? "#ef4444" : "#d97706",
+                              }}
+                              title={
+                                t.slaDueAt
+                                  ? isOverdue
+                                    ? `Trễ hạn SLA: ${new Date(t.slaDueAt).toLocaleString("vi-VN")}`
+                                    : `Hạn SLA: ${new Date(t.slaDueAt).toLocaleString("vi-VN")}`
+                                  : "Không có hạn SLA"
+                              }
+                            >
+                              {formatMilestoneDate(t.slaDueAt)}
+                            </span>
+
+                            <span className="text-muted opacity-50 px-0.5">-</span>
+
+                            {/* End (Xanh lá nếu xong; Đồng hồ xoay nếu đang chờ hoàn thành) */}
+                            {t.resolvedAt ? (
+                              <span
+                                className="text-success fw-bold d-inline-flex align-items-center gap-0.5"
+                                title={`Hoàn tất lúc: ${new Date(t.resolvedAt).toLocaleString("vi-VN")}`}
+                              >
+                                <i className="fas fa-check-circle text-success" style={{ fontSize: "9.5px" }}></i>
+                                <span>{formatMilestoneDate(t.resolvedAt)}</span>
+                              </span>
+                            ) : (
+                              <span
+                                className="text-warning-emphasis d-inline-flex align-items-center gap-0.5"
+                                style={{ color: "#d97706" }}
+                                title="Đang xử lý, chờ hoàn thành"
+                              >
+                                <i className="far fa-clock fa-spin text-warning" style={{ fontSize: "11.5px" }}></i>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Bên phải: 2 nút thu nhỏ - cách nhau 3px */}
+                          <div className="d-flex align-items-center flex-shrink-0 ms-auto" style={{ gap: "3px" }}>
                             <a
                               href={getDirectionsUrl(t.customer)}
                               target="_blank"
                               rel="noreferrer"
-                              className="btn btn-outline-secondary btn-sm w-100 py-2 fw-semibold d-flex align-items-center justify-content-center gap-1.5 rounded-2 text-nowrap"
-                              style={{ fontSize: "12.5px" }}
+                              className="btn btn-outline-secondary btn-sm py-1 px-2.5 fw-semibold d-inline-flex align-items-center justify-content-center gap-1 rounded-2 text-nowrap"
+                              style={{ fontSize: "11.5px", minHeight: "30px" }}
                               title="Mở chỉ đường Google Maps dẫn đến vị trí khách hàng"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <i className="fas fa-location-arrow text-danger" style={{ fontSize: "11px" }}></i>
+                              <i className="fas fa-location-arrow text-danger" style={{ fontSize: "10.5px" }}></i>
                               <span>Chỉ đường</span>
                               {t.customer?.latitude != null && (
-                                <span className="badge bg-success-subtle text-success p-0 ms-1 fw-bold" style={{ fontSize: "9px" }}>
+                                <span className="badge bg-success-subtle text-success p-0 ms-0.5 fw-bold" style={{ fontSize: "8.5px" }}>
                                   GPS
                                 </span>
                               )}
                             </a>
-                          </div>
-                          <div className="col-6">
+
                             <button
                               type="button"
-                              className={`btn btn-sm w-100 py-2 fw-bold d-flex align-items-center justify-content-center gap-1 rounded-2 text-nowrap ${
+                              className={`btn btn-sm py-1 px-2.5 fw-bold d-inline-flex align-items-center justify-content-center gap-1 rounded-2 text-nowrap ${
                                 isDone
                                   ? "btn-outline-success"
                                   : t.status === "IN_PROGRESS"
                                   ? "btn-success text-white"
                                   : "btn-primary text-white"
                               }`}
-                              style={{ fontSize: "12.5px" }}
+                              style={{ fontSize: "11.5px", minHeight: "30px" }}
                               onClick={() => openTicketAction(t)}
                             >
                               {isDone ? (
@@ -1218,7 +1420,7 @@ export default function TechMobilePage() {
                               ) : t.status === "IN_PROGRESS" ? (
                                 <span>Tiếp tục</span>
                               ) : (
-                                <span>Bắt đầu xử lý</span>
+                                <span>Bắt đầu</span>
                               )}
                             </button>
                           </div>
@@ -1638,7 +1840,7 @@ export default function TechMobilePage() {
                           className={`font-monospace fw-semibold ${
                             (selectedTicket.resolvedAt
                               ? new Date(selectedTicket.resolvedAt).getTime() > new Date(selectedTicket.slaDueAt).getTime()
-                              : new Date(selectedTicket.slaDueAt).getTime() < Date.now())
+                              : currentTime > 0 && new Date(selectedTicket.slaDueAt).getTime() < currentTime)
                               ? "text-danger"
                               : "text-dark"
                           }`}
@@ -1655,6 +1857,23 @@ export default function TechMobilePage() {
                           {formatCompactDateTime(selectedTicket.resolvedAt)}
                         </span>
                       </div>
+                    )}
+
+                    {selectedTicket.equipment?.id && (
+                      <button
+                        type="button"
+                        className={`btn btn-sm w-100 mt-2 py-1.5 d-flex align-items-center justify-content-center gap-1.5 ${
+                          hasEquipmentHistoryPerm ? "btn-outline-dark" : "btn-outline-secondary opacity-75"
+                        }`}
+                        style={{ fontSize: "12px" }}
+                        onClick={() => handleOpenHistory(selectedTicket.equipment.id)}
+                      >
+                        <i className={`fas ${hasEquipmentHistoryPerm ? "fa-history text-primary" : "fa-lock text-warning"}`}></i>
+                        <span className="fw-semibold">Xem toàn bộ lịch sử máy này</span>
+                        {!hasEquipmentHistoryPerm && (
+                          <span className="badge bg-warning text-dark" style={{ fontSize: "9.5px" }}>Khóa</span>
+                        )}
+                      </button>
                     )}
                   </div>
 
@@ -1929,93 +2148,6 @@ export default function TechMobilePage() {
                     )}
                   </div>
 
-                  {/* Chụp ảnh đồng hồ Counter xác thực */}
-                  <div className="p-2 border rounded-3 bg-white shadow-sm">
-                    <div className="d-flex justify-content-between align-items-center mb-1.5">
-                      <span className="small fw-bold text-dark">
-                        <i className="fas fa-camera text-warning me-1"></i> Ảnh chụp số Counter trên màn hình máy:
-                      </span>
-                      {!isSelectedLocked && (
-                        <div className="d-flex gap-1 align-items-center">
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-warning text-dark py-0 px-2 fw-semibold d-inline-flex align-items-center gap-1 shadow-2xs"
-                            style={{ fontSize: "11px" }}
-                            disabled={uploadingPhoto}
-                            onClick={() => {
-                              setTechMediaKind("COUNTER_PHOTO");
-                              setShowTechMediaPicker(true);
-                            }}
-                          >
-                            <i className="fas fa-photo-video"></i>
-                            Media Pickup
-                          </button>
-                          <label className="btn btn-sm btn-outline-warning text-dark py-0 px-2 fw-semibold mb-0" style={{ fontSize: "11px" }}>
-                            <i className="fas fa-camera me-1"></i>
-                            {uploadingPhoto ? "..." : "Chụp nhanh"}
-                            <input
-                              type="file"
-                              accept="image/*"
-                              capture="environment"
-                              className="d-none"
-                              disabled={uploadingPhoto || isSelectedLocked}
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) handleTechUploadPhoto(f, "COUNTER_PHOTO");
-                                e.target.value = "";
-                              }}
-                            />
-                          </label>
-                        </div>
-                      )}
-                    </div>
-
-                    {selectedTicket.attachments && selectedTicket.attachments.filter(a => a.kind === "COUNTER_PHOTO").length > 0 ? (
-                      <div className="d-flex gap-2 overflow-auto py-1">
-                        {selectedTicket.attachments.filter(a => a.kind === "COUNTER_PHOTO").map((att) => (
-                          <div key={att.id} className="position-relative flex-shrink-0" style={{ width: "95px", height: "95px" }}>
-                            <img
-                              src={att.url}
-                              alt="Counter"
-                              className="w-100 h-100 object-fit-cover rounded border border-warning"
-                            />
-                            {!isSelectedLocked && (
-                              <button
-                                type="button"
-                                className="btn btn-warning btn-xs position-absolute bottom-0 start-0 end-0 py-0 text-center fw-bold text-dark border-0 rounded-bottom opacity-95 shadow-xs"
-                                style={{ fontSize: "10px", height: "20px" }}
-                                title="Quét số từ ảnh này qua AI OCR"
-                                onClick={() => {
-                                  setOcrTargetImage(att.url);
-                                  setShowOcrModal(true);
-                                }}
-                              >
-                                <i className="fas fa-magic me-0.5"></i>Quét OCR
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-muted text-center py-2" style={{ fontSize: "11px" }}>
-                        <span>Chụp hoặc tải ảnh màn hình Counter để đối chiếu và quét số tự động.</span>
-                        <div className="mt-1">
-                          <button
-                            type="button"
-                            className="btn btn-xs btn-outline-warning text-dark fw-semibold"
-                            style={{ fontSize: "11px" }}
-                            onClick={() => {
-                              setOcrTargetImage(null);
-                              setShowOcrModal(true);
-                            }}
-                          >
-                            <i className="fas fa-magic me-1"></i>Mở máy quét AI OCR
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
                   {/* Chữ ký khách hàng */}
                   <div ref={signatureRef}>
                     <label className="form-label small fw-bold text-dark d-flex justify-content-between align-items-center">
@@ -2268,14 +2400,20 @@ export default function TechMobilePage() {
                     >
                       <i className="fas fa-tools me-1"></i> Tạo phiếu kỹ thuật cho máy này
                     </button>
-                    <a
-                      href={`/equipment/${qrResult.id}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-outline-dark btn-sm"
+                    <button
+                      type="button"
+                      className={`btn btn-sm ${hasEquipmentHistoryPerm ? "btn-outline-dark" : "btn-outline-secondary opacity-75"}`}
+                      onClick={() => handleOpenHistory(qrResult.id)}
+                      title={hasEquipmentHistoryPerm ? "Xem toàn bộ lịch sử sửa chữa & linh kiện của máy" : "Bạn không có quyền xem lịch sử máy"}
                     >
-                      <i className="fas fa-history me-1"></i> Xem toàn bộ lịch sử máy
-                    </a>
+                      <i className={`fas ${hasEquipmentHistoryPerm ? "fa-history text-primary" : "fa-lock text-warning"} me-1.5`}></i>
+                      <span className="fw-semibold">Xem toàn bộ lịch sử máy</span>
+                      {!hasEquipmentHistoryPerm && (
+                        <span className="badge bg-warning text-dark ms-1.5" style={{ fontSize: "10px" }}>
+                          Khóa quyền
+                        </span>
+                      )}
+                    </button>
                   </div>
 
                   {/* Form tạo nhanh ticket */}
@@ -2331,6 +2469,493 @@ export default function TechMobilePage() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL LỊCH SỬ KỸ THUẬT & SỬA CHỮA THIẾT BỊ ================= */}
+      {showHistoryModal && (
+        <div
+          className="position-fixed top-0 start-0 w-100 h-100 bg-dark bg-opacity-75 d-flex flex-column justify-content-end justify-content-md-center align-items-center"
+          style={{ zIndex: 1070 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowHistoryModal(false);
+            }
+          }}
+        >
+          <div
+            className="bg-white shadow-lg w-100 overflow-hidden d-flex flex-column"
+            style={{
+              height: "100dvh",
+              maxHeight: "100dvh",
+              maxWidth: "540px",
+              margin: "0 auto",
+            }}
+          >
+            {/* Header Modal */}
+            <div
+              className="px-3 bg-dark text-white d-flex align-items-center justify-content-between flex-shrink-0"
+              style={{
+                minHeight: "52px",
+                paddingTop: "calc(0.75rem + env(safe-area-inset-top, 0px))",
+                paddingBottom: "0.75rem",
+              }}
+            >
+              <div className="d-flex align-items-center gap-2 min-w-0">
+                <i className="fas fa-history text-warning flex-shrink-0"></i>
+                <div className="text-truncate">
+                  <div className="fw-bold small text-truncate text-white">
+                    {equipmentHistory ? (
+                      equipmentHistory.brand && !equipmentHistory.model.toLowerCase().startsWith(equipmentHistory.brand.toLowerCase())
+                        ? `${equipmentHistory.brand} ${equipmentHistory.model}`
+                        : equipmentHistory.model
+                    ) : (
+                      "Lịch sử thiết bị"
+                    )}
+                  </div>
+                  {equipmentHistory?.serialNumber && (
+                    <div className="font-monospace text-warning-subtle" style={{ fontSize: "11px" }}>
+                      SN: #{equipmentHistory.serialNumber}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="btn-close btn-close-white ms-2 flex-shrink-0"
+                onClick={() => setShowHistoryModal(false)}
+                aria-label="Đóng"
+              ></button>
+            </div>
+
+            {/* Body */}
+            <div
+              className="p-3 overflow-y-auto flex-grow-1 bg-light"
+              style={{
+                overscrollBehavior: "contain",
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
+              {historyLoading ? (
+                <div className="py-5 text-center">
+                  <div className="spinner-border text-primary spinner-border-sm me-2" role="status"></div>
+                  <span className="small text-muted">Đang tải lịch sử kỹ thuật máy...</span>
+                </div>
+              ) : !equipmentHistory ? (
+                <div className="text-center py-5">
+                  <i className="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
+                  <p className="text-muted small">Không tìm thấy thông tin hoặc bạn không có quyền xem lịch sử máy.</p>
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={() => setShowHistoryModal(false)}
+                  >
+                    Đóng
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Card thông tin tóm tắt máy */}
+                  <div className="card shadow-sm border-0 rounded-3 mb-3 p-3 bg-white">
+                    <div className="d-flex justify-content-between align-items-start mb-2">
+                      <div>
+                        <div className="fw-bold text-dark fs-6">
+                          {equipmentHistory.brand && !equipmentHistory.model.toLowerCase().startsWith(equipmentHistory.brand.toLowerCase())
+                            ? `${equipmentHistory.brand} ${equipmentHistory.model}`
+                            : equipmentHistory.model}
+                        </div>
+                        <span className="text-primary font-monospace small fw-semibold">
+                          #{equipmentHistory.serialNumber}
+                        </span>
+                        {equipmentHistory.code && (
+                          <span className="badge bg-light text-secondary border font-monospace ms-1.5" style={{ fontSize: "10.5px" }}>
+                            {equipmentHistory.code}
+                          </span>
+                        )}
+                      </div>
+                      <span className="badge bg-primary text-uppercase" style={{ fontSize: "10.5px" }}>
+                        {STATUS_LABELS[equipmentHistory.status] || equipmentHistory.status}
+                      </span>
+                    </div>
+
+                    {/* Vị trí & Khách hàng */}
+                    <div className="small text-muted mb-2" style={{ fontSize: "12px" }}>
+                      <div className="text-dark fw-semibold">
+                        <i className="fas fa-building text-secondary me-1.5"></i>
+                        {equipmentHistory.customer?.name || "Trong kho công ty"}
+                      </div>
+                      {equipmentHistory.department && (
+                        <div className="text-info-emphasis mt-0.5">
+                          <i className="fas fa-door-open me-1.5 text-info"></i>
+                          {equipmentHistory.department.name}
+                          {equipmentHistory.department.building?.name
+                            ? ` • ${equipmentHistory.department.building.name}`
+                            : ""}
+                        </div>
+                      )}
+                      {equipmentHistory.customer?.address && (
+                        <div className="text-truncate mt-0.5">
+                          <i className="fas fa-map-marker-alt text-danger me-1.5"></i>
+                          {equipmentHistory.customer.address}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Counter hiện tại */}
+                    <div className="d-flex justify-content-between align-items-center p-2 rounded bg-light border">
+                      <span className="small text-secondary fw-semibold">
+                        <i className="fas fa-tachometer-alt text-primary me-1.5"></i>
+                        Counter hiện tại:
+                      </span>
+                      <span className="font-monospace fw-bold text-primary fs-6">
+                        {equipmentHistory.currentCounter.toLocaleString("vi-VN")} <span className="small fw-normal text-muted">bản in</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Tabs phân mục lịch sử */}
+                  <div className="nav nav-pills nav-fill mb-3 bg-white p-1 rounded-3 border shadow-2xs gap-1">
+                    <button
+                      type="button"
+                      className={`nav-link py-1.5 px-1 small fw-bold rounded-2 ${
+                        historyActiveTab === "tickets" ? "active bg-primary text-white" : "text-secondary"
+                      }`}
+                      style={{ fontSize: "11px" }}
+                      onClick={() => setHistoryActiveTab("tickets")}
+                    >
+                      <i className="fas fa-tools me-1"></i>
+                      Sự cố ({equipmentHistory.tickets?.length || 0})
+                    </button>
+                    <button
+                      type="button"
+                      className={`nav-link py-1.5 px-1 small fw-bold rounded-2 ${
+                        historyActiveTab === "parts" ? "active bg-primary text-white" : "text-secondary"
+                      }`}
+                      style={{ fontSize: "11px" }}
+                      onClick={() => setHistoryActiveTab("parts")}
+                    >
+                      <i className="fas fa-cogs me-1"></i>
+                      Linh kiện ({equipmentHistory.partHistory?.length || 0})
+                    </button>
+                    <button
+                      type="button"
+                      className={`nav-link py-1.5 px-1 small fw-bold rounded-2 ${
+                        historyActiveTab === "meter" ? "active bg-primary text-white" : "text-secondary"
+                      }`}
+                      style={{ fontSize: "11px" }}
+                      onClick={() => setHistoryActiveTab("meter")}
+                    >
+                      <i className="fas fa-tachometer-alt me-1"></i>
+                      Counter ({equipmentHistory.meterLogs?.length || 0})
+                    </button>
+                    <button
+                      type="button"
+                      className={`nav-link py-1.5 px-1 small fw-bold rounded-2 ${
+                        historyActiveTab === "status" ? "active bg-primary text-white" : "text-secondary"
+                      }`}
+                      style={{ fontSize: "11px" }}
+                      onClick={() => setHistoryActiveTab("status")}
+                    >
+                      <i className="fas fa-exchange-alt me-1"></i>
+                      Vòng đời ({equipmentHistory.statusHistory?.length || 0})
+                    </button>
+                  </div>
+
+                  {/* TAB 1: SỰ CỐ & SỬA CHỮA */}
+                  {historyActiveTab === "tickets" && (
+                    <div className="d-flex flex-column gap-2.5">
+                      {equipmentHistory.tickets.length === 0 ? (
+                        <div className="card border-0 p-4 text-center rounded-3 shadow-2xs bg-white">
+                          <i className="fas fa-clipboard-check fa-2x text-success mb-2"></i>
+                          <div className="fw-semibold text-dark small">Không có dữ liệu sự cố</div>
+                          <div className="text-muted" style={{ fontSize: "12px" }}>
+                            Máy hoạt động tốt, chưa ghi nhận ca sửa chữa hoặc sự cố nào.
+                          </div>
+                        </div>
+                      ) : (
+                        equipmentHistory.tickets.map((t) => (
+                          <div key={t.id} className="card border-0 rounded-3 shadow-2xs bg-white p-3">
+                            <div className="d-flex justify-content-between align-items-center mb-1.5">
+                              <span className="badge bg-light text-primary font-monospace border fw-bold">
+                                {t.code}
+                              </span>
+                              <span className="badge bg-secondary-subtle text-secondary-emphasis" style={{ fontSize: "10.5px" }}>
+                                {TICKET_STATUS_LABELS[t.status] || t.status}
+                              </span>
+                            </div>
+
+                            <div className="d-flex justify-content-between align-items-center text-muted small mb-2" style={{ fontSize: "11px" }}>
+                              <span>
+                                <i className="far fa-calendar-alt me-1"></i>
+                                {new Date(t.createdAt).toLocaleDateString("vi-VN", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                              <span className="badge bg-info-subtle text-info-emphasis">
+                                {TICKET_TYPE_LABELS[t.type] || t.type}
+                              </span>
+                            </div>
+
+                            {/* Mô tả sự cố */}
+                            <div className="small text-dark mb-2">
+                              <span className="text-danger fw-semibold">Hiện tượng: </span>
+                              <span>{t.description}</span>
+                            </div>
+
+                            {/* Chẩn đoán & giải pháp */}
+                            {t.diagnosis && (
+                              <div className="p-2 rounded bg-light border small text-dark mb-2" style={{ fontSize: "11.5px" }}>
+                                <span className="text-success fw-bold">
+                                  <i className="fas fa-stethoscope me-1"></i>Xử lý:{" "}
+                                </span>
+                                <span>{t.diagnosis}</span>
+                              </div>
+                            )}
+
+                            {/* Linh kiện đã dùng trong phiếu này */}
+                            {t.partsUsed && t.partsUsed.length > 0 && (
+                              <div className="border-top pt-2 mt-1">
+                                <div className="text-muted fw-semibold mb-1" style={{ fontSize: "11px" }}>
+                                  <i className="fas fa-cogs text-warning me-1"></i>Linh kiện thay thế:
+                                </div>
+                                <div className="d-flex flex-wrap gap-1">
+                                  {t.partsUsed.map((pu) => (
+                                    <span key={pu.id} className="badge bg-warning-subtle text-dark border" style={{ fontSize: "10.5px" }}>
+                                      {pu.part.name} x{pu.quantity} {pu.part.unit}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Footer card ticket: KTV phụ trách + counter chốt */}
+                            <div className="d-flex justify-content-between align-items-center pt-2 mt-2 border-top text-muted" style={{ fontSize: "11px" }}>
+                              <span>
+                                <i className="fas fa-user-tie me-1"></i>
+                                KTV: <strong>{t.assignee?.name || "Chưa gán"}</strong>
+                              </span>
+                              {t.counterAtClose != null && (
+                                <span>
+                                  Counter chốt: <strong className="text-primary font-monospace">{t.counterAtClose.toLocaleString("vi-VN")}</strong>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* TAB 2: LINH KIỆN ĐÃ THAY */}
+                  {historyActiveTab === "parts" && (
+                    <div className="d-flex flex-column gap-2.5">
+                      {equipmentHistory.partHistory.length === 0 ? (
+                        <div className="card border-0 p-4 text-center rounded-3 shadow-2xs bg-white">
+                          <i className="fas fa-box-open fa-2x text-muted mb-2"></i>
+                          <div className="fw-semibold text-dark small">Chưa thay thế linh kiện</div>
+                          <div className="text-muted" style={{ fontSize: "12px" }}>
+                            Máy chưa phát sinh lần thay thế linh kiện hoặc vật tư tiêu hao nào.
+                          </div>
+                        </div>
+                      ) : (
+                        equipmentHistory.partHistory.map((ph) => (
+                          <div key={ph.id} className="card border-0 rounded-3 shadow-2xs bg-white p-3">
+                            <div className="d-flex justify-content-between align-items-start mb-1">
+                              <div>
+                                <div className="fw-bold text-dark small">{ph.part.name}</div>
+                                <div className="text-muted font-monospace" style={{ fontSize: "11px" }}>
+                                  Mã VT: {ph.part.partCode}
+                                </div>
+                              </div>
+                              <span className="badge bg-primary fs-6 px-2.5 py-1 font-monospace">
+                                x{ph.quantity} <span className="small fw-normal">{ph.part.unit}</span>
+                              </span>
+                            </div>
+
+                            <div className="d-flex justify-content-between align-items-center pt-2 mt-2 border-top text-muted small" style={{ fontSize: "11px" }}>
+                              <span>
+                                <i className="far fa-clock me-1"></i>
+                                {new Date(ph.replacedAt).toLocaleDateString("vi-VN", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "numeric",
+                                })}
+                              </span>
+                              {ph.ticket?.code && (
+                                <span className="font-monospace text-primary">
+                                  Phiếu: #{ph.ticket.code}
+                                </span>
+                              )}
+                              <span>
+                                {ph.oldPartReturned ? (
+                                  <span className="text-success fw-semibold">
+                                    <i className="fas fa-check-circle me-1"></i>Đã thu hồi xác
+                                  </span>
+                                ) : (
+                                  <span className="text-secondary">Chưa thu hồi</span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* TAB 3: LỊCH SỬ COUNTER */}
+                  {historyActiveTab === "meter" && (
+                    <div className="card border-0 rounded-3 shadow-2xs bg-white overflow-hidden">
+                      {equipmentHistory.meterLogs.length === 0 ? (
+                        <div className="p-4 text-center">
+                          <i className="fas fa-tachometer-alt fa-2x text-muted mb-2"></i>
+                          <div className="fw-semibold text-dark small">Chưa có dữ liệu Counter</div>
+                          <div className="text-muted" style={{ fontSize: "12px" }}>
+                            Chưa có lần chốt counter nào được ghi nhận cho thiết bị này.
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="table-responsive">
+                          <table className="table table-sm table-hover mb-0" style={{ fontSize: "12px" }}>
+                            <thead className="table-light">
+                              <tr>
+                                <th className="px-3 py-2">Ngày chốt</th>
+                                <th className="py-2 text-end">Chỉ số Counter</th>
+                                <th className="py-2 text-center">Nguồn</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {equipmentHistory.meterLogs.map((m) => (
+                                <tr key={m.id}>
+                                  <td className="px-3 py-2 text-muted font-monospace">
+                                    {new Date(m.logDate).toLocaleDateString("vi-VN", {
+                                      day: "2-digit",
+                                      month: "2-digit",
+                                      year: "numeric",
+                                    })}
+                                  </td>
+                                  <td className="py-2 text-end font-monospace fw-bold text-primary">
+                                    {m.counterValue.toLocaleString("vi-VN")}
+                                  </td>
+                                  <td className="py-2 text-center">
+                                    <span
+                                      className={`badge ${
+                                        m.source === "OCR"
+                                          ? "bg-info-subtle text-info-emphasis border border-info"
+                                          : m.source === "TECH"
+                                          ? "bg-success-subtle text-success-emphasis"
+                                          : "bg-light text-secondary border"
+                                      }`}
+                                      style={{ fontSize: "10px" }}
+                                    >
+                                      {m.source === "OCR" ? "AI OCR" : m.source === "TECH" ? "KTV" : m.source}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* TAB 4: BIẾN ĐỘNG TRẠNG THÁI */}
+                  {historyActiveTab === "status" && (
+                    <div className="d-flex flex-column gap-2.5">
+                      {equipmentHistory.statusHistory.length === 0 ? (
+                        <div className="card border-0 p-4 text-center rounded-3 shadow-2xs bg-white">
+                          <i className="fas fa-history fa-2x text-muted mb-2"></i>
+                          <div className="fw-semibold text-dark small">Chưa có biến động trạng thái</div>
+                          <div className="text-muted" style={{ fontSize: "12px" }}>
+                            Trạng thái máy vẫn giữ nguyên từ lúc nhập hệ thống.
+                          </div>
+                        </div>
+                      ) : (
+                        equipmentHistory.statusHistory.map((sh) => (
+                          <div key={sh.id} className="card border-0 rounded-3 shadow-2xs bg-white p-2.5">
+                            <div className="d-flex justify-content-between align-items-center mb-1">
+                              <span className="small text-muted font-monospace" style={{ fontSize: "11px" }}>
+                                {new Date(sh.changedAt).toLocaleString("vi-VN", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                              <div className="d-flex align-items-center gap-1">
+                                {sh.fromStatus && (
+                                  <>
+                                    <span className="badge bg-light text-secondary border" style={{ fontSize: "10px" }}>
+                                      {STATUS_LABELS[sh.fromStatus] || sh.fromStatus}
+                                    </span>
+                                    <i className="fas fa-arrow-right text-muted" style={{ fontSize: "9px" }}></i>
+                                  </>
+                                )}
+                                <span className="badge bg-primary" style={{ fontSize: "10px" }}>
+                                  {STATUS_LABELS[sh.toStatus] || sh.toStatus}
+                                </span>
+                              </div>
+                            </div>
+                            {sh.note && (
+                              <div className="small text-muted bg-light p-1.5 rounded border mt-1" style={{ fontSize: "11px" }}>
+                                <i className="fas fa-comment-alt me-1 text-secondary"></i>
+                                {sh.note}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Footer Modal: Đóng và Tạo phiếu */}
+            <div
+              className="p-3 bg-white border-top d-flex gap-2 flex-shrink-0"
+              style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom, 0px))" }}
+            >
+              <button
+                type="button"
+                className="btn btn-outline-secondary btn-sm w-50 py-2 fw-semibold"
+                onClick={() => setShowHistoryModal(false)}
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger btn-sm w-50 py-2 fw-bold"
+                onClick={() => {
+                  setShowHistoryModal(false);
+                  if (equipmentHistory) {
+                    setQrResult({
+                      id: equipmentHistory.id,
+                      serialNumber: equipmentHistory.serialNumber,
+                      model: equipmentHistory.model,
+                      brand: equipmentHistory.brand,
+                      status: equipmentHistory.status,
+                      currentCounter: equipmentHistory.currentCounter,
+                      qrCode: equipmentHistory.qrCode,
+                      healthScore: equipmentHistory.healthScore,
+                      customer: equipmentHistory.customer,
+                      department: equipmentHistory.department,
+                    });
+                    setShowQRModal(true);
+                    setShowQuickTicket(true);
+                  }
+                }}
+              >
+                <i className="fas fa-tools me-1"></i> Tạo phiếu máy này
+              </button>
             </div>
           </div>
         </div>
@@ -2421,11 +3046,7 @@ export default function TechMobilePage() {
         onSelectFiles={handleTechSelectMediaPhotos}
         onSelectFile={(url) => handleTechSelectMediaPhotos([url])}
         zIndex={1200}
-        title={
-          techMediaKind === "PHOTO"
-            ? "Thư viện Media — Chọn ảnh thiết bị máy hỏng"
-            : "Thư viện Media — Chọn ảnh chỉ số Counter"
-        }
+        title="Thư viện Media — Chọn ảnh thiết bị máy hỏng"
       />
 
       {/* Modal AI OCR Quét số Counter */}

@@ -101,6 +101,9 @@ export async function POST(request: NextRequest) {
       newName: finalNewName,
     });
   } catch (error: any) {
+    if (error && typeof error === "object" && "digest" in error) {
+      throw error;
+    }
     console.error("Lỗi khi đổi tên file:", error);
     return NextResponse.json(
       { error: error?.message || "Lỗi khi đổi tên file" },

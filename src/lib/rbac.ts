@@ -34,6 +34,7 @@ export const PERMISSIONS = {
 
   // 3. Máy móc & Thiết bị
   "equipment:view": ALL,
+  "equipment:history": ALL,
   "equipment:import-stock": ["SUPER_ADMIN", "ADMIN", "DISPATCHER"],
   "equipment:assign": ["SUPER_ADMIN", "ADMIN", "DISPATCHER"],
   "equipment:recall": ["SUPER_ADMIN", "ADMIN", "DISPATCHER"],

@@ -47,5 +47,6 @@ public/uploads/*
 
 # backups
 *.sql
+!prisma/migrations/**/*.sql
 *.tar.gz
 *.bak

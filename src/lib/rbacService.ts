@@ -40,7 +40,7 @@ const LEGACY_ALIASES: Record<string, string[]> = {
   "customer:write": ["customer:create", "customer:edit-contact", "customer:edit-legal", "customer:location-manage"],
   "contract:read": ["contract:view"],
   "contract:write": ["contract:create", "contract:edit"],
-  "equipment:read": ["equipment:view"],
+  "equipment:read": ["equipment:view", "equipment:history"],
   "equipment:write": ["equipment:import-stock", "equipment:assign", "equipment:edit", "equipment:status-change"],
   "ticket:update": ["ticket:update-progress", "ticket:close"],
   "stock:read": ["part:view", "stock:movement-view"],

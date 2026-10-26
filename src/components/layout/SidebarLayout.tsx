@@ -160,6 +160,7 @@ export function SidebarLayout({
         { href: "/admin", label: "Tài khoản", icon: "fas fa-user-shield", roles: ["SUPER_ADMIN"], perm: "user:manage" },
         { href: "/admin/permissions", label: "Phân quyền", icon: "fas fa-key", roles: ["SUPER_ADMIN"], perm: "user:manage" },
         { href: "/admin/company", label: "Cấu hình Doanh nghiệp", icon: "fas fa-building-circle-check", roles: ["SUPER_ADMIN", "ADMIN"], perm: "user:manage" },
+        { href: "/admin/sla", label: "Cấu hình SLA", icon: "fas fa-stopwatch", roles: ["SUPER_ADMIN", "ADMIN"], perm: "user:manage" },
         { href: "/admin/audit-logs", label: "Nhật ký", icon: "fas fa-history", roles: ["SUPER_ADMIN"], perm: "audit:view" },
       ],
     },

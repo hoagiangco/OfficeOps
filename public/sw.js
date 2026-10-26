@@ -47,7 +47,17 @@ self.addEventListener("activate", (event) => {
 // Fetch Event
 self.addEventListener("fetch", (event) => {
   const request = event.request;
-  const url = new URL(request.url);
+  // Bỏ qua các scheme phi HTTP như data:, blob:, chrome-extension:
+  if (!request.url.startsWith("http://") && !request.url.startsWith("https://")) {
+    return;
+  }
+
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return;
+  }
 
   // 1. DO NOT cache or intercept API calls - always network directly
   if (url.pathname.startsWith("/api/")) {

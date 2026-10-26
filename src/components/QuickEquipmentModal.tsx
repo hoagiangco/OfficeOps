@@ -110,37 +110,41 @@ export default function QuickEquipmentModal({
   useEffect(() => {
     if (!isOpen) return;
 
+    let ignore = false;
     const initMode = customer ? "CUSTOMER" : "WAREHOUSE";
-    setTargetMode(initMode);
-    setIsCustomBrand(false);
-    setIsCustomType(false);
-    setIsCustomGroup(false);
-    setIsCustomRelation(false);
 
-    setFormData({
-      serialNumber: "",
-      model: "",
-      brand: "Ricoh",
-      customBrand: "",
-      type: "Máy Photocopy",
-      customType: "",
-      group: "Máy văn phòng",
-      customGroup: "",
-      categoryId: "",
-      currentCounter: 0,
-      relationType: "Cho thuê",
-      customRelation: "",
-      warehouseId: "",
-      selectedCustomerId: customer?.id || "",
-      contractId: "",
-      locationTarget: "",
-      locationNote: "",
-      warrantyUntil: "",
-      installedAt: new Date().toISOString().slice(0, 10),
-      notes: "",
-    });
+    const resetTimer = setTimeout(() => {
+      if (ignore) return;
+      setTargetMode(initMode);
+      setIsCustomBrand(false);
+      setIsCustomType(false);
+      setIsCustomGroup(false);
+      setIsCustomRelation(false);
 
-    setLoadingMetadata(true);
+      setFormData({
+        serialNumber: "",
+        model: "",
+        brand: "Ricoh",
+        customBrand: "",
+        type: "Máy Photocopy",
+        customType: "",
+        group: "Máy văn phòng",
+        customGroup: "",
+        categoryId: "",
+        currentCounter: 0,
+        relationType: "Cho thuê",
+        customRelation: "",
+        warehouseId: "",
+        selectedCustomerId: customer?.id || "",
+        contractId: "",
+        locationTarget: "",
+        locationNote: "",
+        warrantyUntil: "",
+        installedAt: new Date().toISOString().slice(0, 10),
+        notes: "",
+      });
+      setLoadingMetadata(true);
+    }, 0);
     Promise.allSettled([
       fetch("/api/equipment-brands").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/equipment-types").then((r) => (r.ok ? r.json() : null)),
@@ -196,6 +200,11 @@ export default function QuickEquipmentModal({
       .finally(() => {
         setLoadingMetadata(false);
       });
+
+    return () => {
+      ignore = true;
+      clearTimeout(resetTimer);
+    };
   }, [isOpen, customer]);
 
   // Xác định khách hàng đang chọn (truyền qua prop hoặc chọn từ dropdown)
@@ -204,12 +213,18 @@ export default function QuickEquipmentModal({
   // Nạp chi tiết khách hàng (sơ đồ chi nhánh) & Hợp đồng tương ứng
   useEffect(() => {
     if (!isOpen || !activeCustomerId) {
-      setCustDetail(null);
-      setContracts([]);
-      return;
+      const timer = setTimeout(() => {
+        setCustDetail(null);
+        setContracts([]);
+      }, 0);
+      return () => clearTimeout(timer);
     }
 
-    setLoadingCustData(true);
+    let ignore = false;
+    const startTimer = setTimeout(() => {
+      if (!ignore) setLoadingCustData(true);
+    }, 0);
+
     Promise.allSettled([
       fetch(`/api/customers/${activeCustomerId}`).then((r) => (r.ok ? r.json() : null)),
       fetch(`/api/contracts?customerId=${activeCustomerId}&pageSize=100`).then((r) =>
@@ -247,6 +262,11 @@ export default function QuickEquipmentModal({
       .finally(() => {
         setLoadingCustData(false);
       });
+
+    return () => {
+      ignore = true;
+      clearTimeout(startTimer);
+    };
   }, [isOpen, activeCustomerId]);
 
   // Sinh Serial Number ngẫu nhiên nhanh

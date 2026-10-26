@@ -21,28 +21,6 @@ const DISALLOWED_EXTENSIONS = [
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
 
-async function uploadToBlob(
-  fileName: string,
-  buffer: Buffer,
-  contentType: string
-): Promise<string | null> {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token || token.startsWith("YOUR_")) return null;
-
-  try {
-    // @ts-ignore
-    const { put } = await import("@vercel/blob");
-    const blob = await put(fileName, buffer, {
-      access: "public",
-      contentType: contentType || "application/octet-stream",
-    });
-    return blob.url;
-  } catch (error: any) {
-    console.error("Vercel Blob upload error:", error);
-    throw error;
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
     const session = await getSession();
@@ -89,38 +67,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "File rỗng" }, { status: 400 });
     }
 
-    const hasToken =
-      !!process.env.BLOB_READ_WRITE_TOKEN &&
-      !process.env.BLOB_READ_WRITE_TOKEN.startsWith("YOUR_");
-
-    if (hasToken) {
-      try {
-        const blobUrl = await uploadToBlob(
-          fileName,
-          buffer,
-          file.type || "application/octet-stream"
-        );
-        if (blobUrl) {
-          await audit(session.userId, "UPLOAD", "File", fileName, {
-            originalName,
-            size: file.size,
-            url: blobUrl,
-          });
-
-          return NextResponse.json({
-            success: true,
-            url: blobUrl,
-            path: blobUrl,
-            name: originalName,
-            size: file.size,
-          });
-        }
-      } catch (blobErr: any) {
-        console.error("Blob upload error, falling back to local:", blobErr);
-      }
-    }
-
-    // Lưu cục bộ vào public/uploads
+    // Lưu cục bộ vào public/uploads trên máy chủ/host
     let uploadsDir = path.join(process.cwd(), "public", "uploads");
     if (process.env.UPLOAD_DIR) {
       uploadsDir = path.isAbsolute(process.env.UPLOAD_DIR)
@@ -157,6 +104,9 @@ export async function POST(request: NextRequest) {
       size: file.size,
     });
   } catch (error: any) {
+    if (error && typeof error === "object" && "digest" in error) {
+      throw error;
+    }
     console.error("Lỗi khi tải file:", error);
     return NextResponse.json(
       { error: error?.message || "Lỗi khi tải file" },

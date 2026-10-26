@@ -10,3 +10,19 @@ body {
   white-space: nowrap !important;
   vertical-align: middle !important;
 }
+
+/* Tối ưu vị trí Toast tránh che nút chức năng quan trọng (Lưu, Thêm, Đóng modal, ...) */
+.Toastify__toast-container--bottom-right {
+  bottom: 1.5rem !important;
+  right: 1.5rem !important;
+  z-index: 99999 !important;
+}
+
+@media (max-width: 768px) {
+  .Toastify__toast-container--bottom-right {
+    bottom: 4.5rem !important;
+    right: 1rem !important;
+    left: 1rem !important;
+    width: auto !important;
+  }
+}

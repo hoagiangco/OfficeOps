@@ -33,6 +33,7 @@ const patchSchema = z.object({
   adjustmentReason: z.string().optional().nullable(),
   photoUrl: z.string().optional().nullable(),
   note: z.string().optional().nullable(),
+  slaDueAt: z.string().datetime().optional().nullable(),
 });
 
 export const GET = withErrors(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
@@ -92,8 +93,14 @@ export const GET = withErrors(async (_req: Request, ctx: { params: Promise<{ id:
   }
 
   const canViewPhone = await checkUserPermission(session.userId, session.role, "customer:view-phone");
+  const sanitizeSignature = (sig?: string | null) => {
+    if (!sig) return null;
+    if (sig.includes("[DEMO_SIGNATURE]") || sig.includes("...")) return null;
+    return sig;
+  };
   const data = {
     ...ticket,
+    customerSignature: sanitizeSignature(ticket.customerSignature),
     customer: ticket.customer ? maskCustomerPhones(ticket.customer, canViewPhone) : ticket.customer,
   };
 
@@ -108,6 +115,14 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
   const parsed = await parseBody(req, patchSchema);
   if (parsed.error) return parsed.error;
   const data = parsed.data;
+
+  // Làm sạch dữ liệu chữ ký nếu chứa chuỗi mô phỏng/lỗi
+  if (
+    data.customerSignature &&
+    (data.customerSignature.includes("[DEMO_SIGNATURE]") || data.customerSignature.includes("..."))
+  ) {
+    data.customerSignature = null;
+  }
 
   const existing = await prisma.ticket.findUnique({
     where: { id },
@@ -300,15 +315,6 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
           `Chỉ số counter đóng phiếu (${data.counterAtClose!.toLocaleString("vi-VN")}) thấp hơn counter ban đầu (${existing.equipment.currentCounter.toLocaleString("vi-VN")}). Vui lòng nhập lý do điều chỉnh để gửi cấp trên phê duyệt.`
         );
       }
-      const hasCounterPhoto =
-        data.photoUrl ||
-        existing.attachments.some((a) => a.kind === "COUNTER_PHOTO");
-      if (!hasCounterPhoto) {
-        throw new HttpError(
-          400,
-          "Vui lòng chụp ảnh màn hình Counter thực tế để minh chứng cho yêu cầu hạ chỉ số counter."
-        );
-      }
     }
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -472,6 +478,9 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
         ...(data.counterAtClose !== undefined ? { counterAtClose: data.counterAtClose } : {}),
         ...(data.customerSignature !== undefined
           ? { customerSignature: data.customerSignature }
+          : {}),
+        ...(data.slaDueAt !== undefined
+          ? { slaDueAt: data.slaDueAt ? new Date(data.slaDueAt) : null }
           : {}),
         ...(existing.status === "COMPLETED" && nextStatus !== "COMPLETED"
           ? { resolvedAt: null }
