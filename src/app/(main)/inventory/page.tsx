@@ -8,6 +8,8 @@ import ActiveFilterChips, { FilterChipItem } from "@/components/ActiveFilterChip
 import ModalShell from "@/components/ModalShell";
 import { exportToCsv } from "@/lib/csv";
 import { STOCK_MOVEMENT_TYPE_LABELS } from "@/lib/labels";
+import PartCategoriesTab from "@/components/inventory/PartCategoriesTab";
+import PartCompatibilityTab from "@/components/inventory/PartCompatibilityTab";
 
 interface BatchItem {
   id: string;
@@ -22,11 +24,17 @@ interface PartItem {
   id: string;
   partCode: string;
   name: string;
+  categoryId?: string | null;
+  partCategory?: { id: string; name: string; color?: string | null } | null;
   category: string | null;
+  barcode?: string | null;
   unit: string;
   compatibleModels: string[];
   minThreshold: number;
+  costPrice?: string | number | null;
   salePrice: string | number | null;
+  specs?: Record<string, unknown> | null;
+  notes?: string | null;
   isActive: boolean;
   currentQuantity: number;
   isLowStock: boolean;
@@ -56,11 +64,12 @@ interface MovementItem {
   };
 }
 
-export default function InventoryPage() {
-  // Tabs: "stock" = Tồn kho & Lô FIFO; "movements" = Sổ cái biến động kho (Thẻ kho)
-  const [activeTab, setActiveTab] = useState<"stock" | "movements">("stock");
+type InventoryTab = "parts" | "categories" | "compatibility" | "stock" | "movements";
 
-  // === TAB 1: TỒN KHO & LÔ FIFO ===
+export default function InventoryPage() {
+  const [activeTab, setActiveTab] = useState<InventoryTab>("parts");
+
+  // === TAB 1: DANH SÁCH VẬT TƯ & LINH KIỆN ===
   const [parts, setParts] = useState<PartItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -68,19 +77,24 @@ export default function InventoryPage() {
   const [pageSize, setPageSize] = useState(25);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [partCategories, setPartCategories] = useState<{ id: string; code?: string | null; name: string; color?: string | null }[]>([]);
 
-  // Modal Thêm / Sửa Danh mục Linh kiện
+  // Modal Thêm / Sửa Vật tư
   const [showPartModal, setShowPartModal] = useState(false);
   const [editingPart, setEditingPart] = useState<PartItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [partForm, setPartForm] = useState({
     partCode: "",
     name: "",
-    category: "Mực & Cụm trống",
+    categoryId: "",
+    category: "",
+    barcode: "",
     unit: "cái",
     compatibleText: "",
     minThreshold: "5",
+    costPrice: "",
     salePrice: "",
+    notes: "",
   });
 
   // Modal Nhập lô hàng mới (FIFO Batch In)
@@ -96,17 +110,19 @@ export default function InventoryPage() {
   // Modal Xem các lô tồn FIFO của 1 linh kiện
   const [viewBatchesPart, setViewBatchesPart] = useState<PartItem | null>(null);
 
-  // === TAB 2: SỔ CÁI BIẾN ĐỘNG KHO (THẺ KHO) ===
+  // === TAB: SỔ CÁI BIẾN ĐỘNG KHO (THẺ KHO) ===
   const [movements, setMovements] = useState<MovementItem[]>([]);
   const [movementTotal, setMovementTotal] = useState(0);
   const [movementLoading, setMovementLoading] = useState(false);
   const [movementPage, setMovementPage] = useState(1);
-  const [movementPageSize, setMovementPageSize] = useState(25);
+  const [movementPageSize] = useState(25);
   const [movementTypeFilter, setMovementTypeFilter] = useState("");
   const [movementPartFilter, setMovementPartFilter] = useState("");
   const [movementFromDate, setMovementFromDate] = useState("");
   const [movementToDate, setMovementToDate] = useState("");
   const [movementSearch, setMovementSearch] = useState("");
+  const [dataReloadCount, setDataReloadCount] = useState(0);
+  const [movementReloadCount, setMovementReloadCount] = useState(0);
   const [movementSummary, setMovementSummary] = useState({
     totalIn: 0,
     totalOut: 0,
@@ -114,55 +130,98 @@ export default function InventoryPage() {
     totalAdjust: 0,
   });
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(() => {
     setLoading(true);
-    try {
-      const sp = new URLSearchParams({
-        page: String(page),
-        pageSize: String(pageSize),
-      });
-      if (search.trim()) sp.set("q", search.trim());
-      if (categoryFilter) sp.set("category", categoryFilter);
+    setDataReloadCount((c) => c + 1);
+  }, []);
 
-      const res = await fetch(`/api/parts?${sp.toString()}`);
-      if (!res.ok) throw new Error("Không tải được danh sách tồn kho");
-      const data = await res.json();
-      setParts(data.items || []);
-      setTotal(data.total || 0);
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Lỗi tải kho");
-    } finally {
-      setLoading(false);
-    }
-  }, [page, pageSize, search, categoryFilter]);
-
-  const loadMovements = useCallback(async () => {
+  const loadMovements = useCallback(() => {
     setMovementLoading(true);
-    try {
-      const sp = new URLSearchParams({
-        page: String(movementPage),
-        pageSize: String(movementPageSize),
-      });
-      if (movementSearch.trim()) sp.set("q", movementSearch.trim());
-      if (movementTypeFilter) sp.set("type", movementTypeFilter);
-      if (movementPartFilter) sp.set("partId", movementPartFilter);
-      if (movementFromDate) sp.set("from", movementFromDate);
-      if (movementToDate) sp.set("to", movementToDate);
+    setMovementReloadCount((c) => c + 1);
+  }, []);
 
-      const res = await fetch(`/api/inventory/movements?${sp.toString()}`);
-      if (!res.ok) throw new Error("Không tải được sổ cái biến động kho");
-      const data = await res.json();
-      setMovements(data.items || []);
-      setMovementTotal(data.total || 0);
-      setMovementSummary(
-        data.summary || { totalIn: 0, totalOut: 0, totalReturn: 0, totalAdjust: 0 }
-      );
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Lỗi tải sổ cái biến động");
-    } finally {
-      setMovementLoading(false);
+  useEffect(() => {
+    let ignore = false;
+    fetch("/api/part-categories")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.categories && !ignore) {
+          setPartCategories(data.categories);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    async function fetchData() {
+      try {
+        const sp = new URLSearchParams({
+          page: String(page),
+          pageSize: String(pageSize),
+        });
+        if (search.trim()) sp.set("q", search.trim());
+        if (categoryFilter) sp.set("category", categoryFilter);
+
+        const res = await fetch(`/api/parts?${sp.toString()}`);
+        if (!res.ok) throw new Error("Không tải được danh sách tồn kho");
+        const data = await res.json();
+        if (!ignore) {
+          setParts(data.items || []);
+          setTotal(data.total || 0);
+        }
+      } catch (e: unknown) {
+        if (!ignore) toast.error(e instanceof Error ? e.message : "Lỗi tải kho");
+      } finally {
+        if (!ignore) setLoading(false);
+      }
     }
+    fetchData();
+    return () => {
+      ignore = true;
+    };
+  }, [page, pageSize, search, categoryFilter, dataReloadCount]);
+
+  useEffect(() => {
+    if (activeTab !== "movements") return;
+    let ignore = false;
+    async function fetchMovements() {
+      try {
+        const sp = new URLSearchParams({
+          page: String(movementPage),
+          pageSize: String(movementPageSize),
+        });
+        if (movementSearch.trim()) sp.set("q", movementSearch.trim());
+        if (movementTypeFilter) sp.set("type", movementTypeFilter);
+        if (movementPartFilter) sp.set("partId", movementPartFilter);
+        if (movementFromDate) sp.set("from", movementFromDate);
+        if (movementToDate) sp.set("to", movementToDate);
+
+        const res = await fetch(`/api/inventory/movements?${sp.toString()}`);
+        if (!res.ok) throw new Error("Không tải được sổ cái biến động kho");
+        const data = await res.json();
+        if (!ignore) {
+          setMovements(data.items || []);
+          setMovementTotal(data.total || 0);
+          setMovementSummary(
+            data.summary || { totalIn: 0, totalOut: 0, totalReturn: 0, totalAdjust: 0 }
+          );
+        }
+      } catch (e: unknown) {
+        if (!ignore) toast.error(e instanceof Error ? e.message : "Lỗi tải sổ cái biến động");
+      } finally {
+        if (!ignore) setMovementLoading(false);
+      }
+    }
+    fetchMovements();
+    return () => {
+      ignore = true;
+    };
   }, [
+    activeTab,
     movementPage,
     movementPageSize,
     movementSearch,
@@ -170,17 +229,8 @@ export default function InventoryPage() {
     movementPartFilter,
     movementFromDate,
     movementToDate,
+    movementReloadCount,
   ]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  useEffect(() => {
-    if (activeTab === "movements") {
-      loadMovements();
-    }
-  }, [activeTab, loadMovements]);
 
   // Chuyển sang Tab Thẻ kho và tự lọc theo linh kiện
   const openPartMovement = (p: PartItem) => {
@@ -193,13 +243,17 @@ export default function InventoryPage() {
   const openNewPart = () => {
     setEditingPart(null);
     setPartForm({
-      partCode: `LK-${String(total + 1).padStart(4, "0")}`,
+      partCode: `VT-${String(total + 1).padStart(4, "0")}`,
       name: "",
-      category: "Mực & Cụm trống",
+      categoryId: partCategories[0]?.id || "",
+      category: partCategories[0]?.name || "Mực & Hộp mực",
+      barcode: "",
       unit: "cái",
       compatibleText: "",
       minThreshold: "5",
+      costPrice: "",
       salePrice: "",
+      notes: "",
     });
     setShowPartModal(true);
   };
@@ -209,11 +263,15 @@ export default function InventoryPage() {
     setPartForm({
       partCode: p.partCode,
       name: p.name,
-      category: p.category || "",
+      categoryId: p.categoryId || (partCategories.find((c) => c.name === p.category)?.id || ""),
+      category: p.partCategory?.name || p.category || "",
+      barcode: p.barcode || "",
       unit: p.unit,
       compatibleText: (p.compatibleModels || []).join(", "),
       minThreshold: String(p.minThreshold),
-      salePrice: p.salePrice !== null ? String(p.salePrice) : "",
+      costPrice: p.costPrice !== undefined && p.costPrice !== null ? String(p.costPrice) : "",
+      salePrice: p.salePrice !== undefined && p.salePrice !== null ? String(p.salePrice) : "",
+      notes: p.notes || "",
     });
     setShowPartModal(true);
   };
@@ -230,11 +288,15 @@ export default function InventoryPage() {
       const payload: Record<string, unknown> = {
         ...(editingPart ? { id: editingPart.id } : { partCode: partForm.partCode }),
         name: partForm.name,
+        categoryId: partForm.categoryId || undefined,
         category: partForm.category || undefined,
+        barcode: partForm.barcode?.trim() || undefined,
         unit: partForm.unit || "cái",
         compatibleModels,
         minThreshold: Number(partForm.minThreshold),
+        costPrice: partForm.costPrice ? Number(partForm.costPrice) : undefined,
         salePrice: partForm.salePrice ? Number(partForm.salePrice) : undefined,
+        notes: partForm.notes?.trim() || undefined,
       };
 
       const res = await fetch("/api/parts", {
@@ -244,14 +306,30 @@ export default function InventoryPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || "Không thể lưu linh kiện");
+        toast.error(data.error || "Không thể lưu vật tư");
         return;
       }
-      toast.success(editingPart ? "Đã cập nhật linh kiện" : "Đã thêm mã linh kiện mới");
+      toast.success(editingPart ? "Đã cập nhật vật tư" : "Đã thêm mã vật tư mới");
       setShowPartModal(false);
       loadData();
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeletePart = async (p: PartItem) => {
+    if (!confirm(`Bạn có chắc muốn xóa hoặc ngừng sử dụng vật tư "${p.name}" (${p.partCode})?`)) return;
+    try {
+      const res = await fetch(`/api/parts?id=${p.id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Thao tác thất bại");
+        return;
+      }
+      toast.success(data.message || "Đã xử lý vật tư thành công");
+      loadData();
+    } catch {
+      toast.error("Lỗi khi xử lý");
     }
   };
 
@@ -436,14 +514,42 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* Tabs Chuyển đổi giữa Tồn kho & Sổ cái Thẻ kho */}
-      <div className="d-flex align-items-center justify-content-between mb-2">
+      {/* Tabs Chuyển đổi giữa các phân hệ Vật tư & Kho */}
+      <div className="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
         <div className="btn-group btn-group-sm shadow-sm">
+          <button
+            className={`btn px-3 fw-bold ${activeTab === "parts" ? "btn-primary shadow-sm" : "btn-light border text-muted"}`}
+            onClick={() => setActiveTab("parts")}
+          >
+            <i className="fas fa-boxes-stacked me-1.5"></i> Danh sách Vật tư
+            {total > 0 && (
+              <span className="badge bg-white text-dark ms-1.5 rounded-pill border">
+                {total}
+              </span>
+            )}
+          </button>
+          <button
+            className={`btn px-3 fw-bold ${activeTab === "categories" ? "btn-primary shadow-sm" : "btn-light border text-muted"}`}
+            onClick={() => setActiveTab("categories")}
+          >
+            <i className="fas fa-folder-tree me-1.5"></i> Danh mục Vật tư
+            {partCategories.length > 0 && (
+              <span className="badge bg-white text-dark ms-1.5 rounded-pill border">
+                {partCategories.length}
+              </span>
+            )}
+          </button>
+          <button
+            className={`btn px-3 fw-bold ${activeTab === "compatibility" ? "btn-primary shadow-sm" : "btn-light border text-muted"}`}
+            onClick={() => setActiveTab("compatibility")}
+          >
+            <i className="fas fa-microchip me-1.5"></i> Tra cứu tương thích
+          </button>
           <button
             className={`btn px-3 fw-bold ${activeTab === "stock" ? "btn-primary shadow-sm" : "btn-light border text-muted"}`}
             onClick={() => setActiveTab("stock")}
           >
-            <i className="fas fa-layer-group me-1.5"></i> Tồn kho
+            <i className="fas fa-warehouse me-1.5"></i> Lô tồn FIFO
           </button>
           <button
             className={`btn px-3 fw-bold ${activeTab === "movements" ? "btn-primary shadow-sm" : "btn-light border text-muted"}`}
@@ -452,7 +558,7 @@ export default function InventoryPage() {
               loadMovements();
             }}
           >
-            <i className="fas fa-history me-1.5"></i> Sổ cái biến động kho (Thẻ kho)
+            <i className="fas fa-history me-1.5"></i> Sổ cái thẻ kho
             {movementTotal > 0 && (
               <span className="badge bg-white text-dark ms-1.5 rounded-pill border">
                 {movementTotal}
@@ -482,8 +588,8 @@ export default function InventoryPage() {
         )}
       </div>
 
-      {/* ======================= TAB 1: DANH MỤC TỒN KHO & LÔ FIFO ======================= */}
-      {activeTab === "stock" && (
+      {/* ======================= TAB 1 & 4: DANH MỤC VẬT TƯ & LÔ FIFO ======================= */}
+      {(activeTab === "parts" || activeTab === "stock") && (
         <>
           {/* Dense Filters */}
           <div className="card shadow-sm border-0 mb-2 rounded-3 overflow-hidden border">
@@ -516,11 +622,17 @@ export default function InventoryPage() {
                     }}
                   >
                     <option value="">-- Tất cả danh mục --</option>
-                    {categories.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
+                    {partCategories.length > 0
+                      ? partCategories.map((c) => (
+                          <option key={c.id} value={c.name}>
+                            {c.name}
+                          </option>
+                        ))
+                      : categories.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
                   </select>
                 </div>
                 <div className="col-md-2">
@@ -618,8 +730,16 @@ export default function InventoryPage() {
                                   : ""
                             }
                           >
-                            <td className="px-3 font-monospace fw-bold text-primary small">
-                              {item.partCode}
+                            <td className="px-3">
+                              <span className="font-monospace fw-bold text-primary small">
+                                {item.partCode}
+                              </span>
+                              {item.barcode && (
+                                <div className="text-muted" style={{ fontSize: "10px" }}>
+                                  <i className="fas fa-barcode me-1"></i>
+                                  {item.barcode}
+                                </div>
+                              )}
                             </td>
                             <td className="py-1.5">
                               <div className="d-flex align-items-center">
@@ -631,7 +751,7 @@ export default function InventoryPage() {
                                         ? "bg-warning text-dark border-warning"
                                         : "bg-light text-primary border-light-subtle"
                                   }`}
-                                  style={{ width: "28px", height: "28px" }}
+                                  style={{ width: "28px", height: "28px", flexShrink: 0 }}
                                 >
                                   <i
                                     className={`fas ${
@@ -645,18 +765,31 @@ export default function InventoryPage() {
                                 </div>
                                 <div className="lh-sm">
                                   <div className="fw-bold text-dark small">{item.name}</div>
-                                  <div className="text-muted" style={{ fontSize: "0.73rem" }}>
-                                    Tương thích:{" "}
-                                    {item.compatibleModels?.length > 0
-                                      ? item.compatibleModels.join(", ")
-                                      : "Mọi dòng máy"}
+                                  <div className="d-flex flex-wrap gap-1 mt-1">
+                                    {item.compatibleModels?.slice(0, 3).map((m) => (
+                                      <span key={m} className="badge bg-light text-secondary border font-monospace" style={{ fontSize: "10px" }}>
+                                        {m}
+                                      </span>
+                                    ))}
+                                    {(item.compatibleModels?.length || 0) > 3 && (
+                                      <span className="badge bg-light text-muted border" style={{ fontSize: "10px" }}>
+                                        +{(item.compatibleModels?.length || 0) - 3} dòng máy
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </div>
                             </td>
                             <td>
-                              <span className="small fw-medium text-dark bg-light px-2 py-0.5 border rounded">
-                                {item.category || "Chung"}
+                              <span
+                                className="small fw-semibold px-2 py-0.5 rounded border"
+                                style={{
+                                  backgroundColor: item.partCategory?.color ? `${item.partCategory.color}15` : "#f1f5f9",
+                                  color: item.partCategory?.color || "#334155",
+                                  borderColor: item.partCategory?.color ? `${item.partCategory.color}40` : "#cbd5e1",
+                                }}
+                              >
+                                {item.partCategory?.name || item.category || "Chung"}
                               </span>
                             </td>
                             <td className="text-center">
@@ -707,6 +840,13 @@ export default function InventoryPage() {
                             <td className="px-3 text-end">
                               <div className="btn-group btn-group-sm">
                                 <button
+                                  className="btn btn-outline-warning btn-sm py-0 px-2"
+                                  title="Tra cứu thiết bị tương thích"
+                                  onClick={() => setActiveTab("compatibility")}
+                                >
+                                  <i className="fas fa-microchip"></i>
+                                </button>
+                                <button
                                   className="btn btn-outline-info btn-sm py-0 px-2"
                                   title="Xem Thẻ kho / Lịch sử biến động mã này"
                                   onClick={() => openPartMovement(item)}
@@ -734,6 +874,13 @@ export default function InventoryPage() {
                                 >
                                   <i className="fas fa-pen"></i>
                                 </button>
+                                <button
+                                  className="btn btn-outline-danger btn-sm py-0 px-2"
+                                  title="Xóa hoặc ngừng sử dụng"
+                                  onClick={() => handleDeletePart(item)}
+                                >
+                                  <i className="fas fa-trash"></i>
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -747,6 +894,19 @@ export default function InventoryPage() {
           </div>
         </>
       )}
+
+      {/* ======================= TAB 2: DANH MỤC VẬT TƯ ======================= */}
+      {activeTab === "categories" && (
+        <PartCategoriesTab
+          onSelectCategory={(catName) => {
+            setCategoryFilter(catName);
+            setActiveTab("parts");
+          }}
+        />
+      )}
+
+      {/* ======================= TAB 3: TRA CỨU TƯƠNG THÍCH ======================= */}
+      {activeTab === "compatibility" && <PartCompatibilityTab />}
 
       {/* ======================= TAB 2: SỔ CÁI BIẾN ĐỘNG KHO (THẺ KHO) ======================= */}
       {activeTab === "movements" && (
@@ -1050,13 +1210,37 @@ export default function InventoryPage() {
               />
             </div>
             <div className="col-md-6">
-              <label className="form-label small fw-bold text-primary mb-1">DANH MỤC</label>
+              <label className="form-label small fw-bold text-primary mb-1">
+                DANH MỤC VẬT TƯ <span className="text-danger">*</span>
+              </label>
+              <select
+                className="form-select form-select-sm border-primary"
+                value={partForm.categoryId}
+                onChange={(e) => {
+                  const sel = partCategories.find((c) => c.id === e.target.value);
+                  setPartForm({
+                    ...partForm,
+                    categoryId: e.target.value,
+                    category: sel?.name || partForm.category,
+                  });
+                }}
+              >
+                <option value="">-- Chọn danh mục vật tư --</option>
+                {partCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="col-md-3">
+              <label className="form-label small fw-bold text-muted mb-1">MÃ VẠCH (BARCODE)</label>
               <input
                 type="text"
-                placeholder="Mực, Cụm sấy, Trống, Bánh răng..."
-                className="form-control form-control-sm border-primary"
-                value={partForm.category}
-                onChange={(e) => setPartForm({ ...partForm, category: e.target.value })}
+                placeholder="VD: 893850020101"
+                className="form-control form-control-sm font-monospace"
+                value={partForm.barcode}
+                onChange={(e) => setPartForm({ ...partForm, barcode: e.target.value })}
               />
             </div>
             <div className="col-md-3">
@@ -1068,8 +1252,30 @@ export default function InventoryPage() {
                 onChange={(e) => setPartForm({ ...partForm, unit: e.target.value })}
               />
             </div>
-            <div className="col-md-3">
-              <label className="form-label small fw-bold text-muted mb-1">NGƯỠNG CẢNH BÁO</label>
+            <div className="col-md-4">
+              <label className="form-label small fw-bold text-muted mb-1">GIÁ VỐN THAM CHIẾU (₫)</label>
+              <input
+                type="number"
+                min={0}
+                placeholder="VD: 450000"
+                className="form-control form-control-sm"
+                value={partForm.costPrice}
+                onChange={(e) => setPartForm({ ...partForm, costPrice: e.target.value })}
+              />
+            </div>
+            <div className="col-md-4">
+              <label className="form-label small fw-bold text-muted mb-1">GIÁ BÁN LẺ (₫)</label>
+              <input
+                type="number"
+                min={0}
+                placeholder="VD: 650000"
+                className="form-control form-control-sm"
+                value={partForm.salePrice}
+                onChange={(e) => setPartForm({ ...partForm, salePrice: e.target.value })}
+              />
+            </div>
+            <div className="col-md-4">
+              <label className="form-label small fw-bold text-muted mb-1">NGƯỠNG CẢNH BÁO TỒN</label>
               <input
                 type="number"
                 min={0}
@@ -1078,26 +1284,50 @@ export default function InventoryPage() {
                 onChange={(e) => setPartForm({ ...partForm, minThreshold: e.target.value })}
               />
             </div>
-            <div className="col-md-8">
+            <div className="col-12">
               <label className="form-label small fw-bold text-muted mb-1">
                 DÒNG MÁY TƯƠNG THÍCH (CÁCH NHAU DẤU PHẨY)
               </label>
               <input
                 type="text"
-                placeholder="Ricoh MP 3055, Ricoh MP 4055, Canon iR 2625..."
+                placeholder="Ricoh MP 5002, Ricoh MP 4002, Canon iR 2525..."
                 className="form-control form-control-sm"
                 value={partForm.compatibleText}
                 onChange={(e) => setPartForm({ ...partForm, compatibleText: e.target.value })}
               />
+              <div className="d-flex flex-wrap gap-1 mt-1.5 align-items-center">
+                <span className="small text-muted" style={{ fontSize: "11px" }}>Gợi ý thêm nhanh:</span>
+                {["Ricoh MP 5002", "Ricoh MP 4002", "Canon iR 2525", "Toshiba e-Studio 3008A", "HP M404dn", "Ricoh IM 5000"].map((model) => (
+                  <button
+                    key={model}
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm py-0 px-1.5"
+                    style={{ fontSize: "10px" }}
+                    onClick={() => {
+                      const current = partForm.compatibleText
+                        ? partForm.compatibleText.split(",").map((s) => s.trim()).filter(Boolean)
+                        : [];
+                      if (!current.includes(model)) {
+                        setPartForm({
+                          ...partForm,
+                          compatibleText: [...current, model].join(", "),
+                        });
+                      }
+                    }}
+                  >
+                    + {model}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="col-md-4">
-              <label className="form-label small fw-bold text-muted mb-1">GIÁ BÁN LẺ (₫)</label>
-              <input
-                type="number"
-                min={0}
+            <div className="col-12">
+              <label className="form-label small fw-bold text-muted mb-1">GHI CHÚ / ĐẶC TÍNH KỸ THUẬT</label>
+              <textarea
+                rows={2}
+                placeholder="Quy cách đóng gói, xuất xứ, tuổi thọ trang in..."
                 className="form-control form-control-sm"
-                value={partForm.salePrice}
-                onChange={(e) => setPartForm({ ...partForm, salePrice: e.target.value })}
+                value={partForm.notes}
+                onChange={(e) => setPartForm({ ...partForm, notes: e.target.value })}
               />
             </div>
           </div>

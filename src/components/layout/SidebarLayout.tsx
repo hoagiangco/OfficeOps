@@ -141,7 +141,7 @@ export function SidebarLayout({
     {
       title: "Kho",
       items: [
-        { href: "/inventory", label: "Kho linh kiện", icon: "fas fa-boxes", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perm: "stock:read" },
+        { href: "/inventory", label: "Vật tư & Kho", icon: "fas fa-boxes-stacked", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perm: "stock:read" },
         { href: "/stock-issues", label: "Xuất nhập kho", icon: "fas fa-exchange-alt", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perms: ["stock:read", "stock:request", "stock:approve-technical", "stock:approve-retail"] },
         { href: "/reports/stock", label: "Nhập xuất tồn", icon: "fas fa-dolly-flatbed", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perm: "stock:read" },
       ],

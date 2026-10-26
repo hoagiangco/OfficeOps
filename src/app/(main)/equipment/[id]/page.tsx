@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { formatLocationPath } from "@/lib/location";
 import { checkUserPermission } from "@/lib/rbacService";
 import { STATUS_LABELS, TICKET_TYPE_LABELS, TICKET_STATUS_LABELS } from "@/lib/labels";
+import EquipmentCompatiblePartsCard from "@/components/inventory/EquipmentCompatiblePartsCard";
 
 const fmt = (d: Date) => d.toLocaleString("vi-VN");
 const fmtDate = (d: Date) => d.toLocaleDateString("vi-VN");
@@ -253,6 +254,9 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
           </div>
         </div>
       </div>
+
+      {/* Vật tư & Linh kiện tương thích */}
+      <EquipmentCompatiblePartsCard equipmentId={e.id} />
 
       {showHistory && (
         <div className="row g-3 mb-3">
