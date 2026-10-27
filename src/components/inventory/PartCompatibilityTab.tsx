@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { toast } from "react-toastify";
 import Loading from "@/components/Loading";
+import PartCompatibilityAssigner from "@/components/inventory/PartCompatibilityAssigner";
+import SearchableSelect, { SelectOption } from "@/components/ui/SearchableSelect";
 
 interface CompatiblePart {
   id: string;
@@ -93,7 +95,7 @@ interface ReverseQueryResult {
 }
 
 export default function PartCompatibilityTab() {
-  const [mode, setMode] = useState<"byEquipment" | "byPart">("byEquipment");
+  const [mode, setMode] = useState<"assign" | "byEquipment" | "byPart">("assign");
 
   // State mode 1: Theo Thiết bị / Model
   const [equipments, setEquipments] = useState<EquipmentOption[]>([]);
@@ -203,6 +205,26 @@ export default function PartCompatibilityTab() {
     queryCompatibleParts(undefined, model);
   };
 
+  const equipmentSelectOptions = useMemo<SelectOption[]>(() => {
+    return equipments.map((eq) => ({
+      value: eq.id,
+      label: `${eq.code || eq.serialNumber} • ${eq.brand || ""} ${eq.model}`,
+      sublabel: eq.customer ? eq.customer.name : "Tại kho lưu trữ",
+      badge: eq.brand || undefined,
+    }));
+  }, [equipments]);
+
+  const partSelectOptions = useMemo<SelectOption[]>(() => {
+    return allParts.map((p) => ({
+      value: p.id,
+      label: `[${p.partCode}] ${p.name}`,
+      sublabel: `${p.category || "Vật tư"}${
+        p.compatibleModels?.length ? ` • Đã gán ${p.compatibleModels.length} dòng máy` : ""
+      }`,
+      badge: p.unit,
+    }));
+  }, [allParts]);
+
   return (
     <div className="d-flex flex-column gap-3">
       {/* Thanh chuyển chế độ tra cứu */}
@@ -220,27 +242,43 @@ export default function PartCompatibilityTab() {
             </div>
             <div className="btn-group btn-group-sm">
               <button
-                className={`btn px-3 fw-semibold ${mode === "byEquipment" ? "btn-primary shadow-sm" : "btn-light border"}`}
+                className={`btn px-3 fw-semibold ${mode === "assign" ? "btn-primary shadow-sm" : "btn-light border text-muted"}`}
+                onClick={() => setMode("assign")}
+              >
+                <i className="fas fa-check-square me-1.5"></i> Gán máy tương thích (Check / Uncheck)
+              </button>
+              <button
+                className={`btn px-3 fw-semibold ${mode === "byEquipment" ? "btn-primary shadow-sm" : "btn-light border text-muted"}`}
                 onClick={() => {
                   setMode("byEquipment");
                   if (selectedEquipmentId) queryCompatibleParts(selectedEquipmentId, undefined);
                 }}
               >
-                <i className="fas fa-print me-1.5"></i> Tìm theo Thiết bị / Model máy
+                <i className="fas fa-print me-1.5"></i> Tra cứu theo Thiết bị / Model
               </button>
               <button
-                className={`btn px-3 fw-semibold ${mode === "byPart" ? "btn-primary shadow-sm" : "btn-light border"}`}
+                className={`btn px-3 fw-semibold ${mode === "byPart" ? "btn-primary shadow-sm" : "btn-light border text-muted"}`}
                 onClick={() => {
                   setMode("byPart");
                   if (selectedPartId) queryReverseEquipments(selectedPartId);
                 }}
               >
-                <i className="fas fa-box-open me-1.5"></i> Tìm theo Vật tư &rarr; Khách hàng đang dùng
+                <i className="fas fa-box-open me-1.5"></i> Tra cứu theo Vật tư &rarr; Khách dùng
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* CHẾ ĐỘ 0: GÁN THIẾT BỊ TƯƠNG THÍCH DẠNG CHECK / UNCHECK */}
+      {mode === "assign" && (
+        <PartCompatibilityAssigner
+          initialPartId={selectedPartId}
+          onSaved={(partId) => {
+            setSelectedPartId(partId);
+          }}
+        />
+      )}
 
       {/* CHẾ ĐỘ 1: TÌM THEO THIẾT BỊ / MODEL */}
       {mode === "byEquipment" && (
@@ -254,24 +292,19 @@ export default function PartCompatibilityTab() {
                     <i className="fas fa-barcode text-secondary me-1"></i>
                     Cách 1: Chọn Thiết bị đang quản lý trong hệ thống
                   </label>
-                  <select
-                    className="form-select form-select-sm"
+                  <SearchableSelect
                     value={selectedEquipmentId}
-                    onChange={(e) => {
-                      const val = e.target.value;
+                    onChange={(val) => {
                       setSelectedEquipmentId(val);
                       setCustomModelQuery("");
                       if (val) queryCompatibleParts(val, undefined);
                     }}
-                  >
-                    <option value="">-- Chọn máy trong danh sách thiết bị ({equipments.length}) --</option>
-                    {equipments.map((eq) => (
-                      <option key={eq.id} value={eq.id}>
-                        {eq.code || eq.serialNumber} | {eq.brand} {eq.model}
-                        {eq.customer ? ` — ${eq.customer.name}` : " (Trong kho)"}
-                      </option>
-                    ))}
-                  </select>
+                    options={equipmentSelectOptions}
+                    placeholder={`-- Chọn máy trong danh sách thiết bị (${equipments.length}) --`}
+                    searchPlaceholder="Tìm mã máy, serial, model hoặc tên khách hàng..."
+                    prefixIcon="fas fa-print"
+                    maxHeight={280}
+                  />
                 </div>
 
                 {/* Nhập hoặc gõ model tự do */}
@@ -504,22 +537,18 @@ export default function PartCompatibilityTab() {
                 <i className="fas fa-box-open text-primary me-1"></i>
                 Chọn Vật tư / Linh kiện cần kiểm tra độ tương thích ({allParts.length})
               </label>
-              <select
-                className="form-select form-select-sm"
+              <SearchableSelect
                 value={selectedPartId}
-                onChange={(e) => {
-                  const val = e.target.value;
+                onChange={(val) => {
                   setSelectedPartId(val);
                   if (val) queryReverseEquipments(val);
                 }}
-              >
-                <option value="">-- Chọn vật tư cần tra cứu --</option>
-                {allParts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    [{p.partCode}] {p.name} ({p.unit})
-                  </option>
-                ))}
-              </select>
+                options={partSelectOptions}
+                placeholder={`-- Chọn vật tư cần tra cứu (${allParts.length}) --`}
+                searchPlaceholder="Tìm mã hoặc tên linh kiện, dòng máy..."
+                prefixIcon="fas fa-box-open"
+                maxHeight={280}
+              />
             </div>
           </div>
 

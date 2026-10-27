@@ -25,7 +25,7 @@ const patchSchema = z
 export const GET = withErrors(async (_req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!(await checkUserPermission(s.userId, s.role, "contract:read"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
+  if (!(await checkUserPermission(s.userId, s.role, "contract:view"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const { id } = await params;
   const contract = await prisma.contract.findUnique({
     where: { id },
@@ -42,7 +42,7 @@ export const GET = withErrors(async (_req: Request, { params }: Ctx) => {
 export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!(await checkUserPermission(s.userId, s.role, "contract:write"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
+  if (!(await checkUserPermission(s.userId, s.role, "contract:edit"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const r = await parseBody(req, patchSchema);
   if (r.error) return r.error;
   const { id } = await params;
@@ -59,7 +59,7 @@ export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
 export const DELETE = withErrors(async (_req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!(await checkUserPermission(s.userId, s.role, "contract:write"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
+  if (!(await checkUserPermission(s.userId, s.role, "contract:delete"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const { id } = await params;
 
   const [eqCount, invCount] = await Promise.all([

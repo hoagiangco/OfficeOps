@@ -8,7 +8,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 // Trả về ảnh QR (SVG) chứa liên kết trực tiếp tới Cổng tiếp nhận sự cố công khai /scan/[qrCode]
 export const GET = withErrors(async (req: Request, { params }: Ctx) => {
-  const s = await requirePermission("equipment:read");
+  const s = await requirePermission("equipment:view");
   if (s instanceof NextResponse) return s;
   const { id } = await params;
   const eq = await prisma.equipment.findUnique({

@@ -55,7 +55,7 @@ function cleanName(val?: string | null): string {
 }
 
 export const POST = withErrors(async (req: Request) => {
-  const s = await requirePermission("customer:write");
+  const s = await requirePermission("customer:import");
   if (s instanceof NextResponse) return s;
 
   const r = await parseBody(req, importPayloadSchema);

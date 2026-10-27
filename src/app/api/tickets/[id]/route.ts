@@ -236,7 +236,14 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
     throw new HttpError(403, "Bạn chỉ có quyền thao tác trên phiếu kỹ thuật được phân công cho mình");
   }
 
-  const checkUpdatePerm = await requirePermission("ticket:update");
+  const requiredPerm =
+    data.action === "COMPLETE"
+      ? "ticket:close"
+      : data.action === "CANCEL"
+      ? "ticket:cancel"
+      : "ticket:update-progress";
+
+  const checkUpdatePerm = await requirePermission(requiredPerm);
   if (checkUpdatePerm instanceof NextResponse) return checkUpdatePerm;
 
   if (data.action === "CHECK_IN") {

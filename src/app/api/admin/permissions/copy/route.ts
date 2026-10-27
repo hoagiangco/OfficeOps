@@ -10,7 +10,7 @@ const copySchema = z.object({
 });
 
 export const POST = withErrors(async (req: Request) => {
-  const s = await requirePermission("user:manage");
+  const s = await requirePermission("user:permission-manage");
   if (s instanceof NextResponse) return s;
 
   const r = await parseBody(req, copySchema);

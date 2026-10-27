@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth";
 import { withErrors } from "@/lib/http";
 
 export const GET = withErrors(async () => {
-  const session = await requirePermission("finance:view");
+  const session = await requirePermission("report:finance-view");
   if (session instanceof NextResponse) return session;
 
   const [

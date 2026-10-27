@@ -5,7 +5,7 @@ import { requirePermission } from "@/lib/auth";
 import { withErrors, parseQuery, pagingSchema } from "@/lib/http";
 
 export const GET = withErrors(async (req: Request) => {
-  const session = await requirePermission("stock:read");
+  const session = await requirePermission("stock:movement-view");
   if (session instanceof NextResponse) return session;
 
   const { page, pageSize, q } = parseQuery(req, pagingSchema);

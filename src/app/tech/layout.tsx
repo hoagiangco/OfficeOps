@@ -1,6 +1,5 @@
 import React from "react";
 import type { Metadata, Viewport } from "next";
-import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
   title: "OfficeOps – Kỹ thuật viên",
@@ -29,7 +28,6 @@ export const viewport: Viewport = {
 export default function TechLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="tech-mobile-container min-vh-100 bg-slate-100 text-dark">
-      <ServiceWorkerRegister />
       {children}
     </div>
   );

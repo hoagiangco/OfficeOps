@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { checkUserPermission } from "@/lib/rbacService";
 import { withErrors, HttpError } from "@/lib/http";
 import type { Role } from "@prisma/client";
 
-const ALLOWED_ROLES: Role[] = ["SUPER_ADMIN", "ADMIN", "DISPATCHER"];
-
 export const GET = withErrors(async (req: Request) => {
   const session = await getSession();
-  if (!session || !ALLOWED_ROLES.includes(session.role as Role)) {
-    throw new HttpError(403, "Bạn không có quyền xem báo cáo Nhập - Xuất - Tồn kho");
+  if (!session) throw new HttpError(401, "Chưa đăng nhập");
+  const canView = await checkUserPermission(session.userId, session.role, "stock:movement-view");
+  if (!canView) {
+    throw new HttpError(403, "Bạn không có quyền xem báo cáo Nhập - Xuất - Tồn kho (stock:movement-view)");
   }
 
   const { searchParams } = new URL(req.url);

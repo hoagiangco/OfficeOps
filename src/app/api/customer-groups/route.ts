@@ -13,7 +13,7 @@ const createGroupSchema = z.object({
 });
 
 export const GET = withErrors(async () => {
-  const s = await requirePermission("customer:read");
+  const s = await requirePermission("customer:view");
   if (s instanceof NextResponse) return s;
 
   const groups = await customerGroupRepo.getAll();
@@ -21,7 +21,7 @@ export const GET = withErrors(async () => {
 });
 
 export const POST = withErrors(async (req: Request) => {
-  const s = await requirePermission("customer:write");
+  const s = await requirePermission("customer:group-manage");
   if (s instanceof NextResponse) return s;
 
   const r = await parseBody(req, createGroupSchema);

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
+import { checkUserPermission } from "@/lib/rbacService";
 import { parseBody, withErrors } from "@/lib/http";
 
 const updateCategorySchema = z.object({
@@ -14,8 +15,14 @@ const updateCategorySchema = z.object({
 
 export const PATCH = withErrors(
   async (req: Request, context: { params: Promise<{ id: string }> }) => {
-    const s = await requirePermission("stock:manage");
-    if (s instanceof NextResponse) return s;
+    const s = await getSession();
+    if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+
+    const canManage = await checkUserPermission(s.userId, s.role, "part:manage");
+
+    if (!canManage) {
+      return NextResponse.json({ error: "Không có quyền quản lý danh mục vật tư" }, { status: 403 });
+    }
 
     const { id } = await context.params;
     const r = await parseBody(req, updateCategorySchema);
@@ -46,6 +53,14 @@ export const PATCH = withErrors(
       },
     });
 
+    // Đồng bộ lại tên category dạng chuỗi cho các Part đang gắn danh mục này
+    if (r.data.name && r.data.name !== existing.name) {
+      await prisma.part.updateMany({
+        where: { categoryId: id },
+        data: { category: r.data.name },
+      });
+    }
+
     await prisma.auditLog.create({
       data: {
         userId: s.userId,
@@ -62,15 +77,31 @@ export const PATCH = withErrors(
 
 export const DELETE = withErrors(
   async (_req: Request, context: { params: Promise<{ id: string }> }) => {
-    const s = await requirePermission("stock:manage");
-    if (s instanceof NextResponse) return s;
+    const s = await getSession();
+    if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+
+    const canManage = await checkUserPermission(s.userId, s.role, "part:manage");
+
+    if (!canManage) {
+      return NextResponse.json({ error: "Không có quyền quản lý danh mục vật tư" }, { status: 403 });
+    }
 
     const { id } = await context.params;
 
-    const partsCount = await prisma.part.count({ where: { categoryId: id } });
+    const existing = await prisma.partCategory.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Không tìm thấy danh mục vật tư" }, { status: 404 });
+    }
+
+    const partsCount = await prisma.part.count({
+      where: {
+        OR: [{ categoryId: id }, { category: existing.name }],
+      },
+    });
+
     if (partsCount > 0) {
       return NextResponse.json(
-        { error: `Không thể xóa: đang có ${partsCount} vật tư thuộc danh mục này. Hãy đổi danh mục cho vật tư trước!` },
+        { error: `Không thể xóa: đang có ${partsCount} vật tư thuộc danh mục này. Hãy đổi danh mục cho các vật tư trước khi xóa!` },
         { status: 400 }
       );
     }

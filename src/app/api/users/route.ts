@@ -18,7 +18,7 @@ const userCreateSchema = z.object({
 });
 
 export const GET = withErrors(async (req: Request) => {
-  const s = await requirePermission("user:manage");
+  const s = await requirePermission("user:view");
   if (s instanceof NextResponse) return s;
 
   const { page, pageSize, q } = parseQuery(req, pagingSchema);

@@ -120,39 +120,81 @@ export default async function DashboardPage() {
   const isCustomized = userPerms.isCustomized;
   const isSuperAdmin = role === "SUPER_ADMIN";
 
-  // Cờ kiểm tra quyền hạn từng phân hệ chức năng
+  // Cờ kiểm tra quyền hạn từng phân hệ chức năng (Hỗ trợ chuẩn 64 quyền mới và tương thích ngược)
   const canTicket =
-    isSuperAdmin || !!perms["ticket:update"] || !!perms["ticket:create"] || !!perms["ticket:assign"];
+    isSuperAdmin ||
+    !!perms["ticket:view"] ||
+    !!perms["ticket:update"] ||
+    !!perms["ticket:create"] ||
+    !!perms["ticket:assign"] ||
+    !!perms["ticket:update-progress"];
+
   const canDispatch =
-    isSuperAdmin || (role === "DISPATCHER" && !!perms["ticket:assign"]);
-  const canEquipment = isSuperAdmin || !!perms["equipment:read"];
-  const canCustomer = isSuperAdmin || !!perms["customer:read"];
+    isSuperAdmin ||
+    !!perms["ticket:assign"] ||
+    !!perms["ticket:dispatch-map"];
+
+  const canEquipment =
+    isSuperAdmin ||
+    !!perms["equipment:view"] ||
+    !!perms["equipment:read"] ||
+    !!perms["equipment:history"];
+
+  const canCustomer =
+    isSuperAdmin ||
+    !!perms["customer:view"] ||
+    !!perms["customer:read"];
+
   const canContract =
     isSuperAdmin ||
-    ((role === "ADMIN" || role === "DISPATCHER") && !!perms["contract:read"]);
+    !!perms["contract:view"] ||
+    !!perms["contract:read"];
+
   const canInventory =
     isSuperAdmin ||
-    ((role === "ADMIN" || role === "DISPATCHER") && !!perms["stock:read"]);
+    !!perms["part:view"] ||
+    !!perms["part:manage"] ||
+    !!perms["stock:movement-view"] ||
+    !!perms["stock:read"];
+
   const canStockIssue =
     isSuperAdmin ||
     !!perms["stock:request"] ||
     !!perms["stock:approve-technical"] ||
     !!perms["stock:approve-retail"] ||
+    !!perms["stock:movement-view"] ||
     !!perms["stock:read"];
+
   const canStockRequest = isSuperAdmin || !!perms["stock:request"];
+
   const canStockApprove =
     isSuperAdmin ||
-    ((role === "ADMIN" || role === "DISPATCHER") &&
-      (!!perms["stock:approve-technical"] || !!perms["stock:approve-retail"]));
+    !!perms["stock:approve-technical"] ||
+    !!perms["stock:approve-retail"];
+
   const canFinance =
     isSuperAdmin ||
-    (role === "ADMIN" &&
-      (!!perms["finance:view"] || !!perms["invoice:manage"]));
+    !!perms["invoice:view"] ||
+    !!perms["invoice:create"] ||
+    !!perms["invoice:edit"] ||
+    !!perms["invoice:manage"] ||
+    !!perms["finance:view"];
+
   const canReports =
-    isSuperAdmin || (role === "ADMIN" && !!perms["finance:view"]);
-  const canMaintenance = isSuperAdmin || !!perms["equipment:read"];
-  const canAdmin = isSuperAdmin && !!perms["user:manage"];
-  const canAudit = isSuperAdmin && !!perms["audit:view"];
+    isSuperAdmin ||
+    !!perms["report:finance-view"] ||
+    !!perms["report:tech-view"] ||
+    !!perms["report:export"] ||
+    !!perms["finance:view"];
+
+  const canMaintenance =
+    isSuperAdmin ||
+    !!perms["maintenance:view"] ||
+    !!perms["maintenance:plan-manage"] ||
+    !!perms["equipment:read"];
+
+  const canAdmin = isSuperAdmin || !!perms["user:manage"] || !!perms["user:permission-manage"];
+  const canAudit = isSuperAdmin || !!perms["audit:view"];
 
   // Chỉ truy vấn CSDL đối với các mục mà user CÓ QUYỀN TRUY CẬP (bảo mật dữ liệu & tối ưu hiệu năng)
   const [

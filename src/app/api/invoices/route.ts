@@ -16,7 +16,7 @@ const generateInvoiceSchema = z.object({
 });
 
 export const GET = withErrors(async (req: Request) => {
-  const session = await requirePermission("finance:view");
+  const session = await requirePermission("invoice:view");
   if (session instanceof NextResponse) return session;
   const sp = new URL(req.url).searchParams;
   const status = sp.get("status") as InvoiceStatus | null;
@@ -59,7 +59,7 @@ export const GET = withErrors(async (req: Request) => {
 });
 
 export const POST = withErrors(async (req: Request) => {
-  const session = await requirePermission("invoice:manage");
+  const session = await requirePermission("invoice:create");
   if (session instanceof NextResponse) return session;
   const parsed = await parseBody(req, generateInvoiceSchema);
   if (parsed.error) return parsed.error;

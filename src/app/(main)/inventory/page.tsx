@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { toast } from "react-toastify";
 import Loading from "@/components/Loading";
@@ -10,6 +10,8 @@ import { exportToCsv } from "@/lib/csv";
 import { STOCK_MOVEMENT_TYPE_LABELS } from "@/lib/labels";
 import PartCategoriesTab from "@/components/inventory/PartCategoriesTab";
 import PartCompatibilityTab from "@/components/inventory/PartCompatibilityTab";
+import PartCategoriesModal from "@/components/inventory/PartCategoriesModal";
+import PartCompatibilityModal from "@/components/inventory/PartCompatibilityModal";
 
 interface BatchItem {
   id: string;
@@ -78,6 +80,11 @@ export default function InventoryPage() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [partCategories, setPartCategories] = useState<{ id: string; code?: string | null; name: string; color?: string | null }[]>([]);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [compatibilityModalPart, setCompatibilityModalPart] = useState<PartItem | null>(null);
+  const [showPickerModal, setShowPickerModal] = useState(false);
+  const [batchCategoryFilter, setBatchCategoryFilter] = useState("");
+  const [allParts, setAllParts] = useState<PartItem[]>([]);
 
   // Modal Thêm / Sửa Vật tư
   const [showPartModal, setShowPartModal] = useState(false);
@@ -96,6 +103,15 @@ export default function InventoryPage() {
     salePrice: "",
     notes: "",
   });
+  const [quickModelInput, setQuickModelInput] = useState("");
+
+  const compatibleList = useMemo<string[]>(() => {
+    if (!partForm.compatibleText) return [];
+    return partForm.compatibleText
+      .split(",")
+      .map((s: string) => s.trim())
+      .filter(Boolean);
+  }, [partForm.compatibleText]);
 
   // Modal Nhập lô hàng mới (FIFO Batch In)
   const [showBatchModal, setShowBatchModal] = useState(false);
@@ -140,20 +156,21 @@ export default function InventoryPage() {
     setMovementReloadCount((c) => c + 1);
   }, []);
 
-  useEffect(() => {
-    let ignore = false;
-    fetch("/api/part-categories")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.categories && !ignore) {
-          setPartCategories(data.categories);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      ignore = true;
-    };
+  const loadCategories = useCallback(async () => {
+    try {
+      const res = await fetch("/api/part-categories");
+      if (res.ok) {
+        const data = await res.json();
+        setPartCategories(data.categories || []);
+      }
+    } catch {
+      // ignore
+    }
   }, []);
+
+  useEffect(() => {
+    loadCategories();
+  }, [loadCategories]);
 
   useEffect(() => {
     let ignore = false;
@@ -240,13 +257,17 @@ export default function InventoryPage() {
     setActiveTab("movements");
   };
 
-  const openNewPart = () => {
+  const openNewPart = (preselectedCategoryId?: string) => {
     setEditingPart(null);
+    const targetCat = preselectedCategoryId
+      ? partCategories.find((c) => c.id === preselectedCategoryId || c.name === preselectedCategoryId)
+      : partCategories[0];
+
     setPartForm({
       partCode: `VT-${String(total + 1).padStart(4, "0")}`,
       name: "",
-      categoryId: partCategories[0]?.id || "",
-      category: partCategories[0]?.name || "Mực & Hộp mực",
+      categoryId: targetCat?.id || "",
+      category: targetCat?.name || "",
       barcode: "",
       unit: "cái",
       compatibleText: "",
@@ -255,11 +276,13 @@ export default function InventoryPage() {
       salePrice: "",
       notes: "",
     });
+    setQuickModelInput("");
     setShowPartModal(true);
   };
 
   const openEditPart = (p: PartItem) => {
     setEditingPart(p);
+    setQuickModelInput("");
     setPartForm({
       partCode: p.partCode,
       name: p.name,
@@ -333,15 +356,40 @@ export default function InventoryPage() {
     }
   };
 
-  const openBatchIn = (defaultPart?: PartItem) => {
+  const openBatchIn = async (defaultPart?: PartItem) => {
     const now = new Date();
     const ym = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
     const randSuffix = Math.random().toString(36).substring(2, 5).toUpperCase();
+
+    let partsList = allParts;
+    if (partsList.length === 0) {
+      try {
+        const res = await fetch("/api/parts?pageSize=500");
+        if (res.ok) {
+          const data = await res.json();
+          partsList = data.items || [];
+          setAllParts(partsList);
+        }
+      } catch {
+        partsList = parts;
+      }
+    }
+
+    const selectedPart = defaultPart || (partsList[0] ?? parts[0]);
+    if (selectedPart?.categoryId) {
+      setBatchCategoryFilter(selectedPart.categoryId);
+    } else if (selectedPart?.category) {
+      const matched = partCategories.find((c) => c.name === selectedPart.category);
+      if (matched) setBatchCategoryFilter(matched.id);
+    } else {
+      setBatchCategoryFilter("");
+    }
+
     setBatchForm({
-      partId: defaultPart?.id || (parts[0]?.id ?? ""),
+      partId: selectedPart?.id || (partsList[0]?.id ?? parts[0]?.id ?? ""),
       batchCode: `LO-${ym}-${randSuffix}`,
       quantity: "10",
-      costPrice: "250000",
+      costPrice: selectedPart?.costPrice ? String(selectedPart.costPrice) : "250000",
       location: "Tủ A - Kệ 1",
     });
     setShowBatchModal(true);
@@ -403,6 +451,16 @@ export default function InventoryPage() {
   const lowStockCount = parts.filter((p) => p.isLowStock && p.currentQuantity > 0).length;
   const outOfStockCount = parts.filter((p) => p.currentQuantity <= 0).length;
   const categories = Array.from(new Set(parts.map((p) => p.category).filter(Boolean))) as string[];
+
+  const batchPartsList = allParts.length > 0 ? allParts : parts;
+  const filteredBatchParts = batchCategoryFilter
+    ? batchPartsList.filter(
+        (p) =>
+          p.categoryId === batchCategoryFilter ||
+          p.partCategory?.id === batchCategoryFilter ||
+          p.category === partCategories.find((c) => c.id === batchCategoryFilter)?.name
+      )
+    : batchPartsList;
 
   return (
     <div className="container-fluid px-1 py-1">
@@ -497,6 +555,20 @@ export default function InventoryPage() {
             <i className="fas fa-print text-primary me-1"></i> In báo cáo
           </button>
           <button
+            type="button"
+            className="btn btn-outline-primary btn-sm px-3 fw-bold shadow-sm d-flex align-items-center gap-1.5"
+            onClick={() => setShowCategoryModal(true)}
+            title="Quản lý tùy chỉnh Danh mục & Phân nhóm vật tư linh kiện"
+          >
+            <i className="fas fa-folder-tree"></i>
+            <span>Danh mục vật tư</span>
+            {partCategories.length > 0 && (
+              <span className="badge bg-primary text-white rounded-pill ms-1" style={{ fontSize: "11px" }}>
+                {partCategories.length}
+              </span>
+            )}
+          </button>
+          <button
             className="btn btn-success btn-sm px-3 fw-bold shadow-sm"
             onClick={() => openBatchIn()}
           >
@@ -508,7 +580,7 @@ export default function InventoryPage() {
           >
             <i className="fas fa-minus-circle me-1"></i> Xuất kho
           </Link>
-          <button className="btn btn-primary btn-sm px-3 fw-bold shadow-sm" onClick={openNewPart}>
+          <button className="btn btn-primary btn-sm px-3 fw-bold shadow-sm" onClick={() => openNewPart()}>
             <i className="fas fa-plus me-1"></i> Thêm linh kiện
           </button>
         </div>
@@ -841,8 +913,8 @@ export default function InventoryPage() {
                               <div className="btn-group btn-group-sm">
                                 <button
                                   className="btn btn-outline-warning btn-sm py-0 px-2"
-                                  title="Tra cứu thiết bị tương thích"
-                                  onClick={() => setActiveTab("compatibility")}
+                                  title="Gán thiết bị tương thích (Check / Uncheck)"
+                                  onClick={() => setCompatibilityModalPart(item)}
                                 >
                                   <i className="fas fa-microchip"></i>
                                 </button>
@@ -898,6 +970,7 @@ export default function InventoryPage() {
       {/* ======================= TAB 2: DANH MỤC VẬT TƯ ======================= */}
       {activeTab === "categories" && (
         <PartCategoriesTab
+          onChanged={loadCategories}
           onSelectCategory={(catName) => {
             setCategoryFilter(catName);
             setActiveTab("parts");
@@ -1159,176 +1232,408 @@ export default function InventoryPage() {
       {/* Modal Thêm / Sửa Linh kiện */}
       <ModalShell
         show={showPartModal}
-        title={editingPart ? `Sửa vật tư: ${editingPart.partCode}` : "Thêm mã vật tư dự phòng mới"}
+        size="xl"
+        dialogStyle={{ maxWidth: "940px" }}
+        headerClass="bg-white border-bottom py-2.5 px-3 px-sm-4"
+        bodyClass="p-3 px-sm-4 py-sm-3 bg-white"
+        scrollable={false}
+        title={
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="rounded-3 bg-primary-subtle text-primary d-flex align-items-center justify-content-center flex-shrink-0"
+              style={{ width: "34px", height: "34px" }}
+            >
+              <i className="fas fa-boxes-stacked fs-6"></i>
+            </div>
+            <div className="min-w-0">
+              <div className="fw-bold text-dark fs-6 text-truncate lh-sm">
+                {editingPart ? `Sửa vật tư: ${editingPart.partCode}` : "Thêm mã vật tư dự phòng mới"}
+              </div>
+              <div className="text-muted small fw-normal" style={{ fontSize: "11.5px" }}>
+                {editingPart
+                  ? `Cập nhật thông số kỹ thuật, danh mục và dòng máy tương thích cho ${editingPart.name}`
+                  : "Khai báo thông số kỹ thuật, danh mục phân loại, giá tham chiếu và dòng máy tương thích"}
+              </div>
+            </div>
+          </div>
+        }
         onClose={() => setShowPartModal(false)}
         footer={
-          <>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => setShowPartModal(false)}
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              form="part-form"
-              disabled={saving}
-              className="btn btn-primary btn-sm px-3 fw-bold"
-            >
-              {saving ? "Đang lưu..." : "Lưu vật tư"}
-            </button>
-          </>
+          <div className="d-flex align-items-center justify-content-between w-100 flex-wrap gap-2 py-0">
+            <span className="small text-muted" style={{ fontSize: "11.5px" }}>
+              <span className="text-danger fw-bold">*</span> Các trường bắt buộc nhập
+            </span>
+            <div className="d-flex align-items-center gap-2 ms-auto">
+              <button
+                type="button"
+                className="btn btn-light border btn-sm px-3 text-secondary fw-medium"
+                onClick={() => setShowPartModal(false)}
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="submit"
+                form="part-form"
+                disabled={saving}
+                className="btn btn-primary btn-sm px-3.5 fw-bold shadow-sm d-inline-flex align-items-center gap-1.5"
+              >
+                {saving ? (
+                  <>
+                    <i className="fas fa-spinner fa-spin"></i>
+                    <span>Đang lưu...</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-save"></i>
+                    <span>{editingPart ? "Cập nhật vật tư" : "Lưu vật tư"}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         }
       >
         <form id="part-form" onSubmit={handleSavePart}>
-          <div className="row g-2">
-            <div className="col-md-4">
-              <label className="form-label small fw-bold text-muted mb-1">
-                MÃ VẬT TƯ <span className="text-danger">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                disabled={!!editingPart}
-                className="form-control form-control-sm font-monospace"
-                value={partForm.partCode}
-                onChange={(e) => setPartForm({ ...partForm, partCode: e.target.value })}
-              />
-            </div>
-            <div className="col-md-8">
-              <label className="form-label small fw-bold text-muted mb-1">
-                TÊN VẬT TƯ / LINH KIỆN <span className="text-danger">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="VD: Trống từ Ricoh MP 3055"
-                className="form-control form-control-sm"
-                value={partForm.name}
-                onChange={(e) => setPartForm({ ...partForm, name: e.target.value })}
-              />
-            </div>
-            <div className="col-md-6">
-              <label className="form-label small fw-bold text-primary mb-1">
-                DANH MỤC VẬT TƯ <span className="text-danger">*</span>
-              </label>
-              <select
-                className="form-select form-select-sm border-primary"
-                value={partForm.categoryId}
-                onChange={(e) => {
-                  const sel = partCategories.find((c) => c.id === e.target.value);
-                  setPartForm({
-                    ...partForm,
-                    categoryId: e.target.value,
-                    category: sel?.name || partForm.category,
-                  });
-                }}
-              >
-                <option value="">-- Chọn danh mục vật tư --</option>
-                {partCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="col-md-3">
-              <label className="form-label small fw-bold text-muted mb-1">MÃ VẠCH (BARCODE)</label>
-              <input
-                type="text"
-                placeholder="VD: 893850020101"
-                className="form-control form-control-sm font-monospace"
-                value={partForm.barcode}
-                onChange={(e) => setPartForm({ ...partForm, barcode: e.target.value })}
-              />
-            </div>
-            <div className="col-md-3">
-              <label className="form-label small fw-bold text-muted mb-1">ĐƠN VỊ TÍNH</label>
-              <input
-                type="text"
-                className="form-control form-control-sm"
-                value={partForm.unit}
-                onChange={(e) => setPartForm({ ...partForm, unit: e.target.value })}
-              />
-            </div>
-            <div className="col-md-4">
-              <label className="form-label small fw-bold text-muted mb-1">GIÁ VỐN THAM CHIẾU (₫)</label>
-              <input
-                type="number"
-                min={0}
-                placeholder="VD: 450000"
-                className="form-control form-control-sm"
-                value={partForm.costPrice}
-                onChange={(e) => setPartForm({ ...partForm, costPrice: e.target.value })}
-              />
-            </div>
-            <div className="col-md-4">
-              <label className="form-label small fw-bold text-muted mb-1">GIÁ BÁN LẺ (₫)</label>
-              <input
-                type="number"
-                min={0}
-                placeholder="VD: 650000"
-                className="form-control form-control-sm"
-                value={partForm.salePrice}
-                onChange={(e) => setPartForm({ ...partForm, salePrice: e.target.value })}
-              />
-            </div>
-            <div className="col-md-4">
-              <label className="form-label small fw-bold text-muted mb-1">NGƯỠNG CẢNH BÁO TỒN</label>
-              <input
-                type="number"
-                min={0}
-                className="form-control form-control-sm"
-                value={partForm.minThreshold}
-                onChange={(e) => setPartForm({ ...partForm, minThreshold: e.target.value })}
-              />
-            </div>
-            <div className="col-12">
-              <label className="form-label small fw-bold text-muted mb-1">
-                DÒNG MÁY TƯƠNG THÍCH (CÁCH NHAU DẤU PHẨY)
-              </label>
-              <input
-                type="text"
-                placeholder="Ricoh MP 5002, Ricoh MP 4002, Canon iR 2525..."
-                className="form-control form-control-sm"
-                value={partForm.compatibleText}
-                onChange={(e) => setPartForm({ ...partForm, compatibleText: e.target.value })}
-              />
-              <div className="d-flex flex-wrap gap-1 mt-1.5 align-items-center">
-                <span className="small text-muted" style={{ fontSize: "11px" }}>Gợi ý thêm nhanh:</span>
-                {["Ricoh MP 5002", "Ricoh MP 4002", "Canon iR 2525", "Toshiba e-Studio 3008A", "HP M404dn", "Ricoh IM 5000"].map((model) => (
-                  <button
-                    key={model}
-                    type="button"
-                    className="btn btn-outline-secondary btn-sm py-0 px-1.5"
-                    style={{ fontSize: "10px" }}
-                    onClick={() => {
-                      const current = partForm.compatibleText
-                        ? partForm.compatibleText.split(",").map((s) => s.trim()).filter(Boolean)
-                        : [];
-                      if (!current.includes(model)) {
+          <div className="row g-3 align-items-stretch">
+            {/* CỘT TRÁI: THÔNG TIN CƠ BẢN, ĐỊNH MỨC & GIÁ (Chiếm 7/12 cột để rộng rãi) */}
+            <div className="col-12 col-lg-7 d-flex flex-column gap-2.5">
+              {/* Hàng 1: Mã vật tư (col-5) & Mã vạch (col-7) */}
+              <div className="row g-2">
+                <div className="col-5">
+                  <label className="form-label small fw-semibold text-dark mb-1">
+                    Mã vật tư <span className="text-danger">*</span>
+                  </label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text bg-light text-muted px-2">
+                      <i className="fas fa-hashtag"></i>
+                    </span>
+                    <input
+                      type="text"
+                      required
+                      disabled={!!editingPart}
+                      placeholder="VT-0013"
+                      className="form-control font-monospace fw-bold text-primary"
+                      value={partForm.partCode}
+                      onChange={(e) => setPartForm({ ...partForm, partCode: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="col-7">
+                  <label className="form-label small fw-semibold text-dark mb-1">
+                    Mã vạch (Barcode)
+                  </label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text bg-light text-muted px-2">
+                      <i className="fas fa-barcode"></i>
+                    </span>
+                    <input
+                      type="text"
+                      placeholder="VD: 893850020101"
+                      className="form-control font-monospace"
+                      value={partForm.barcode}
+                      onChange={(e) => setPartForm({ ...partForm, barcode: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Hàng 2: Tên vật tư (Full width) */}
+              <div>
+                <label className="form-label small fw-semibold text-dark mb-1">
+                  Tên vật tư / linh kiện <span className="text-danger">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: Trống từ Ricoh MP 3055 / MP 3555..."
+                  className="form-control form-control-sm"
+                  value={partForm.name}
+                  onChange={(e) => setPartForm({ ...partForm, name: e.target.value })}
+                />
+              </div>
+
+              {/* Hàng 3: Danh mục (col-8) & Đơn vị tính (col-4) */}
+              <div className="row g-2">
+                <div className="col-8">
+                  <label className="form-label small fw-semibold text-dark mb-1">
+                    Danh mục vật tư <span className="text-danger">*</span>
+                  </label>
+                  <div className="input-group input-group-sm">
+                    <select
+                      required
+                      className="form-select"
+                      value={partForm.categoryId}
+                      onChange={(e) => {
+                        const sel = partCategories.find((c) => c.id === e.target.value);
                         setPartForm({
                           ...partForm,
-                          compatibleText: [...current, model].join(", "),
+                          categoryId: e.target.value,
+                          category: sel?.name || (e.target.value ? partForm.category : ""),
                         });
+                      }}
+                    >
+                      <option value="">-- Chọn danh mục --</option>
+                      {partCategories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} {c.code ? `(${c.code})` : ""}
+                        </option>
+                      ))}
+                      {partForm.category &&
+                        !partCategories.some(
+                          (c) => c.id === partForm.categoryId || c.name === partForm.category
+                        ) && (
+                          <option value={partForm.categoryId || "custom"}>
+                            {partForm.category} (Hiện tại)
+                          </option>
+                        )}
+                    </select>
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary"
+                      onClick={() => setShowCategoryModal(true)}
+                      title="Quản lý / thêm danh mục"
+                    >
+                      <i className="fas fa-cog"></i>
+                    </button>
+                  </div>
+                </div>
+                <div className="col-4">
+                  <label className="form-label small fw-semibold text-dark mb-1">
+                    Đơn vị tính
+                  </label>
+                  <input
+                    type="text"
+                    list="unit-presets-list"
+                    className="form-control form-control-sm"
+                    placeholder="cái, bộ..."
+                    value={partForm.unit}
+                    onChange={(e) => setPartForm({ ...partForm, unit: e.target.value })}
+                  />
+                  <datalist id="unit-presets-list">
+                    <option value="cái" />
+                    <option value="bộ" />
+                    <option value="hộp" />
+                    <option value="cuộn" />
+                    <option value="thanh" />
+                    <option value="lọ" />
+                    <option value="cặp" />
+                    <option value="bình" />
+                    <option value="ống" />
+                  </datalist>
+                </div>
+              </div>
+
+              {/* Hàng 4: Giá vốn (col-4) & Giá bán (col-4) & Cảnh báo tồn (col-4) */}
+              <div className="row g-2">
+                <div className="col-4">
+                  <label className="form-label small fw-semibold text-dark mb-1">
+                    Giá vốn
+                  </label>
+                  <div className="input-group input-group-sm">
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="450000"
+                      className="form-control font-monospace text-end"
+                      value={partForm.costPrice}
+                      onChange={(e) => setPartForm({ ...partForm, costPrice: e.target.value })}
+                    />
+                    <span className="input-group-text px-1 text-muted" style={{ fontSize: "11px" }}>₫</span>
+                  </div>
+                </div>
+                <div className="col-4">
+                  <label className="form-label small fw-semibold text-dark mb-1">
+                    Giá bán lẻ
+                  </label>
+                  <div className="input-group input-group-sm">
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="650000"
+                      className="form-control font-monospace fw-semibold text-primary text-end"
+                      value={partForm.salePrice}
+                      onChange={(e) => setPartForm({ ...partForm, salePrice: e.target.value })}
+                    />
+                    <span className="input-group-text px-1 text-muted" style={{ fontSize: "11px" }}>₫</span>
+                  </div>
+                </div>
+                <div className="col-4">
+                  <label className="form-label small fw-semibold text-dark mb-1">
+                    Cảnh báo tồn
+                  </label>
+                  <div className="input-group input-group-sm">
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="5"
+                      className="form-control font-monospace text-end"
+                      value={partForm.minThreshold}
+                      onChange={(e) => setPartForm({ ...partForm, minThreshold: e.target.value })}
+                    />
+                    <span className="input-group-text px-1 text-muted" style={{ fontSize: "10.5px" }}>{partForm.unit || "cái"}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Hàng 5: Ghi chú */}
+              <div>
+                <label className="form-label small fw-semibold text-dark mb-1">
+                  Ghi chú / Quy cách kỹ thuật
+                </label>
+                <input
+                  type="text"
+                  placeholder="Quy cách đóng gói, xuất xứ, tuổi thọ số bản in..."
+                  className="form-control form-control-sm"
+                  value={partForm.notes}
+                  onChange={(e) => setPartForm({ ...partForm, notes: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {/* CỘT PHẢI: DÒNG MÁY TƯƠNG THÍCH (Chiếm 5/12 cột, thẻ card tự co giãn hoàn hảo) */}
+            <div className="col-12 col-lg-5 d-flex flex-column">
+              <div className="p-2.5 bg-light rounded-3 border h-100 d-flex flex-column">
+                {/* Header dòng máy */}
+                <div className="d-flex align-items-center justify-content-between mb-2">
+                  <div className="small fw-bold text-dark d-flex align-items-center gap-1.5">
+                    <i className="fas fa-print text-primary"></i>
+                    <span>Dòng máy tương thích</span>
+                    <span className="badge bg-primary text-white rounded-pill px-1.5 py-0.5" style={{ fontSize: "11px" }}>
+                      {compatibleList.length}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm px-2 py-0.5 fw-semibold shadow-xs d-inline-flex align-items-center gap-1"
+                    style={{ fontSize: "11px" }}
+                    onClick={() => setShowPickerModal(true)}
+                    title="Mở ma trận checklist chọn máy"
+                  >
+                    <i className="fas fa-tasks"></i>
+                    <span>Checklist</span>
+                  </button>
+                </div>
+
+                {/* Danh sách các tag pills dòng máy */}
+                <div
+                  className="p-1.5 rounded-2 bg-white border flex-grow-1 mb-2 overflow-auto"
+                  style={{ minHeight: "125px", maxHeight: "155px" }}
+                >
+                  {compatibleList.length > 0 ? (
+                    <div className="d-flex flex-wrap gap-1 align-content-start">
+                      {compatibleList.map((model: string) => (
+                        <span
+                          key={model}
+                          className="badge bg-primary-subtle text-primary border border-primary-subtle d-inline-flex align-items-center gap-1 px-2 py-1 rounded-pill"
+                          style={{ fontSize: "11px", fontWeight: 500 }}
+                        >
+                          <span>{model}</span>
+                          <button
+                            type="button"
+                            className="btn-close btn-close-sm ms-0.5"
+                            style={{ fontSize: "7px" }}
+                            aria-label="Remove"
+                            onClick={() => {
+                              const next = compatibleList.filter((m: string) => m !== model);
+                              setPartForm({ ...partForm, compatibleText: next.join(", ") });
+                            }}
+                            title={`Bỏ gán ${model}`}
+                          />
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="h-100 d-flex flex-column align-items-center justify-content-center text-muted small py-2 text-center" style={{ fontSize: "11.5px" }}>
+                      <i className="fas fa-print fa-2x mb-1 opacity-25"></i>
+                      <span>Chưa gán dòng máy. Bấm <strong>Checklist</strong> hoặc gõ nhanh bên dưới.</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Input gõ thêm nhanh */}
+                <div className="input-group input-group-sm mb-1.5">
+                  <input
+                    type="text"
+                    placeholder="Gõ model rồi Enter (VD: Ricoh MP 5002...)"
+                    className="form-control"
+                    value={quickModelInput}
+                    onChange={(e) => setQuickModelInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === ",") {
+                        e.preventDefault();
+                        const val = quickModelInput.trim();
+                        if (val) {
+                          if (!compatibleList.includes(val)) {
+                            setPartForm({
+                              ...partForm,
+                              compatibleText: [...compatibleList, val].join(", "),
+                            });
+                          }
+                          setQuickModelInput("");
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={() => {
+                      const val = quickModelInput.trim();
+                      if (val) {
+                        if (!compatibleList.includes(val)) {
+                          setPartForm({
+                            ...partForm,
+                            compatibleText: [...compatibleList, val].join(", "),
+                          });
+                        }
+                        setQuickModelInput("");
                       }
                     }}
                   >
-                    + {model}
+                    + Thêm
                   </button>
-                ))}
+                  {compatibleList.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-outline-danger"
+                      onClick={() => setPartForm({ ...partForm, compatibleText: "" })}
+                      title="Bỏ chọn tất cả"
+                    >
+                      Xóa
+                    </button>
+                  )}
+                </div>
+
+                {/* Gợi ý thêm nhanh */}
+                <div className="d-flex flex-wrap gap-1 align-items-center">
+                  <span className="text-muted" style={{ fontSize: "10px" }}>Gợi ý:</span>
+                  {["Ricoh MP 5002", "Canon iR 2525", "Toshiba 3008A", "HP M404dn", "Ricoh IM 5000"].map((model) => {
+                    const isAdded = compatibleList.includes(model);
+                    return (
+                      <button
+                        key={model}
+                        type="button"
+                        disabled={isAdded}
+                        className={`btn btn-sm py-0 px-1.5 rounded-pill ${
+                          isAdded ? "btn-light text-muted border-0 opacity-40" : "btn-white border text-dark bg-white"
+                        }`}
+                        style={{ fontSize: "10.5px" }}
+                        onClick={() => {
+                          if (!isAdded) {
+                            setPartForm({
+                              ...partForm,
+                              compatibleText: [...compatibleList, model].join(", "),
+                            });
+                          }
+                        }}
+                      >
+                        {isAdded ? "✓ " : "+ "}{model}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-            <div className="col-12">
-              <label className="form-label small fw-bold text-muted mb-1">GHI CHÚ / ĐẶC TÍNH KỸ THUẬT</label>
-              <textarea
-                rows={2}
-                placeholder="Quy cách đóng gói, xuất xứ, tuổi thọ trang in..."
-                className="form-control form-control-sm"
-                value={partForm.notes}
-                onChange={(e) => setPartForm({ ...partForm, notes: e.target.value })}
-              />
             </div>
           </div>
         </form>
@@ -1361,21 +1666,85 @@ export default function InventoryPage() {
         }
       >
         <form id="batch-form" onSubmit={handleSaveBatch}>
+          {/* Lọc nhanh theo Danh mục & Khai báo linh kiện mới */}
+          <div className="row g-2 mb-2 p-2 bg-light rounded border align-items-center">
+            <div className="col-12 col-md-7">
+              <label className="form-label small fw-bold text-dark mb-1">
+                <i className="fas fa-filter text-primary me-1"></i>
+                LỌC LINH KIỆN THEO DANH MỤC
+              </label>
+              <select
+                className="form-select form-select-sm"
+                value={batchCategoryFilter}
+                onChange={(e) => {
+                  const newCatId = e.target.value;
+                  setBatchCategoryFilter(newCatId);
+                  const available = (allParts.length > 0 ? allParts : parts).filter((p) =>
+                    newCatId
+                      ? p.categoryId === newCatId ||
+                        p.partCategory?.id === newCatId ||
+                        p.category === partCategories.find((c) => c.id === newCatId)?.name
+                      : true
+                  );
+                  if (available.length > 0) {
+                    setBatchForm((prev) => ({
+                      ...prev,
+                      partId: available[0].id,
+                      costPrice: available[0].costPrice ? String(available[0].costPrice) : prev.costPrice,
+                    }));
+                  }
+                }}
+              >
+                <option value="">-- Tất cả danh mục ({partCategories.length}) --</option>
+                {partCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="col-12 col-md-5 d-flex align-items-end justify-content-md-end pt-1">
+              <button
+                type="button"
+                className="btn btn-outline-primary btn-sm w-100"
+                onClick={() => {
+                  setShowBatchModal(false);
+                  openNewPart(batchCategoryFilter);
+                }}
+                title="Khai báo mã linh kiện mới nếu chưa có trong danh mục"
+              >
+                <i className="fas fa-plus me-1"></i> Khai báo linh kiện mới
+              </button>
+            </div>
+          </div>
+
           <div className="row g-2">
             <div className="col-12">
-              <label className="form-label small fw-bold text-muted mb-1">
-                CHỌN VẬT TƯ / LINH KIỆN <span className="text-danger">*</span>
-              </label>
+              <div className="d-flex justify-content-between align-items-center mb-1">
+                <label className="form-label small fw-bold text-muted mb-0">
+                  CHỌN VẬT TƯ / LINH KIỆN <span className="text-danger">*</span>
+                </label>
+                <span className="small text-muted" style={{ fontSize: "11px" }}>
+                  {filteredBatchParts.length} vật tư khả dụng
+                </span>
+              </div>
               <select
                 required
                 className="form-select form-select-sm"
                 value={batchForm.partId}
-                onChange={(e) => setBatchForm({ ...batchForm, partId: e.target.value })}
+                onChange={(e) => {
+                  const found = (allParts.length > 0 ? allParts : parts).find((p) => p.id === e.target.value);
+                  setBatchForm({
+                    ...batchForm,
+                    partId: e.target.value,
+                    costPrice: found?.costPrice ? String(found.costPrice) : batchForm.costPrice,
+                  });
+                }}
               >
                 <option value="">-- Chọn linh kiện --</option>
-                {parts.map((p) => (
+                {filteredBatchParts.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.partCode} – {p.name} (Tồn: {p.currentQuantity} {p.unit})
+                    {p.partCode} – {p.name} [{p.partCategory?.name || p.category || "Chưa phân loại"}] (Tồn: {p.currentQuantity} {p.unit})
                   </option>
                 ))}
               </select>
@@ -1496,6 +1865,60 @@ export default function InventoryPage() {
           </div>
         )}
       </ModalShell>
+
+      {/* Modal Quản lý Danh mục Vật tư & Linh kiện */}
+      <PartCategoriesModal
+        isOpen={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+        onChanged={() => {
+          loadCategories();
+          loadData();
+        }}
+        onCreated={(newCat) => {
+          setPartForm((prev) => ({
+            ...prev,
+            categoryId: newCat.id,
+            category: newCat.name,
+          }));
+        }}
+      />
+
+      {/* Modal Gán Dòng máy tương thích cho 1 vật tư (từ danh sách vật tư) */}
+      {compatibilityModalPart && (
+        <PartCompatibilityModal
+          isOpen={!!compatibilityModalPart}
+          onClose={() => setCompatibilityModalPart(null)}
+          partId={compatibilityModalPart.id}
+          partName={compatibilityModalPart.name}
+          partCode={compatibilityModalPart.partCode}
+          onSaved={() => {
+            loadData();
+          }}
+        />
+      )}
+
+      {/* Modal Checklist Picker khi đang tạo / sửa vật tư */}
+      {showPickerModal && (
+        <PartCompatibilityModal
+          isOpen={showPickerModal}
+          onClose={() => setShowPickerModal(false)}
+          isPickerOnly
+          initialSelectedModels={
+            partForm.compatibleText
+              ? partForm.compatibleText
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+              : []
+          }
+          onApplyModels={(models) => {
+            setPartForm((prev) => ({
+              ...prev,
+              compatibleText: models.join(", "),
+            }));
+          }}
+        />
+      )}
     </div>
   );
 }

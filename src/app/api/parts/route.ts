@@ -34,8 +34,17 @@ export const GET = withErrors(async (req: Request) => {
   const lowStockOnly = sp.get("lowStock") === "true";
 
   const where: any = {
-    ...(categoryId ? { categoryId } : {}),
-    ...(category && !categoryId ? { category } : {}),
+    ...(categoryId
+      ? { categoryId }
+      : category
+      ? {
+          OR: [
+            { categoryId: category },
+            { category },
+            { partCategory: { name: category } },
+          ],
+        }
+      : {}),
     ...(model
       ? {
           compatibleModels: {
@@ -96,8 +105,14 @@ export const GET = withErrors(async (req: Request) => {
 });
 
 export const POST = withErrors(async (req: Request) => {
-  const s = await requirePermission("stock:manage");
-  if (s instanceof NextResponse) return s;
+  const s = await getSession();
+  if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+
+  const canManage = await checkUserPermission(s.userId, s.role, "part:manage");
+
+  if (!canManage) {
+    return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
+  }
 
   const r = await parseBody(req, partSchema);
   if (r.error) return r.error;
@@ -109,18 +124,23 @@ export const POST = withErrors(async (req: Request) => {
     return NextResponse.json({ error: "Mã vật tư này đã tồn tại" }, { status: 409 });
   }
 
-  // Tự động tìm tên category nếu truyền categoryId
-  let categoryName = r.data.category;
-  if (r.data.categoryId && !categoryName) {
-    const cat = await prisma.partCategory.findUnique({ where: { id: r.data.categoryId } });
+  // Tự động tìm tên category nếu truyền categoryId hoặc tìm categoryId nếu truyền category name
+  let categoryId = r.data.categoryId || null;
+  let categoryName = r.data.category || null;
+
+  if (categoryId && !categoryName) {
+    const cat = await prisma.partCategory.findUnique({ where: { id: categoryId } });
     if (cat) categoryName = cat.name;
+  } else if (!categoryId && categoryName) {
+    const cat = await prisma.partCategory.findFirst({ where: { name: categoryName } });
+    if (cat) categoryId = cat.id;
   }
 
   const created = await prisma.part.create({
     data: {
       partCode: r.data.partCode.trim().toUpperCase(),
       name: r.data.name.trim(),
-      categoryId: r.data.categoryId || null,
+      categoryId: categoryId || null,
       category: categoryName || null,
       barcode: r.data.barcode?.trim() || null,
       unit: r.data.unit.trim(),
@@ -153,23 +173,33 @@ export const POST = withErrors(async (req: Request) => {
 
 export const PATCH = withErrors(async (req: Request) => {
   const s = await getSession();
-  if (!s || !(await checkUserPermission(s.userId, s.role, "stock:manage"))) {
+  if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+
+  const canManage = await checkUserPermission(s.userId, s.role, "part:manage");
+
+  if (!canManage) {
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   }
+
   const body = await req.json().catch(() => null);
   if (!body?.id) return NextResponse.json({ error: "Thiếu ID vật tư" }, { status: 400 });
 
-  let categoryName = body.category;
-  if (body.categoryId) {
-    const cat = await prisma.partCategory.findUnique({ where: { id: body.categoryId } });
+  let categoryId = body.categoryId !== undefined ? body.categoryId : undefined;
+  let categoryName = body.category !== undefined ? body.category : undefined;
+
+  if (categoryId && !categoryName) {
+    const cat = await prisma.partCategory.findUnique({ where: { id: categoryId } });
     if (cat) categoryName = cat.name;
+  } else if (!categoryId && categoryName) {
+    const cat = await prisma.partCategory.findFirst({ where: { name: categoryName } });
+    if (cat) categoryId = cat.id;
   }
 
   const updated = await prisma.part.update({
     where: { id: String(body.id) },
     data: {
       name: body.name ? String(body.name).trim() : undefined,
-      categoryId: body.categoryId !== undefined ? (body.categoryId || null) : undefined,
+      categoryId: categoryId !== undefined ? (categoryId || null) : undefined,
       category: categoryName !== undefined ? categoryName : undefined,
       barcode: body.barcode !== undefined ? (body.barcode?.trim() || null) : undefined,
       unit: body.unit ? String(body.unit).trim() : undefined,
@@ -195,7 +225,7 @@ export const PATCH = withErrors(async (req: Request) => {
 });
 
 export const DELETE = withErrors(async (req: Request) => {
-  const s = await requirePermission("stock:manage");
+  const s = await requirePermission("part:manage");
   if (s instanceof NextResponse) return s;
 
   const sp = new URL(req.url).searchParams;

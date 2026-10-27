@@ -44,7 +44,7 @@ const patchSchema = z
 export const GET = withErrors(async (_req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!(await checkUserPermission(s.userId, s.role, "equipment:read")))
+  if (!(await checkUserPermission(s.userId, s.role, "equipment:view")))
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const { id } = await params;
   const equipment = await prisma.equipment.findUnique({
@@ -105,7 +105,11 @@ export const GET = withErrors(async (_req: Request, { params }: Ctx) => {
 export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!(await checkUserPermission(s.userId, s.role, "equipment:write")))
+  const canEdit =
+    (await checkUserPermission(s.userId, s.role, "equipment:edit")) ||
+    (await checkUserPermission(s.userId, s.role, "equipment:status-change")) ||
+    (await checkUserPermission(s.userId, s.role, "equipment:assign"));
+  if (!canEdit)
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const r = await parseBody(req, patchSchema);
   if (r.error) return r.error;
@@ -175,7 +179,7 @@ export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
 export const DELETE = withErrors(async (_req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!(await checkUserPermission(s.userId, s.role, "equipment:write")))
+  if (!(await checkUserPermission(s.userId, s.role, "equipment:delete")))
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const { id } = await params;
 

@@ -119,49 +119,49 @@ export function SidebarLayout({
       title: "Tổng quan",
       items: [
         { href: "/", label: "Trang chủ", icon: "fas fa-home", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"] },
-        { href: "/reports", label: "Báo cáo", icon: "fas fa-chart-pie", roles: ["SUPER_ADMIN", "ADMIN"], perm: "finance:view" },
+        { href: "/reports", label: "Báo cáo", icon: "fas fa-chart-pie", roles: ["SUPER_ADMIN", "ADMIN"], perms: ["report:finance-view", "report:tech-view", "finance:view"] },
       ],
     },
     {
       title: "Tài sản",
       items: [
-        { href: "/equipment", label: "Thiết bị", icon: "fas fa-laptop", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perm: "equipment:read" },
-        { href: "/contracts", label: "Hợp đồng", icon: "fas fa-file-contract", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perm: "contract:read" },
-        { href: "/customers", label: "Khách hàng", icon: "fas fa-building", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perm: "customer:read" },
+        { href: "/equipment", label: "Thiết bị", icon: "fas fa-laptop", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perms: ["equipment:view", "equipment:read"] },
+        { href: "/contracts", label: "Hợp đồng", icon: "fas fa-file-contract", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perms: ["contract:view", "contract:read"] },
+        { href: "/customers", label: "Khách hàng", icon: "fas fa-building", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perms: ["customer:view", "customer:read"] },
       ],
     },
     {
       title: "Dịch vụ",
       items: [
-        { href: "/tickets", label: "Phiếu kỹ thuật", icon: "fas fa-tools", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perms: ["ticket:update", "ticket:create", "ticket:assign"] },
-        { href: "/dispatch", label: "Điều phối", icon: "fas fa-map-marked-alt", roles: ["SUPER_ADMIN", "DISPATCHER"], perm: "ticket:assign" },
-        { href: "/maintenance", label: "Bảo trì", icon: "fas fa-wrench", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perm: "equipment:read" },
+        { href: "/tickets", label: "Phiếu kỹ thuật", icon: "fas fa-tools", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perms: ["ticket:view", "ticket:create", "ticket:update", "ticket:assign"] },
+        { href: "/dispatch", label: "Điều phối", icon: "fas fa-map-marked-alt", roles: ["SUPER_ADMIN", "DISPATCHER"], perms: ["ticket:assign", "ticket:dispatch-map"] },
+        { href: "/maintenance", label: "Bảo trì", icon: "fas fa-wrench", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perms: ["maintenance:view", "maintenance:plan-manage", "equipment:read"] },
       ],
     },
     {
       title: "Kho",
       items: [
-        { href: "/inventory", label: "Vật tư & Kho", icon: "fas fa-boxes-stacked", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perm: "stock:read" },
-        { href: "/stock-issues", label: "Xuất nhập kho", icon: "fas fa-exchange-alt", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perms: ["stock:read", "stock:request", "stock:approve-technical", "stock:approve-retail"] },
-        { href: "/reports/stock", label: "Nhập xuất tồn", icon: "fas fa-dolly-flatbed", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perm: "stock:read" },
+        { href: "/inventory", label: "Vật tư & Kho", icon: "fas fa-boxes-stacked", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perms: ["part:view", "part:manage", "stock:read"] },
+        { href: "/stock-issues", label: "Xuất nhập kho", icon: "fas fa-exchange-alt", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perms: ["stock:movement-view", "stock:request", "stock:approve-technical", "stock:approve-retail", "stock:read"] },
+        { href: "/reports/stock", label: "Nhập xuất tồn", icon: "fas fa-dolly-flatbed", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perms: ["stock:movement-view", "stock:audit", "stock:read"] },
       ],
     },
     {
       title: "Tài chính",
       items: [
-        { href: "/finance/invoices", label: "Hóa đơn cước", icon: "fas fa-receipt", roles: ["SUPER_ADMIN", "ADMIN"], perms: ["finance:view", "invoice:manage"] },
-        { href: "/meters", label: "Duyệt Counter", icon: "fas fa-tachometer-alt", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perm: "finance:view" },
+        { href: "/finance/invoices", label: "Hóa đơn cước", icon: "fas fa-receipt", roles: ["SUPER_ADMIN", "ADMIN"], perms: ["invoice:view", "invoice:create", "invoice:manage", "finance:view"] },
+        { href: "/meters", label: "Duyệt Counter", icon: "fas fa-tachometer-alt", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER"], perms: ["meter:view", "meter:confirm", "finance:view"] },
       ],
     },
     {
       title: "Hệ thống",
       items: [
-        { href: "/media", label: "Thư viện Media", icon: "fas fa-photo-video", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perm: "media:view" },
-        { href: "/admin", label: "Tài khoản", icon: "fas fa-user-shield", roles: ["SUPER_ADMIN"], perm: "user:manage" },
-        { href: "/admin/permissions", label: "Phân quyền", icon: "fas fa-key", roles: ["SUPER_ADMIN"], perm: "user:manage" },
-        { href: "/admin/company", label: "Cấu hình Doanh nghiệp", icon: "fas fa-building-circle-check", roles: ["SUPER_ADMIN", "ADMIN"], perm: "user:manage" },
-        { href: "/admin/sla", label: "Cấu hình SLA", icon: "fas fa-stopwatch", roles: ["SUPER_ADMIN", "ADMIN"], perm: "user:manage" },
-        { href: "/admin/audit-logs", label: "Nhật ký", icon: "fas fa-history", roles: ["SUPER_ADMIN"], perm: "audit:view" },
+        { href: "/media", label: "Thư viện Media", icon: "fas fa-photo-video", roles: ["SUPER_ADMIN", "ADMIN", "DISPATCHER", "FIELD_TECH"], perms: ["media:view", "media:upload", "media:manage"] },
+        { href: "/admin", label: "Tài khoản", icon: "fas fa-user-shield", roles: ["SUPER_ADMIN"], perms: ["user:view", "user:manage"] },
+        { href: "/admin/permissions", label: "Phân quyền", icon: "fas fa-key", roles: ["SUPER_ADMIN"], perms: ["user:permission-manage", "user:manage"] },
+        { href: "/admin/company", label: "Cấu hình Doanh nghiệp", icon: "fas fa-building-circle-check", roles: ["SUPER_ADMIN"], perms: ["user:manage"] },
+        { href: "/admin/sla", label: "Cấu hình SLA", icon: "fas fa-stopwatch", roles: ["SUPER_ADMIN"], perms: ["user:manage"] },
+        { href: "/admin/audit-logs", label: "Nhật ký", icon: "fas fa-history", roles: ["SUPER_ADMIN"], perms: ["audit:view"] },
       ],
     },
   ];
@@ -208,11 +208,21 @@ export function SidebarLayout({
         <nav className="sidebar-nav">
           {menuGroups.map((group, groupIdx) => {
             const accessibleItems = group.items.filter((item) => {
-              if (!item.roles.includes(user.role)) return false;
               if (user.role === "SUPER_ADMIN") return true;
-              if (!user.permissions) return true;
-              if ("perm" in item && item.perm && !user.permissions[item.perm as string]) return false;
-              if ("perms" in item && Array.isArray(item.perms) && !item.perms.some((p: string) => user.permissions?.[p])) return false;
+
+              // Nếu có hệ thống phân quyền chi tiết (user.permissions):
+              if (user.permissions && Object.keys(user.permissions).length > 0) {
+                if ("perm" in item && item.perm) {
+                  return !!user.permissions[item.perm as string];
+                }
+                if ("perms" in item && Array.isArray(item.perms)) {
+                  return item.perms.some((p: string) => !!user.permissions?.[p]);
+                }
+                return item.roles.includes(user.role);
+              }
+
+              // Fallback theo vai trò
+              if (!item.roles.includes(user.role)) return false;
               return true;
             });
             if (accessibleItems.length === 0) return null;

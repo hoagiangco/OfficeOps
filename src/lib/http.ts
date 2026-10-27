@@ -73,7 +73,7 @@ export function withErrors<A extends unknown[]>(fn: (...args: A) => Promise<Resp
 
 export const pagingSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  pageSize: z.coerce.number().int().min(1).max(1000).default(20),
   q: z.string().trim().optional(),
 });
 

@@ -21,9 +21,10 @@ export interface PartCategoryItem {
 
 interface PartCategoriesTabProps {
   onSelectCategory?: (categoryName: string) => void;
+  onChanged?: () => void;
 }
 
-export default function PartCategoriesTab({ onSelectCategory }: PartCategoriesTabProps) {
+export default function PartCategoriesTab({ onSelectCategory, onChanged }: PartCategoriesTabProps) {
   const [categories, setCategories] = useState<PartCategoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -123,6 +124,7 @@ export default function PartCategoriesTab({ onSelectCategory }: PartCategoriesTa
       toast.success(editingCategory ? "Cập nhật danh mục thành công!" : "Tạo danh mục mới thành công!");
       setShowModal(false);
       setReloadTrigger((v) => v + 1);
+      if (onChanged) onChanged();
     } catch {
       toast.error("Lỗi khi lưu danh mục");
     } finally {
@@ -147,6 +149,7 @@ export default function PartCategoriesTab({ onSelectCategory }: PartCategoriesTa
       }
       toast.success("Đã xóa danh mục vật tư");
       setReloadTrigger((v) => v + 1);
+      if (onChanged) onChanged();
     } catch {
       toast.error("Lỗi khi xóa");
     }

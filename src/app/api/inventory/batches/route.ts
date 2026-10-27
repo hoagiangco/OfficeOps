@@ -15,7 +15,7 @@ const batchSchema = z.object({
 
 // Nhập kho theo Lô (FIFO) và ghi Sổ cái StockMovement (IN)
 export const POST = withErrors(async (req: Request) => {
-  const s = await requirePermission("stock:manage");
+  const s = await requirePermission("stock:import");
   if (s instanceof NextResponse) return s;
 
   const r = await parseBody(req, batchSchema);

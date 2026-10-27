@@ -22,7 +22,7 @@ const updateUserPermsSchema = z.object({
 });
 
 export const GET = withErrors(async (req: Request) => {
-  const s = await requirePermission("user:manage");
+  const s = await requirePermission("user:permission-manage");
   if (s instanceof NextResponse) return s;
 
   const url = new URL(req.url);
@@ -72,7 +72,7 @@ export const GET = withErrors(async (req: Request) => {
 });
 
 export const PUT = withErrors(async (req: Request) => {
-  const s = await requirePermission("user:manage");
+  const s = await requirePermission("user:permission-manage");
   if (s instanceof NextResponse) return s;
 
   const r = await parseBody(req, updateUserPermsSchema);

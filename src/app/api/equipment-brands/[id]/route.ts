@@ -15,7 +15,7 @@ const patchBrandSchema = z
   .partial();
 
 export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
-  const s = await requirePermission("equipment:write");
+  const s = await requirePermission("equipment:category-manage");
   if (s instanceof NextResponse) return s;
 
   const { id } = await params;
@@ -66,7 +66,7 @@ export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
 });
 
 export const DELETE = withErrors(async (_req: Request, { params }: Ctx) => {
-  const s = await requirePermission("equipment:write");
+  const s = await requirePermission("equipment:category-manage");
   if (s instanceof NextResponse) return s;
 
   const { id } = await params;

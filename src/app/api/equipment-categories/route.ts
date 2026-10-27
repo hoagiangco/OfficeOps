@@ -27,7 +27,7 @@ export interface CategoryTreeNode {
 }
 
 export const GET = withErrors(async () => {
-  const s = await requirePermission("equipment:read");
+  const s = await requirePermission("equipment:view");
   if (s instanceof NextResponse) return s;
 
   const categories = await prisma.equipmentCategory.findMany({
@@ -103,7 +103,7 @@ export const GET = withErrors(async () => {
 });
 
 export const POST = withErrors(async (req: Request) => {
-  const s = await requirePermission("equipment:write");
+  const s = await requirePermission("equipment:category-manage");
   if (s instanceof NextResponse) return s;
 
   const r = await parseBody(req, createCategorySchema);

@@ -9,7 +9,7 @@ export function ServiceWorkerRegister() {
     // Register Service Worker
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       navigator.serviceWorker
-        .register("/sw.js", { scope: "/tech" })
+        .register("/sw.js", { scope: "/" })
         .then((reg) => {
           console.log("[PWA] Service Worker registered with scope:", reg.scope);
         })

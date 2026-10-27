@@ -20,7 +20,7 @@ const contractSchema = z
   .refine((v) => v.endDate > v.startDate, { message: "Ngày kết thúc phải sau ngày bắt đầu", path: ["endDate"] });
 
 export const GET = withErrors(async (req: Request) => {
-  const s = await requirePermission("contract:read");
+  const s = await requirePermission("contract:view");
   if (s instanceof NextResponse) return s;
   const { page, pageSize, q } = parseQuery(req, pagingSchema.extend({ customerId: z.string().optional() }));
   const customerId = new URL(req.url).searchParams.get("customerId") ?? undefined;
@@ -55,7 +55,7 @@ export const GET = withErrors(async (req: Request) => {
 });
 
 export const POST = withErrors(async (req: Request) => {
-  const s = await requirePermission("contract:write");
+  const s = await requirePermission("contract:create");
   if (s instanceof NextResponse) return s;
   const r = await parseBody(req, contractSchema);
   if (r.error) return r.error;

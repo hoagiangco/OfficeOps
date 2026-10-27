@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requirePermission, audit } from "@/lib/auth";
+import { getSession, requirePermission, audit } from "@/lib/auth";
+import { checkUserPermission } from "@/lib/rbacService";
 import { parseBody, withErrors, HttpError } from "@/lib/http";
 import { sendMail } from "@/lib/mailer";
 import { getInvoiceEmailHtml } from "@/lib/mail-templates";
@@ -12,7 +13,7 @@ const updateInvoiceSchema = z.object({
 });
 
 export const GET = withErrors(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
-  const session = await requirePermission("finance:view");
+  const session = await requirePermission("invoice:view");
   if (session instanceof NextResponse) return session;
   const { id } = await ctx.params;
 
@@ -29,8 +30,15 @@ export const GET = withErrors(async (_req: Request, ctx: { params: Promise<{ id:
 });
 
 export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
-  const session = await requirePermission("invoice:manage");
-  if (session instanceof NextResponse) return session;
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+  const canUpdate =
+    (await checkUserPermission(session.userId, session.role, "invoice:edit")) ||
+    (await checkUserPermission(session.userId, session.role, "invoice:approve")) ||
+    (await checkUserPermission(session.userId, session.role, "invoice:send")) ||
+    (await checkUserPermission(session.userId, session.role, "invoice:payment")) ||
+    (await checkUserPermission(session.userId, session.role, "invoice:cancel"));
+  if (!canUpdate) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const { id } = await ctx.params;
   const parsed = await parseBody(req, updateInvoiceSchema);
   if (parsed.error) return parsed.error;

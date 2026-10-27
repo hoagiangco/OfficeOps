@@ -87,9 +87,9 @@ export default function LoginPage() {
       <div className="login-background">
         <div className="login-background-overlay"></div>
       </div>
-      <div className="container-fluid">
-        <div className="row justify-content-center align-items-center min-vh-100">
-          <div className="col-12 col-sm-10 col-md-6 col-lg-4 col-xl-4">
+      <div className="container-fluid p-0 p-md-3">
+        <div className="row justify-content-center align-items-center min-vh-100 g-0">
+          <div className="col-12 col-sm-10 col-md-6 col-lg-4 col-xl-4 p-0 p-sm-2 p-md-0">
             <div className="login-card">
               {/* Logo Section */}
               <div className="login-logo-container">

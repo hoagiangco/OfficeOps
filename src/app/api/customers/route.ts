@@ -32,7 +32,7 @@ function generateCustomerCode(): string {
 }
 
 export const GET = withErrors(async (req: Request) => {
-  const s = await requirePermission("customer:read");
+  const s = await requirePermission("customer:view");
   if (s instanceof NextResponse) return s;
 
   const canViewPhone = await checkUserPermission(s.userId, s.role, "customer:view-phone");
@@ -203,7 +203,7 @@ export const GET = withErrors(async (req: Request) => {
 });
 
 export const POST = withErrors(async (req: Request) => {
-  const s = await requirePermission("customer:write");
+  const s = await requirePermission("customer:create");
   if (s instanceof NextResponse) return s;
 
   const r = await parseBody(req, customerSchema);

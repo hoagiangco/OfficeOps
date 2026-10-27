@@ -36,7 +36,7 @@ const DISPATCHER_FIELDS = ["phone", "email", "zaloId", "contactName", "contactPh
 export const GET = withErrors(async (_req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!(await checkUserPermission(s.userId, s.role, "customer:read"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
+  if (!(await checkUserPermission(s.userId, s.role, "customer:view"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const { id } = await params;
   const customer = await prisma.customer.findUnique({
     where: { id },
@@ -136,11 +136,12 @@ export const GET = withErrors(async (_req: Request, { params }: Ctx) => {
 export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  const full = await checkUserPermission(s.userId, s.role, "customer:write");
-  if (!full && s.role !== "DISPATCHER") return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
+  const canEditContact = await checkUserPermission(s.userId, s.role, "customer:edit-contact");
+  const canEditLegal = await checkUserPermission(s.userId, s.role, "customer:edit-legal");
+  if (!canEditContact && !canEditLegal) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const r = await parseBody(req, patchSchema);
   if (r.error) return r.error;
-  if (!full && Object.keys(r.data).some((k) => !DISPATCHER_FIELDS.includes(k))) {
+  if (!canEditLegal && Object.keys(r.data).some((k) => !DISPATCHER_FIELDS.includes(k))) {
     return NextResponse.json({ error: "Chỉ được sửa thông tin liên hệ" }, { status: 403 });
   }
   const { id } = await params;
@@ -193,7 +194,7 @@ export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
 export const DELETE = withErrors(async (_req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!(await checkUserPermission(s.userId, s.role, "customer:write"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
+  if (!(await checkUserPermission(s.userId, s.role, "customer:delete"))) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
   const { id } = await params;
 
   // Lấy thông tin khách hàng và kiểm tra các ràng buộc dữ liệu

@@ -3,6 +3,7 @@ import { rename } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import { getSession, audit } from "@/lib/auth";
+import { checkUserPermission } from "@/lib/rbacService";
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,9 +12,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
     }
 
-    if (!["SUPER_ADMIN", "ADMIN", "DISPATCHER"].includes(session.role)) {
+    const canManage = await checkUserPermission(session.userId, session.role, "media:manage");
+    if (!canManage) {
       return NextResponse.json(
-        { error: "Bạn không có quyền đổi tên tệp tin" },
+        { error: "Bạn không có quyền đổi tên tệp tin (media:manage)" },
         { status: 403 }
       );
     }

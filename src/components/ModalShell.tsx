@@ -75,6 +75,12 @@ export function ModalShell({
     }
   }, [isVisible]);
 
+  // Xác định header sáng hay tối để render nút đóng / mở rộng tương ứng
+  const isLightHeader =
+    headerClass.includes('bg-white') ||
+    headerClass.includes('bg-light') ||
+    headerClass.includes('text-dark');
+
   if (!isVisible) return null;
 
   // Khi đang ở chế độ phóng to HOẶC đang mở trên màn hình Mobile/PWA
@@ -162,7 +168,9 @@ export function ModalShell({
               {allowFullscreen && !isMobile && (
                 <button
                   type="button"
-                  className="btn btn-sm btn-link text-white p-0 d-inline-flex align-items-center justify-content-center opacity-75 opacity-100-hover"
+                  className={`btn btn-sm btn-link p-0 d-inline-flex align-items-center justify-content-center opacity-75 opacity-100-hover ${
+                    isLightHeader ? 'text-secondary' : 'text-white'
+                  }`}
                   style={{ width: '26px', height: '26px', textDecoration: 'none' }}
                   onClick={() => setIsFullscreen(!isFullscreen)}
                   title={isFullscreen ? 'Thu nhỏ modal' : 'Mở rộng toàn màn hình'}
@@ -177,7 +185,9 @@ export function ModalShell({
               )}
               <button
                 type="button"
-                className="btn-close btn-close-white btn-close-sm my-auto"
+                className={`btn-close btn-close-sm my-auto ${
+                  isLightHeader ? '' : 'btn-close-white'
+                }`}
                 onClick={onClose}
                 aria-label="Đóng"
                 style={{ padding: '0.45rem' }}

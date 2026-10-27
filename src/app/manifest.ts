@@ -2,16 +2,29 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "OfficeOps Tech - Kỹ Thuật Viên",
-    short_name: "OfficeOps Tech",
+    name: "OfficeOps - Quản lý Máy văn phòng & Kỹ thuật",
+    short_name: "OfficeOps",
     description: "Ứng dụng tiếp nhận sự cố, quét QR thiết bị, check-in GPS và nghiệm thu bảo trì dành cho Kỹ thuật viên",
+    id: "/",
     start_url: "/tech",
-    scope: "/tech",
+    scope: "/",
     display: "standalone",
     background_color: "#0f172a",
     theme_color: "#0284c7",
     orientation: "portrait",
     icons: [
+      {
+        src: "/icons/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
       {
         src: "/icons/icon-192.svg",
         sizes: "192x192",

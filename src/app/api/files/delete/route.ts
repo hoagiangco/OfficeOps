@@ -3,6 +3,7 @@ import { unlink } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import { getSession, audit } from "@/lib/auth";
+import { checkUserPermission } from "@/lib/rbacService";
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -11,10 +12,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
     }
 
-    // Chỉ SUPER_ADMIN, ADMIN, DISPATCHER mới có quyền xóa file
-    if (!["SUPER_ADMIN", "ADMIN", "DISPATCHER"].includes(session.role)) {
+    // Quyền quản lý file / media
+    const canManage = await checkUserPermission(session.userId, session.role, "media:manage");
+    if (!canManage) {
       return NextResponse.json(
-        { error: "Bạn không có quyền xóa tệp tin" },
+        { error: "Bạn không có quyền xóa tệp tin (media:manage)" },
         { status: 403 }
       );
     }

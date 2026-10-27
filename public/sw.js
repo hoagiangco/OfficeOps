@@ -1,11 +1,12 @@
-// Service Worker for OfficeOps Tech Mobile PWA
-// Scope: /tech
+// Service Worker for OfficeOps Mobile PWA
+// Scope: /
 
-const CACHE_NAME = "officeops-tech-shell-v1";
+const CACHE_NAME = "officeops-shell-v2";
 const OFFLINE_FALLBACK_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
   "/tech",
+  "/login",
   "/offline.html",
   "/manifest.json",
   "/icons/icon-192.png",

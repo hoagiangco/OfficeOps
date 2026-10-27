@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getSession, audit } from "@/lib/auth";
+import { checkUserPermission } from "@/lib/rbacService";
 import { parseBody, withErrors, HttpError } from "@/lib/http";
 
 const meterActionSchema = z.object({
@@ -14,12 +15,12 @@ export const PATCH = withErrors(
     const session = await getSession();
     if (!session) throw new HttpError(401, "Chưa đăng nhập");
 
-    // Chỉ Giám đốc, Admin, Kế toán mới được duyệt điều chỉnh Counter
-    const allowedRoles = ["SUPER_ADMIN", "ADMIN", "DIRECTOR", "ACCOUNTANT"];
-    if (!allowedRoles.includes(session.role)) {
+    // Kiểm tra quyền duyệt / điều chỉnh Counter
+    const canConfirm = await checkUserPermission(session.userId, session.role, "meter:confirm");
+    if (!canConfirm) {
       throw new HttpError(
         403,
-        "Chỉ Giám đốc, Quản trị viên hoặc Kế toán mới có quyền duyệt điều chỉnh Counter."
+        "Bạn không có quyền duyệt điều chỉnh Counter (meter:confirm)."
       );
     }
 

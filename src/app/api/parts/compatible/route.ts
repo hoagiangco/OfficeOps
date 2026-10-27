@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { checkUserPermission } from "@/lib/rbacService";
 import { withErrors } from "@/lib/http";
 
 type TargetEquipmentType = Prisma.EquipmentGetPayload<{
@@ -22,6 +23,21 @@ interface EquipmentSummary {
   warehouse: { id: string; name: string } | null;
 }
 
+// Hàm nhận diện Hãng sản xuất dựa trên chuỗi Model nếu brand để trống
+function detectBrand(modelName: string, existingBrand?: string | null): string {
+  if (existingBrand && existingBrand.trim()) return existingBrand.trim();
+  const lower = modelName.toLowerCase();
+  if (lower.includes("ricoh") || lower.startsWith("mp ") || lower.startsWith("im ")) return "Ricoh";
+  if (lower.includes("canon") || lower.startsWith("ir") || lower.startsWith("lbp")) return "Canon";
+  if (lower.includes("toshiba") || lower.startsWith("e-studio")) return "Toshiba";
+  if (lower.includes("xerox") || lower.includes("fujifilm") || lower.startsWith("docu")) return "Xerox / Fujifilm";
+  if (lower.includes("hp ") || lower.startsWith("hp ") || lower.includes("laserjet")) return "HP";
+  if (lower.includes("konica") || lower.includes("bizhub")) return "Konica Minolta";
+  if (lower.includes("brother")) return "Brother";
+  if (lower.includes("epson")) return "Epson";
+  return "Dòng máy khác";
+}
+
 export const GET = withErrors(async (req: Request) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
@@ -30,6 +46,173 @@ export const GET = withErrors(async (req: Request) => {
   const equipmentId = sp.get("equipmentId");
   const modelQuery = sp.get("model");
   const partId = sp.get("partId");
+  const getCatalog = sp.get("catalog") === "true";
+
+  // === CASE 0: LẤY CATALOGUE TẤT CẢ DÒNG MÁY PHỤC VỤ GÁN CHECK / UNCHECK CHUYÊN NGHIỆP ===
+  if (getCatalog) {
+    const [equipments, allParts, brandsFromDb] = await Promise.all([
+      prisma.equipment.findMany({
+        select: {
+          id: true,
+          code: true,
+          serialNumber: true,
+          model: true,
+          brand: true,
+          type: true,
+          status: true,
+          customer: { select: { id: true, name: true, phone: true } },
+        },
+      }),
+      prisma.part.findMany({
+        where: { isActive: true },
+        select: {
+          id: true,
+          partCode: true,
+          name: true,
+          unit: true,
+          category: true,
+          partCategory: { select: { id: true, name: true, color: true } },
+          compatibleModels: true,
+          minThreshold: true,
+          batches: { select: { quantity: true } },
+        },
+        orderBy: [{ partCode: "asc" }],
+      }),
+      prisma.equipmentBrand.findMany({
+        orderBy: { sortOrder: "asc" },
+      }),
+    ]);
+
+    // Bản đồ Model -> Thông tin máy & Hãng
+    const modelMap = new Map<
+      string,
+      {
+        model: string;
+        brand: string;
+        fullName: string;
+        type: string;
+        totalUnits: number;
+        activeUnits: number;
+        equipments: { id: string; code: string | null; serialNumber: string; customerName: string | null }[];
+      }
+    >();
+
+    equipments.forEach((eq) => {
+      const model = eq.model.trim();
+      if (!model) return;
+      const brand = detectBrand(model, eq.brand);
+      const fullName = model.toLowerCase().includes(brand.toLowerCase()) ? model : `${brand} ${model}`;
+
+      if (!modelMap.has(model)) {
+        modelMap.set(model, {
+          model,
+          brand,
+          fullName,
+          type: eq.type || "Máy Photocopy",
+          totalUnits: 0,
+          activeUnits: 0,
+          equipments: [],
+        });
+      }
+
+      const item = modelMap.get(model)!;
+      item.totalUnits += 1;
+      if (["ACTIVE", "FAULTY", "WAITING_PARTS"].includes(eq.status)) {
+        item.activeUnits += 1;
+      }
+      item.equipments.push({
+        id: eq.id,
+        code: eq.code,
+        serialNumber: eq.serialNumber,
+        customerName: eq.customer?.name || null,
+      });
+    });
+
+    // Bổ sung các model đã khai báo trong danh mục vật tư nhưng chưa có máy thực tế trong kho
+    allParts.forEach((p) => {
+      (p.compatibleModels || []).forEach((cm) => {
+        const trimmed = cm.trim();
+        if (!trimmed) return;
+        if (!modelMap.has(trimmed)) {
+          const brand = detectBrand(trimmed);
+          const fullName = trimmed.toLowerCase().includes(brand.toLowerCase()) ? trimmed : `${brand} ${trimmed}`;
+          modelMap.set(trimmed, {
+            model: trimmed,
+            brand,
+            fullName,
+            type: "Dòng máy tương thích",
+            totalUnits: 0,
+            activeUnits: 0,
+            equipments: [],
+          });
+        }
+      });
+    });
+
+    // Nhóm theo Hãng
+    const groupedBrandsMap = new Map<string, Array<(typeof modelMap) extends Map<string, infer V> ? V : never>>();
+    
+    // Đảm bảo thứ tự hãng phổ biến lên trước
+    const defaultBrandOrder = ["Ricoh", "Canon", "Toshiba", "Xerox / Fujifilm", "HP", "Konica Minolta", "Brother", "Dòng máy khác"];
+    defaultBrandOrder.forEach((b) => groupedBrandsMap.set(b, []));
+    brandsFromDb.forEach((b) => {
+      if (!groupedBrandsMap.has(b.name)) groupedBrandsMap.set(b.name, []);
+    });
+
+    modelMap.forEach((m) => {
+      if (!groupedBrandsMap.has(m.brand)) {
+        groupedBrandsMap.set(m.brand, []);
+      }
+      groupedBrandsMap.get(m.brand)!.push(m);
+    });
+
+    const modelsByBrand = Array.from(groupedBrandsMap.entries())
+      .filter(([_, models]) => models.length > 0)
+      .map(([brand, models]) => ({
+        brand,
+        models: models.sort((a, b) => a.model.localeCompare(b.model)),
+        totalModels: models.length,
+        totalMachines: models.reduce((sum, m) => sum + m.totalUnits, 0),
+        totalActiveMachines: models.reduce((sum, m) => sum + m.activeUnits, 0),
+      }));
+
+    // Nếu có truyền partId kèm theo, tải luôn thông tin vật tư
+    let targetPart = null;
+    if (partId) {
+      targetPart = await prisma.part.findUnique({
+        where: { id: partId },
+        include: {
+          partCategory: true,
+          batches: { orderBy: { receivedDate: "asc" } },
+        },
+      });
+    }
+
+    const partsEnriched = allParts.map((p) => ({
+      id: p.id,
+      partCode: p.partCode,
+      name: p.name,
+      unit: p.unit,
+      category: p.partCategory?.name || p.category || "Vật tư",
+      partCategory: p.partCategory,
+      compatibleModels: p.compatibleModels || [],
+      minThreshold: p.minThreshold,
+      currentQuantity: (p.batches || []).reduce((sum, b) => sum + b.quantity, 0),
+    }));
+
+    return NextResponse.json({
+      modelsByBrand,
+      allModels: Array.from(modelMap.values()).sort((a, b) => a.model.localeCompare(b.model)),
+      totalDistinctModels: modelMap.size,
+      parts: partsEnriched,
+      part: targetPart
+        ? {
+            ...targetPart,
+            currentQuantity: targetPart.batches.reduce((sum, b) => sum + b.quantity, 0),
+          }
+        : null,
+    });
+  }
 
   // === CASE 1: TRA CỨU NGƯỢC TỪ VẬT TƯ -> CÁC THIẾT BỊ ĐANG HOẠT ĐỘNG ===
   if (partId) {
@@ -237,5 +420,73 @@ export const GET = withErrors(async (req: Request) => {
     totalCompatibleParts: enrichedParts.length,
     groups: Object.values(groups),
     parts: enrichedParts,
+  });
+});
+
+// === CẬP NHẬT / GÁN DÒNG MÁY TƯƠNG THÍCH CHO VẬT TƯ (PUT) ===
+export const PUT = withErrors(async (req: Request) => {
+  const s = await getSession();
+  if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
+
+  const canManage = await checkUserPermission(s.userId, s.role, "part:manage");
+
+  if (!canManage) {
+    return NextResponse.json({ error: "Không có quyền gán tương thích thiết bị" }, { status: 403 });
+  }
+
+  const body = await req.json().catch(() => null);
+  const { partId, compatibleModels } = body || {};
+
+  if (!partId) {
+    return NextResponse.json({ error: "Thiếu ID vật tư" }, { status: 400 });
+  }
+
+  if (!Array.isArray(compatibleModels)) {
+    return NextResponse.json({ error: "Danh sách dòng máy tương thích không hợp lệ" }, { status: 400 });
+  }
+
+  const existingPart = await prisma.part.findUnique({
+    where: { id: partId },
+  });
+
+  if (!existingPart) {
+    return NextResponse.json({ error: "Không tìm thấy vật tư tương ứng" }, { status: 404 });
+  }
+
+  // Chuẩn hóa danh sách model: loại bỏ trùng lặp và khoảng trắng thừa
+  const cleanedModels = Array.from(
+    new Set(compatibleModels.map((m: string) => String(m).trim()).filter(Boolean))
+  );
+
+  const updatedPart = await prisma.part.update({
+    where: { id: partId },
+    data: {
+      compatibleModels: cleanedModels,
+    },
+    include: {
+      partCategory: true,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: s.userId,
+      action: "PART_COMPATIBILITY_ASSIGN",
+      entity: "Part",
+      entityId: partId,
+      meta: {
+        partCode: updatedPart.partCode,
+        name: updatedPart.name,
+        modelsCount: cleanedModels.length,
+        compatibleModels: cleanedModels,
+      },
+    },
+  });
+
+  return NextResponse.json({
+    success: true,
+    part: updatedPart,
+    compatibleModels: cleanedModels,
+    message: `Đã cập nhật tương thích cho vật tư "${updatedPart.name}" (${cleanedModels.length} dòng máy)`,
   });
 });

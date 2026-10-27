@@ -12,7 +12,7 @@ const createBrandSchema = z.object({
 });
 
 export const GET = withErrors(async () => {
-  const s = await requirePermission("equipment:read");
+  const s = await requirePermission("equipment:view");
   if (s instanceof NextResponse) return s;
 
   // Auto-seed default brands if table is brand new and completely empty
@@ -53,7 +53,7 @@ export const GET = withErrors(async () => {
 });
 
 export const POST = withErrors(async (req: Request) => {
-  const s = await requirePermission("equipment:write");
+  const s = await requirePermission("equipment:category-manage");
   if (s instanceof NextResponse) return s;
 
   const r = await parseBody(req, createBrandSchema);

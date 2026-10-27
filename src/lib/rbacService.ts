@@ -19,6 +19,45 @@ export function invalidateUserPermissionCache(userId?: string) {
   }
 }
 
+const LEGACY_ALIASES: Record<string, string[]> = {
+  "customer:read": ["customer:view"],
+  "customer:write": ["customer:create", "customer:edit-contact", "customer:edit-legal", "customer:location-manage"],
+  "contract:read": ["contract:view"],
+  "contract:write": ["contract:create", "contract:edit"],
+  "equipment:read": ["equipment:view", "equipment:history"],
+  "equipment:write": ["equipment:import-stock", "equipment:assign", "equipment:edit", "equipment:status-change"],
+  "ticket:update": ["ticket:update-progress", "ticket:close"],
+  "stock:read": ["part:view", "stock:movement-view"],
+  "stock:manage": ["part:manage", "stock:import", "stock:audit"],
+  "finance:view": ["report:finance-view", "invoice:view"],
+  "invoice:manage": ["invoice:create", "invoice:edit", "invoice:approve", "invoice:send", "invoice:payment"],
+  "file:manage": ["media:manage"],
+};
+
+export function expandLegacyAliases(perms: PermissionsMap): PermissionsMap {
+  const result: PermissionsMap = { ...perms };
+
+  // 1. Từ 64 quyền chi tiết mới suy ra các legacy key
+  for (const [legacyKey, modernKeys] of Object.entries(LEGACY_ALIASES)) {
+    if (result[legacyKey] === undefined) {
+      result[legacyKey] = modernKeys.some((k) => !!result[k]);
+    }
+  }
+
+  // 2. Từ legacy key suy ra các quyền chi tiết mới (nếu legacy key là true)
+  for (const [legacyKey, modernKeys] of Object.entries(LEGACY_ALIASES)) {
+    if (result[legacyKey]) {
+      for (const m of modernKeys) {
+        if (result[m] === undefined) {
+          result[m] = true;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
 /**
  * Trả về quyền mặc định theo vai trò (Role Template)
  */
@@ -32,22 +71,8 @@ export function getDefaultPermissionsForRole(role: Role): PermissionsMap {
       result[key] = allowedRoles.includes(role);
     }
   }
-  return result;
+  return expandLegacyAliases(result);
 }
-
-const LEGACY_ALIASES: Record<string, string[]> = {
-  "customer:read": ["customer:view"],
-  "customer:write": ["customer:create", "customer:edit-contact", "customer:edit-legal", "customer:location-manage"],
-  "contract:read": ["contract:view"],
-  "contract:write": ["contract:create", "contract:edit"],
-  "equipment:read": ["equipment:view", "equipment:history"],
-  "equipment:write": ["equipment:import-stock", "equipment:assign", "equipment:edit", "equipment:status-change"],
-  "ticket:update": ["ticket:update-progress", "ticket:close"],
-  "stock:read": ["part:view", "stock:movement-view"],
-  "stock:manage": ["part:manage", "stock:import", "stock:audit"],
-  "finance:view": ["report:finance-view", "invoice:view"],
-  "invoice:manage": ["invoice:create", "invoice:edit", "invoice:approve", "invoice:send", "invoice:payment"],
-};
 
 /**
  * Lấy danh sách quyền hạn của một User cụ thể (kèm in-memory cache).
@@ -96,6 +121,7 @@ export async function getUserPermissions(userId: string): Promise<{
   if (user.role === "SUPER_ADMIN") {
     const fullPerms: PermissionsMap = {};
     for (const k of ALL_PERMISSION_KEYS) fullPerms[k] = true;
+    for (const legacyKey of Object.keys(LEGACY_ALIASES)) fullPerms[legacyKey] = true;
     userCache.set(userId, { perms: fullPerms, timestamp: now });
     return {
       role: user.role,
@@ -114,10 +140,11 @@ export async function getUserPermissions(userId: string): Promise<{
       perms[up.permission] = up.granted;
     }
 
-    userCache.set(userId, { perms, timestamp: now });
+    const finalPerms = expandLegacyAliases(perms);
+    userCache.set(userId, { perms: finalPerms, timestamp: now });
     return {
       role: user.role,
-      permissions: perms,
+      permissions: finalPerms,
       isCustomized: true,
     };
   }
@@ -138,10 +165,11 @@ export async function getUserPermissions(userId: string): Promise<{
     console.error(`Lỗi khi tự động khởi tạo UserPermission cho user ${userId}:`, err);
   }
 
-  userCache.set(userId, { perms: defaultPerms, timestamp: now });
+  const finalPerms = expandLegacyAliases(defaultPerms);
+  userCache.set(userId, { perms: finalPerms, timestamp: now });
   return {
     role: user.role,
-    permissions: defaultPerms,
+    permissions: finalPerms,
     isCustomized: false,
   };
 }
@@ -322,8 +350,7 @@ export async function getAllUsersPermissionsSummary() {
       isActive: true,
       region: true,
       userPermissions: {
-        where: { granted: true },
-        select: { permission: true },
+        select: { permission: true, granted: true },
       },
     },
     orderBy: [{ role: "asc" }, { name: "asc" }],
@@ -331,15 +358,25 @@ export async function getAllUsersPermissionsSummary() {
 
   return users.map((u) => {
     const isSuperAdmin = u.role === "SUPER_ADMIN";
-    const explicitPerms = u.userPermissions.map((p) => p.permission);
-    const defaultPerms = Object.entries(getDefaultPermissionsForRole(u.role))
-      .filter(([_, v]) => v)
-      .map(([k]) => k);
-    const grantedList = isSuperAdmin
-      ? ALL_PERMISSION_KEYS
-      : explicitPerms.length > 0
-      ? explicitPerms
-      : defaultPerms;
+    const hasCustomRecords = u.userPermissions.length > 0;
+
+    let grantedList: string[];
+    if (isSuperAdmin) {
+      grantedList = [...ALL_PERMISSION_KEYS];
+    } else if (hasCustomRecords) {
+      // Dùng cấu hình thủ công chính xác trong DB:
+      // Bắt đầu từ Role Template, ghi đè những quyền có trong userPermissions
+      const roleDefaults = getDefaultPermissionsForRole(u.role);
+      const permMap: Record<string, boolean> = { ...roleDefaults };
+      for (const up of u.userPermissions) {
+        permMap[up.permission] = up.granted;
+      }
+      grantedList = ALL_PERMISSION_KEYS.filter((k) => !!permMap[k]);
+    } else {
+      // Chưa từng cấu hình thủ công: dùng Role Template
+      const roleDefaults = getDefaultPermissionsForRole(u.role);
+      grantedList = ALL_PERMISSION_KEYS.filter((k) => !!roleDefaults[k]);
+    }
 
     return {
       id: u.id,

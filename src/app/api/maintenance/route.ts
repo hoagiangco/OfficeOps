@@ -151,7 +151,7 @@ export const POST = withErrors(async (req: Request) => {
     });
   }
 
-  const session = await requirePermission("equipment:write");
+  const session = await requirePermission("maintenance:plan-manage");
   if (session instanceof NextResponse) return session;
   const parsed = await parseBody(req, createScheduleSchema);
   if (parsed.error) return parsed.error;
@@ -185,7 +185,7 @@ export const POST = withErrors(async (req: Request) => {
 });
 
 export const PATCH = withErrors(async (req: Request) => {
-  const session = await requirePermission("equipment:write");
+  const session = await requirePermission("maintenance:plan-manage");
   if (session instanceof NextResponse) return session;
   const parsed = await parseBody(req, patchScheduleSchema);
   if (parsed.error) return parsed.error;
@@ -215,7 +215,7 @@ export const PATCH = withErrors(async (req: Request) => {
 });
 
 export const DELETE = withErrors(async (req: Request) => {
-  const session = await requirePermission("equipment:write");
+  const session = await requirePermission("maintenance:plan-manage");
   if (session instanceof NextResponse) return session;
   const id = new URL(req.url).searchParams.get("id");
   if (!id) throw new HttpError(400, "Thiếu mã lịch bảo trì cần xóa");

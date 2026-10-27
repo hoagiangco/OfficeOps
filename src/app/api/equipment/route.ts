@@ -43,7 +43,7 @@ function generateEquipmentCode(): string {
 }
 
 export const GET = withErrors(async (req: Request) => {
-  const s = await requirePermission("equipment:read");
+  const s = await requirePermission("equipment:view");
   if (s instanceof NextResponse) return s;
 
   const { page, pageSize, q } = parseQuery(req, pagingSchema);
@@ -255,7 +255,7 @@ export const GET = withErrors(async (req: Request) => {
 });
 
 export const POST = withErrors(async (req: Request) => {
-  const s = await requirePermission("equipment:write");
+  const s = await requirePermission("equipment:import-stock");
   if (s instanceof NextResponse) return s;
 
   const r = await parseBody(req, equipmentSchema);
