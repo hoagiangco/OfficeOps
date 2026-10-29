@@ -25,7 +25,7 @@ const assignSchema = z.object({
 export const POST = withErrors(async (req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!(await checkUserPermission(s.userId, s.role, "equipment:write")))
+  if (!(await checkUserPermission(s.userId, s.role, "equipment:assign")))
     return NextResponse.json({ error: "Không có quyền gán thiết bị" }, { status: 403 });
 
   const { id: customerId } = await params;

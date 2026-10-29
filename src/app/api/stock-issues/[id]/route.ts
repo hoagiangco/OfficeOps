@@ -130,8 +130,8 @@ export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
           });
         }
 
-        // Nếu xuất kỹ thuật gắn với Ticket -> ghi lịch sử thay thế linh kiện cho máy
-        if (issue.ticketId && issue.ticket) {
+        // Nếu xuất kỹ thuật gắn với Ticket có máy -> ghi lịch sử thay thế linh kiện cho máy
+        if (issue.ticketId && issue.ticket?.equipmentId) {
           await tx.partReplacement.create({
             data: {
               ticketId: issue.ticketId,

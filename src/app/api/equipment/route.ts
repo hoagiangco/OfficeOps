@@ -11,7 +11,7 @@ import { pagingSchema, parseBody, parseQuery, withErrors } from "@/lib/http";
 
 const equipmentSchema = z.object({
   code: z.string().trim().optional().nullable(),
-  serialNumber: z.string().trim().min(1, "Vui lòng nhập Serial Number"),
+  serialNumber: z.string().trim().optional().nullable(),
   model: z.string().trim().min(1, "Vui lòng nhập dòng máy (Model)"),
   brand: z.string().trim().optional().nullable(),
   type: z.string().trim().default("Máy Photocopy"),
@@ -129,6 +129,13 @@ export const GET = withErrors(async (req: Request) => {
         { type: { contains: q, mode: "insensitive" as const } },
         { group: { contains: q, mode: "insensitive" as const } },
         { locationNote: { contains: q, mode: "insensitive" as const } },
+        { customer: { name: { contains: q, mode: "insensitive" as const } } },
+        { customer: { code: { contains: q, mode: "insensitive" as const } } },
+        { customer: { address: { contains: q, mode: "insensitive" as const } } },
+        { warehouse: { name: { contains: q, mode: "insensitive" as const } } },
+        { branch: { name: { contains: q, mode: "insensitive" as const } } },
+        { building: { name: { contains: q, mode: "insensitive" as const } } },
+        { department: { name: { contains: q, mode: "insensitive" as const } } },
       ],
     });
   }
@@ -271,6 +278,17 @@ export const POST = withErrors(async (req: Request) => {
     code = generateEquipmentCode();
   }
 
+  const serialNumber = rest.serialNumber?.trim() || null;
+  if (serialNumber) {
+    const dupSerial = await prisma.equipment.findUnique({ where: { serialNumber } });
+    if (dupSerial) {
+      return NextResponse.json(
+        { error: `Số serial "${serialNumber}" đã tồn tại trong hệ thống` },
+        { status: 409 }
+      );
+    }
+  }
+
   // If assigned to customer on creation and status wasn't explicitly set to something else, default to ACTIVE
   const finalStatus =
     rest.status ?? (rest.customerId ? EquipmentStatus.ACTIVE : EquipmentStatus.IN_STOCK);
@@ -286,7 +304,7 @@ export const POST = withErrors(async (req: Request) => {
   const equipment = await prisma.equipment.create({
     data: {
       code,
-      serialNumber: rest.serialNumber,
+      serialNumber,
       model: rest.model,
       brand: rest.brand || null,
       type: rest.type || "Máy Photocopy",

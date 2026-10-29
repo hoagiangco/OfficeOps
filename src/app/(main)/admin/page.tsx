@@ -31,6 +31,7 @@ const ROLE_BADGE: Record<Role, string> = {
 };
 
 export default function AdminUsersPage() {
+  const [currentUser, setCurrentUser] = useState<{ id: string; role: Role } | null>(null);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -79,6 +80,13 @@ export default function AdminUsersPage() {
       setLoading(false);
     }
   }, [page, pageSize, search, roleFilter, statusFilter]);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((me) => me && setCurrentUser(me))
+      .catch(() => null);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -154,7 +162,13 @@ export default function AdminUsersPage() {
     }
   };
 
+  const hasSuperAdmin = users.some((u) => u.role === "SUPER_ADMIN");
+
   const handleToggleActive = async (u: UserItem) => {
+    if (u.role === "SUPER_ADMIN") {
+      toast.error("Không thể khóa tài khoản Giám đốc (Super Admin)");
+      return;
+    }
     const res = await fetch(`/api/users/${u.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -169,21 +183,30 @@ export default function AdminUsersPage() {
     loadData();
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Bạn có chắc chắn muốn xóa tài khoản này?")) return;
-    const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+  const handleDelete = async (u: UserItem) => {
+    if (u.role === "SUPER_ADMIN") {
+      toast.error("Tài khoản Giám đốc là tài khoản cao nhất của hệ thống, không thể xóa!");
+      return;
+    }
+    if (!confirm(`Bạn có chắc chắn muốn xóa tài khoản ${u.name}?`)) return;
+    const res = await fetch(`/api/users/${u.id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       toast.error(data.error || "Không thể xóa tài khoản");
       return;
     }
     toast.success("Đã xóa tài khoản");
-    setSelectedIds((prev) => prev.filter((x) => x !== id));
+    setSelectedIds((prev) => prev.filter((x) => x !== u.id));
     loadData();
   };
 
   const handleBatchToggle = async (active: boolean) => {
-    for (const id of selectedIds) {
+    // Không khóa / thao tác tài khoản Super Admin
+    const targetIds = selectedIds.filter((id) => {
+      const u = users.find((x) => x.id === id);
+      return u && u.role !== "SUPER_ADMIN";
+    });
+    for (const id of targetIds) {
       await fetch(`/api/users/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -375,10 +398,14 @@ export default function AdminUsersPage() {
                   <th className="px-3 py-2" style={{ width: "36px" }}>
                     <input
                       type="checkbox"
-                      checked={users.length > 0 && selectedIds.length === users.length}
-                      onChange={(e) =>
-                        setSelectedIds(e.target.checked ? users.map((u) => u.id) : [])
+                      checked={
+                        users.filter((u) => u.role !== "SUPER_ADMIN").length > 0 &&
+                        selectedIds.length === users.filter((u) => u.role !== "SUPER_ADMIN").length
                       }
+                      onChange={(e) => {
+                        const selectable = users.filter((u) => u.role !== "SUPER_ADMIN");
+                        setSelectedIds(e.target.checked ? selectable.map((u) => u.id) : []);
+                      }}
                     />
                   </th>
                   <th className="py-2 text-uppercase small">Họ tên &amp; Email</th>
@@ -387,7 +414,7 @@ export default function AdminUsersPage() {
                   <th className="py-2 text-uppercase small">Khu vực / Kỹ năng</th>
                   <th className="py-2 text-uppercase small text-center">Ticket</th>
                   <th className="py-2 text-uppercase small text-center">Trạng thái</th>
-                  <th className="py-2 text-uppercase small text-end px-3" style={{ width: "130px" }}>
+                  <th className="py-2 text-uppercase small text-end px-3" style={{ width: "140px" }}>
                     Thao tác
                   </th>
                 </tr>
@@ -406,93 +433,160 @@ export default function AdminUsersPage() {
                     </td>
                   </tr>
                 ) : (
-                  users.map((u) => (
-                    <tr key={u.id} className={!u.isActive ? "bg-danger-subtle bg-opacity-25" : ""}>
-                      <td className="px-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(u.id)}
-                          onChange={() =>
-                            setSelectedIds((prev) =>
-                              prev.includes(u.id) ? prev.filter((x) => x !== u.id) : [...prev, u.id]
-                            )
-                          }
-                        />
-                      </td>
-                      <td className="py-1.5">
-                        <div className="fw-bold text-dark small">{u.name}</div>
-                        <div className="text-muted" style={{ fontSize: "0.75rem" }}>
-                          {u.email}
-                        </div>
-                      </td>
-                      <td className="small">{u.phone || "—"}</td>
-                      <td>
-                        <span className={`badge ${ROLE_BADGE[u.role]}`}>
-                          {ROLE_LABELS[u.role]}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="small fw-medium">{u.region || "—"}</div>
-                        {u.skills?.length > 0 && (
-                          <div className="d-flex flex-wrap gap-1 mt-0.5">
-                            {u.skills.map((sk) => (
-                              <span
-                                key={sk}
-                                className="badge bg-light text-dark border"
-                                style={{ fontSize: "0.68rem" }}
-                              >
-                                {sk}
+                  users.map((u) => {
+                    const isTargetSuperAdmin = u.role === "SUPER_ADMIN";
+                    const isViewerSuperAdmin = currentUser?.role === "SUPER_ADMIN";
+                    const canEditTarget = !isTargetSuperAdmin || isViewerSuperAdmin;
+
+                    return (
+                      <tr key={u.id} className={!u.isActive ? "bg-danger-subtle bg-opacity-25" : ""}>
+                        <td className="px-3">
+                          <input
+                            type="checkbox"
+                            disabled={isTargetSuperAdmin}
+                            checked={selectedIds.includes(u.id)}
+                            onChange={() =>
+                              setSelectedIds((prev) =>
+                                prev.includes(u.id) ? prev.filter((x) => x !== u.id) : [...prev, u.id]
+                              )
+                            }
+                            title={isTargetSuperAdmin ? "Tài khoản Giám đốc không thể chọn thao tác hàng loạt" : undefined}
+                          />
+                        </td>
+                        <td className="py-1.5">
+                          <div className="fw-bold text-dark small">
+                            {u.name}
+                            {isTargetSuperAdmin && (
+                              <span className="badge bg-danger-subtle text-danger ms-1" style={{ fontSize: "0.68rem" }}>
+                                <i className="fas fa-crown text-warning me-0.5"></i> Super Admin
                               </span>
-                            ))}
+                            )}
                           </div>
-                        )}
-                      </td>
-                      <td className="text-center fw-bold small">
-                        {u._count?.assignedTickets ?? 0}
-                      </td>
-                      <td className="text-center">
-                        {u.isActive ? (
-                          <span className="badge bg-success">Hoạt động</span>
-                        ) : (
-                          <span className="badge bg-secondary">Đã khóa</span>
-                        )}
-                      </td>
-                      <td className="px-3 text-end">
-                        <div className="btn-group btn-group-sm">
-                          <Link
-                            href={`/admin/permissions?userId=${u.id}`}
-                            className="btn btn-outline-info btn-sm py-0 px-2"
-                            title="Phân quyền chi tiết cho nhân viên này"
-                          >
-                            <i className="fas fa-key"></i>
-                          </Link>
-                          <button
-                            className="btn btn-outline-primary btn-sm py-0 px-2"
-                            title="Sửa"
-                            onClick={() => openEdit(u)}
-                          >
-                            <i className="fas fa-pen"></i>
-                          </button>
-                          <button
-                            className={`btn btn-sm py-0 px-2 ${
-                              u.isActive ? "btn-outline-warning" : "btn-outline-success"
-                            }`}
-                            title={u.isActive ? "Khóa tài khoản" : "Mở khóa"}
-                            onClick={() => handleToggleActive(u)}
-                          >
-                            <i className={`fas ${u.isActive ? "fa-lock" : "fa-unlock"}`}></i>
-                          </button>
-                          <button
-                            className="btn btn-outline-danger btn-sm py-0 px-2"
-                            title="Xóa"
-                            onClick={() => handleDelete(u.id)}
-                          >
-                            <i className="fas fa-trash-alt"></i>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                          <div className="text-muted" style={{ fontSize: "0.75rem" }}>
+                            {u.email}
+                          </div>
+                        </td>
+                        <td className="small">{u.phone || "—"}</td>
+                        <td>
+                          <span className={`badge ${ROLE_BADGE[u.role]}`}>
+                            {ROLE_LABELS[u.role]}
+                          </span>
+                          {isTargetSuperAdmin && (
+                            <div className="text-danger fw-semibold" style={{ fontSize: "0.68rem" }}>
+                              Tối cao (Không thể xóa)
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <div className="small fw-medium">{u.region || "—"}</div>
+                          {u.skills?.length > 0 && (
+                            <div className="d-flex flex-wrap gap-1 mt-0.5">
+                              {u.skills.map((sk) => (
+                                <span
+                                  key={sk}
+                                  className="badge bg-light text-dark border"
+                                  style={{ fontSize: "0.68rem" }}
+                                >
+                                  {sk}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                        <td className="text-center fw-bold small">
+                          {u._count?.assignedTickets ?? 0}
+                        </td>
+                        <td className="text-center">
+                          {u.isActive ? (
+                            <span className="badge bg-success">Hoạt động</span>
+                          ) : (
+                            <span className="badge bg-secondary">Đã khóa</span>
+                          )}
+                        </td>
+                        <td className="px-3 text-end">
+                          <div className="btn-group btn-group-sm">
+                            {isTargetSuperAdmin ? (
+                              <button
+                                type="button"
+                                className="btn btn-outline-secondary btn-sm py-0 px-2"
+                                disabled
+                                title="Tài khoản Giám đốc luôn có toàn bộ 64 quyền hạn cố định"
+                              >
+                                <i className="fas fa-shield-alt text-muted"></i>
+                              </button>
+                            ) : (
+                              <Link
+                                href={`/admin/permissions?userId=${u.id}`}
+                                className="btn btn-outline-info btn-sm py-0 px-2"
+                                title="Phân quyền chi tiết cho nhân viên này"
+                              >
+                                <i className="fas fa-key"></i>
+                              </Link>
+                            )}
+
+                            {canEditTarget ? (
+                              <button
+                                className="btn btn-outline-primary btn-sm py-0 px-2"
+                                title={isTargetSuperAdmin ? "Chỉnh sửa tài khoản Giám đốc" : "Sửa thông tin"}
+                                onClick={() => openEdit(u)}
+                              >
+                                <i className="fas fa-pen"></i>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn-outline-secondary btn-sm py-0 px-2"
+                                disabled
+                                title="Chỉ Giám đốc (Super Admin) mới có quyền chỉnh sửa tài khoản này"
+                              >
+                                <i className="fas fa-lock text-muted"></i>
+                              </button>
+                            )}
+
+                            {isTargetSuperAdmin ? (
+                              <button
+                                type="button"
+                                className="btn btn-outline-secondary btn-sm py-0 px-2"
+                                disabled
+                                title="Tài khoản Giám đốc luôn hoạt động, không thể khóa"
+                              >
+                                <i className="fas fa-check-circle text-muted"></i>
+                              </button>
+                            ) : (
+                              <button
+                                className={`btn btn-sm py-0 px-2 ${
+                                  u.isActive ? "btn-outline-warning" : "btn-outline-success"
+                                }`}
+                                title={u.isActive ? "Khóa tài khoản" : "Mở khóa"}
+                                onClick={() => handleToggleActive(u)}
+                              >
+                                <i className={`fas ${u.isActive ? "fa-lock" : "fa-unlock"}`}></i>
+                              </button>
+                            )}
+
+                            {isTargetSuperAdmin ? (
+                              <button
+                                type="button"
+                                className="btn btn-outline-secondary btn-sm py-0 px-2"
+                                disabled
+                                title="Tài khoản Giám đốc là tài khoản cao nhất, không thể xóa"
+                              >
+                                <i className="fas fa-ban text-muted"></i>
+                              </button>
+                            ) : (
+                              <button
+                                className="btn btn-outline-danger btn-sm py-0 px-2"
+                                title="Xóa tài khoản"
+                                onClick={() => handleDelete(u)}
+                              >
+                                <i className="fas fa-trash-alt"></i>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -603,15 +697,27 @@ export default function AdminUsersPage() {
               </label>
               <select
                 className="form-select form-select-sm border-primary"
+                disabled={editing?.role === "SUPER_ADMIN"}
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value as Role })}
               >
-                {Object.entries(ROLE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
+                {Object.entries(ROLE_LABELS).map(([k, v]) => {
+                  const isSuper = k === "SUPER_ADMIN";
+                  const shouldDisableSuper =
+                    isSuper && hasSuperAdmin && editing?.role !== "SUPER_ADMIN";
+                  return (
+                    <option key={k} value={k} disabled={shouldDisableSuper}>
+                      {v} {shouldDisableSuper ? "(Hệ thống chỉ có 1 Super Admin)" : ""}
+                    </option>
+                  );
+                })}
               </select>
+              {editing?.role === "SUPER_ADMIN" && (
+                <small className="text-muted d-block mt-1" style={{ fontSize: "11px" }}>
+                  <i className="fas fa-shield-alt text-danger me-1"></i>
+                  Tài khoản Giám đốc là vai trò tối cao cố định, không thể thay đổi vai trò.
+                </small>
+              )}
             </div>
 
             <div className="col-md-6">
@@ -646,11 +752,15 @@ export default function AdminUsersPage() {
                   className="form-check-input"
                   type="checkbox"
                   id="userActiveSwitch"
+                  disabled={editing?.role === "SUPER_ADMIN"}
                   checked={formData.isActive}
                   onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
                 />
                 <label className="form-check-label small fw-medium" htmlFor="userActiveSwitch">
                   Cho phép tài khoản đăng nhập hoạt động
+                  {editing?.role === "SUPER_ADMIN" && (
+                    <span className="text-muted ms-1">(Tài khoản Giám đốc luôn ở trạng thái hoạt động)</span>
+                  )}
                 </label>
               </div>
             </div>

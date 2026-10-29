@@ -7,6 +7,7 @@ import { ModalShell } from "@/components/ModalShell";
 import { Loading } from "@/components/Loading";
 import { SignatureCanvas } from "@/components/SignatureCanvas";
 import FileManager from "@/components/FileManager";
+import { formatLocationPath } from "@/lib/location";
 import {
   TICKET_PRIORITY_LABELS,
   TICKET_STATUS_LABELS,
@@ -45,7 +46,7 @@ export interface TicketDetailData {
   customer: { id: string; name: string; phone: string; address: string };
   equipment: {
     id: string;
-    serialNumber: string;
+    serialNumber?: string | null;
     model: string;
     brand: string | null;
     status: string;
@@ -91,6 +92,7 @@ export interface CurrentUser {
   id: string;
   name: string;
   role: string;
+  permissions?: Record<string, boolean>;
 }
 
 interface TicketDetailModalProps {
@@ -140,13 +142,31 @@ export function TicketDetailModal({
   const [reqPartNote, setReqPartNote] = useState("");
 
   const isSuperAdmin = currentUser?.role === "SUPER_ADMIN";
-  const canAssign = currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "DISPATCHER";
+  const canAssign =
+    isSuperAdmin ||
+    (currentUser?.permissions
+      ? !!currentUser.permissions["ticket:assign"]
+      : currentUser?.role === "DISPATCHER");
+  const canDeleteTicket =
+    isSuperAdmin ||
+    (currentUser?.permissions
+      ? !!currentUser.permissions["ticket:cancel"]
+      : currentUser?.role === "ADMIN" || currentUser?.role === "DISPATCHER");
   const isTicketCompleted = ticket?.status === "COMPLETED";
-  const isLocked = isTicketCompleted && !isSuperAdmin;
+  const isTicketCancelled = ticket?.status === "CANCELLED";
+  const isLocked = isTicketCancelled || (isTicketCompleted && !isSuperAdmin);
+
+  // Modal Hủy & Xóa phiếu
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Load auxiliary data if missing
   useEffect(() => {
-    if (!currentUser) {
+    if (!currentUser || !currentUser.permissions) {
       fetch("/api/auth/me")
         .then((r) => (r.ok ? r.json() : null))
         .then((me) => me && setCurrentUser(me))
@@ -194,7 +214,7 @@ export function TicketDetailModal({
       setCounterAtCloseInput(
         data.counterAtClose != null
           ? String(data.counterAtClose)
-          : String(data.equipment.currentCounter || 0)
+          : String(data.equipment?.currentCounter || 0)
       );
       const sig = data.customerSignature;
       setSignatureInput(
@@ -220,6 +240,10 @@ export function TicketDetailModal({
 
   const handleTicketAction = async (payload: Record<string, unknown>, successMsg: string) => {
     if (!ticket) return;
+    if (ticket.status === "CANCELLED") {
+      toast.warning("Phiếu kỹ thuật này đã bị hủy, không thể thực hiện thao tác");
+      return;
+    }
     if (ticket.status === "COMPLETED" && !isSuperAdmin) {
       toast.warning("Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc mới có quyền chỉnh sửa!");
       return;
@@ -243,10 +267,67 @@ export function TicketDetailModal({
     }
   };
 
+  const handleConfirmCancel = async () => {
+    if (!ticket) return;
+    const trimmed = cancelReason.trim();
+    if (!trimmed || trimmed.length < 3) {
+      toast.warning("Vui lòng nhập lý do hủy phiếu (tối thiểu 3 ký tự)");
+      return;
+    }
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/tickets/${ticket.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "CANCEL", note: trimmed }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Không thể hủy phiếu kỹ thuật");
+      }
+      toast.success(`Đã hủy phiếu kỹ thuật ${ticket.code}`);
+      setShowCancelModal(false);
+      setCancelReason("");
+      onTicketUpdated?.();
+      await loadTicketDetail(ticket.id);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Lỗi khi hủy phiếu");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!ticket) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/tickets/${ticket.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Không thể xóa phiếu kỹ thuật");
+      }
+      const data = await res.json().catch(() => ({}));
+      toast.success(data.message || `Đã xóa vĩnh viễn phiếu ${ticket.code}`);
+      setShowDeleteModal(false);
+      onTicketUpdated?.();
+      onClose();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Lỗi khi xóa phiếu");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleRequestPartForTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ticket || !reqPartId || reqPartQty < 1) {
       toast.warning("Vui lòng chọn linh kiện và số lượng hợp lệ");
+      return;
+    }
+    if (ticket.status === "CANCELLED") {
+      toast.warning("Phiếu kỹ thuật này đã bị hủy, không thể tạo yêu cầu xuất linh kiện");
       return;
     }
     if (ticket.status === "COMPLETED" && !isSuperAdmin) {
@@ -296,6 +377,10 @@ export function TicketDetailModal({
   const handleUploadAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !ticket) return;
+    if (ticket.status === "CANCELLED") {
+      toast.warning("Phiếu kỹ thuật này đã bị hủy, không thể tạo yêu cầu xuất linh kiện");
+      return;
+    }
     if (ticket.status === "COMPLETED" && !isSuperAdmin) {
       toast.warning("Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc mới có quyền tải tài liệu");
       return;
@@ -336,6 +421,10 @@ export function TicketDetailModal({
 
   const handleSelectMediaFiles = async (urls: string[]) => {
     if (!ticket || urls.length === 0) return;
+    if (ticket.status === "CANCELLED") {
+      toast.warning("Phiếu kỹ thuật này đã bị hủy, không thể tạo yêu cầu xuất linh kiện");
+      return;
+    }
     if (ticket.status === "COMPLETED" && !isSuperAdmin) {
       toast.warning("Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc mới có quyền tải tài liệu");
       return;
@@ -371,6 +460,10 @@ export function TicketDetailModal({
 
   const handleDeleteAttachment = async (attId: string) => {
     if (!ticket) return;
+    if (ticket.status === "CANCELLED") {
+      toast.warning("Phiếu kỹ thuật này đã bị hủy, không thể tạo yêu cầu xuất linh kiện");
+      return;
+    }
     if (ticket.status === "COMPLETED" && !isSuperAdmin) {
       toast.warning("Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc mới có quyền xóa tài liệu");
       return;
@@ -444,6 +537,7 @@ export function TicketDetailModal({
           )
         }
         size="xl"
+        fixedHeight="min(640px, 82vh)"
       >
         {loading || !ticket ? (
           <Loading text="Đang tải hồ sơ phiếu kỹ thuật..." />
@@ -475,17 +569,38 @@ export function TicketDetailModal({
                   </div>
                 </div>
                 <div className="col-md-4">
-                  <div className="text-muted fw-semibold">Thiết bị & Counter hiện tại:</div>
-                  <div className="fw-bold text-primary">
-                    {ticket.equipment.model} (SN: {ticket.equipment.serialNumber})
-                  </div>
-                  <div>
-                    Counter:{" "}
-                    <strong className="font-monospace">
-                      {ticket.equipment.currentCounter?.toLocaleString("vi-VN") || 0}
-                    </strong>
-                  </div>
-                  <div className="text-danger-emphasis">
+                  {ticket.equipment ? (
+                    <>
+                      <div className="text-muted fw-semibold">Thiết bị & Counter hiện tại:</div>
+                      <div className="fw-bold text-primary">
+                        {ticket.equipment.model}
+                        {ticket.equipment.serialNumber ? ` (SN: ${ticket.equipment.serialNumber})` : ""}
+                      </div>
+                      <div>
+                        Counter:{" "}
+                        <strong className="font-monospace">
+                          {ticket.equipment.currentCounter?.toLocaleString("vi-VN") || 0}
+                        </strong>
+                      </div>
+                      {formatLocationPath(ticket.equipment as any) && (
+                        <div className="text-secondary small">
+                          <i className="fas fa-map-pin text-danger me-1"></i>
+                          {formatLocationPath(ticket.equipment as any)}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-muted fw-semibold">Loại phiếu:</div>
+                      <div className="fw-bold text-dark">
+                        <span className="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                          <i className="fas fa-file-alt text-primary me-1"></i>
+                          Phiếu dịch vụ
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  <div className="text-danger-emphasis mt-1">
                     <i className="fas fa-exclamation-circle me-1"></i>
                     {TICKET_TYPE_LABELS[ticket.type] || ticket.type}: {ticket.description}
                   </div>
@@ -544,6 +659,19 @@ export function TicketDetailModal({
                 </div>
               </div>
             </div>
+
+            {/* Cảnh báo trạng thái phiếu đã hủy */}
+            {isTicketCancelled && (
+              <div className="alert alert-warning border-warning d-flex align-items-center mb-3 py-2 px-3 small">
+                <i className="fas fa-ban text-danger fa-lg me-2"></i>
+                <div>
+                  <strong className="text-danger">Phiếu kỹ thuật này ĐÃ BỊ HỦY</strong>
+                  <div className="text-secondary mt-0.5">
+                    Phiếu đã dừng xử lý và bị khóa toàn bộ. Không thể phân công KTV, cập nhật tiến độ, xin linh kiện hoặc nghiệm thu hoàn thành phiếu.
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Thông báo nếu đã hoàn thành */}
             {isTicketCompleted && (
@@ -614,20 +742,52 @@ export function TicketDetailModal({
                 </li>
               </ul>
 
-              <div className="d-flex gap-2">
+              <div className="d-flex align-items-center gap-2 flex-wrap">
                 <a
                   href={`/tickets/${ticket.id}/print`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="btn btn-sm btn-outline-dark fw-bold d-flex align-items-center gap-1 shadow-sm px-3"
+                  className="btn btn-sm btn-outline-dark fw-bold d-flex align-items-center gap-1 shadow-sm px-2.5"
+                  style={{ height: "30px", fontSize: "12px" }}
                 >
                   <i className="fas fa-print text-primary"></i>
-                  <span>In Biên Bản (A4)</span>
+                  <span>In Biên bản (A4)</span>
                 </a>
+
+                {ticket.status !== "COMPLETED" && ticket.status !== "CANCELLED" && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-warning text-dark fw-semibold d-inline-flex align-items-center gap-1 shadow-2xs px-2.5"
+                    style={{ height: "30px", fontSize: "12px" }}
+                    onClick={() => {
+                      setCancelReason("");
+                      setShowCancelModal(true);
+                    }}
+                    title="Hủy phiếu kỹ thuật này"
+                  >
+                    <i className="fas fa-ban text-warning"></i>
+                    <span>Hủy phiếu</span>
+                  </button>
+                )}
+
+                {canDeleteTicket && (
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${ticket.status === "COMPLETED" ? "btn-outline-secondary opacity-50" : "btn-outline-danger"} fw-semibold d-inline-flex align-items-center gap-1 shadow-2xs px-2.5`}
+                    style={{ height: "30px", fontSize: "12px" }}
+                    onClick={() => setShowDeleteModal(true)}
+                    title={ticket.status === "COMPLETED" ? "Phiếu đã hoàn thành (Không thể xóa - Bấm để xem chi tiết)" : "Xóa vĩnh viễn phiếu tạo nhầm khỏi hệ thống"}
+                  >
+                    <i className="fas fa-trash-alt"></i>
+                    <span>Xóa phiếu</span>
+                  </button>
+                )}
+
                 <Link
                   href={`/tickets?ticketId=${ticket.id}`}
                   target="_blank"
                   className="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 shadow-sm"
+                  style={{ height: "30px", fontSize: "12px" }}
                   title="Mở toàn trang trong danh sách phiếu"
                 >
                   <i className="fas fa-external-link-alt"></i>
@@ -646,7 +806,7 @@ export function TicketDetailModal({
                       1. Điều phối KTV & Check-in GPS
                     </div>
                     <div className="card-body">
-                      {canAssign && (!isTicketCompleted || isSuperAdmin) ? (
+                      {canAssign && !isTicketCancelled && (!isTicketCompleted || isSuperAdmin) ? (
                         <div className="mb-3">
                           <label className="form-label small fw-bold">Kỹ thuật viên phụ trách</label>
                           <div className="input-group input-group-sm">
@@ -659,8 +819,8 @@ export function TicketDetailModal({
                               <option value="">-- Chọn KTV --</option>
                               {techList.map((t) => (
                                 <option key={t.id} value={t.id}>
-                                  {t.name} ({t.region || "Toàn vùng"}
-                                  {t.openTicketsCount != null ? ` - ${t.openTicketsCount} việc` : ""})
+                                  {t.name}
+                                  {t.openTicketsCount != null ? ` (${t.openTicketsCount} việc)` : ""}
                                 </option>
                               ))}
                             </select>
@@ -688,7 +848,7 @@ export function TicketDetailModal({
                               {ticket.assignee?.name || "Chưa phân công"}
                             </div>
                             <span className="badge bg-secondary-subtle text-secondary small">
-                              {isTicketCompleted ? "Phiếu đã đóng" : "Không có quyền giao việc"}
+                              {isTicketCancelled ? "Phiếu đã hủy" : isTicketCompleted ? "Phiếu đã đóng" : "Không có quyền giao việc"}
                             </span>
                           </div>
                         </div>
@@ -812,22 +972,34 @@ export function TicketDetailModal({
                       {ticket.status === "COMPLETED" && (
                         <span className="badge bg-success">Phiếu đã hoàn thành</span>
                       )}
+                      {ticket.status === "CANCELLED" && (
+                        <span className="badge bg-danger">Phiếu đã bị hủy</span>
+                      )}
                     </div>
                     <div className="card-body">
                       <div className="row g-3 align-items-end">
                         <div className="col-md-4">
-                          <label className="form-label small fw-bold">
-                            Chỉ số Counter khi đóng phiếu (&ge;{" "}
-                            {ticket.equipment.currentCounter?.toLocaleString("vi-VN") || 0})
-                          </label>
-                          <input
-                            type="number"
-                            className="form-control form-control-sm font-monospace mb-2"
-                            min={ticket.equipment.currentCounter || 0}
-                            value={counterAtCloseInput}
-                            disabled={isLocked}
-                            onChange={(e) => setCounterAtCloseInput(e.target.value)}
-                          />
+                          {ticket.equipment ? (
+                            <>
+                              <label className="form-label small fw-bold">
+                                Chỉ số Counter khi đóng phiếu (&ge;{" "}
+                                {ticket.equipment.currentCounter?.toLocaleString("vi-VN") || 0})
+                              </label>
+                              <input
+                                type="number"
+                                className="form-control form-control-sm font-monospace mb-2"
+                                min={ticket.equipment.currentCounter || 0}
+                                value={counterAtCloseInput}
+                                disabled={isLocked}
+                                onChange={(e) => setCounterAtCloseInput(e.target.value)}
+                              />
+                            </>
+                          ) : (
+                            <div className="p-2 mb-2 bg-light rounded border text-secondary small">
+                              <i className="fas fa-info-circle me-1 text-info"></i>
+                              Phiếu không gắn thiết bị: Không yêu cầu chốt chỉ số Counter.
+                            </div>
+                          )}
                           <label className="form-label small fw-bold">Ghi chú người ký nghiệm thu</label>
                           <input
                             type="text"
@@ -855,7 +1027,15 @@ export function TicketDetailModal({
                           />
                         </div>
                         <div className="col-md-3">
-                          {isTicketCompleted ? (
+                          {isTicketCancelled ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger w-100 py-2 fw-bold"
+                              disabled
+                            >
+                              <i className="fas fa-ban me-1"></i> Phiếu đã bị hủy (Khóa)
+                            </button>
+                          ) : isTicketCompleted ? (
                             isSuperAdmin ? (
                               <button
                                 type="button"
@@ -914,7 +1094,12 @@ export function TicketDetailModal({
             {/* Tab 2: Parts */}
             {activeTab === "parts" && (
               <div>
-                {isLocked ? (
+                {isTicketCancelled ? (
+                  <div className="alert alert-secondary py-2 px-3 small rounded border mb-3 d-flex align-items-center">
+                    <i className="fas fa-ban me-2 text-danger"></i>
+                    <span>Phiếu kỹ thuật này đã bị hủy. Tính năng xin xuất kho linh kiện đã bị khóa.</span>
+                  </div>
+                ) : isLocked ? (
                   <div className="alert alert-secondary py-2 px-3 small rounded border mb-3 d-flex align-items-center">
                     <i className="fas fa-lock me-2 text-secondary"></i>
                     <span>Phiếu kỹ thuật đã hoàn thành. Tính năng xin xuất kho linh kiện đã khóa (chỉ Giám đốc mới có quyền tạo yêu cầu).</span>
@@ -1030,7 +1215,12 @@ export function TicketDetailModal({
             {/* Tab 3: Attachments */}
             {activeTab === "attachments" && (
               <div>
-                {isLocked ? (
+                {isTicketCancelled ? (
+                  <div className="alert alert-secondary py-2 px-3 small rounded border mb-3 d-flex align-items-center">
+                    <i className="fas fa-ban me-2 text-danger"></i>
+                    <span>Phiếu kỹ thuật này đã bị hủy. Tính năng tải lên và đính kèm tài liệu đã bị khóa.</span>
+                  </div>
+                ) : isLocked ? (
                   <div className="alert alert-secondary py-2 px-3 small rounded border mb-3 d-flex align-items-center">
                     <i className="fas fa-lock me-2 text-secondary"></i>
                     <span>Phiếu kỹ thuật đã hoàn thành. Tính năng tải lên và xóa tài liệu/ảnh đã bị khóa.</span>
@@ -1284,6 +1474,159 @@ export function TicketDetailModal({
           title={`Chọn tài liệu / hình ảnh đính kèm (${TICKET_ATTACHMENT_KIND_LABELS[attachmentKind]?.label || attachmentKind})`}
         />
       )}
+
+      {/* Modal Hủy Phiếu Kỹ Thuật */}
+      <ModalShell
+        open={showCancelModal}
+        onClose={() => !cancelling && setShowCancelModal(false)}
+        title={
+          <div className="d-flex align-items-center gap-2 text-warning-emphasis">
+            <i className="fas fa-ban fs-5 text-warning"></i>
+            <span className="fw-bold">Hủy phiếu kỹ thuật {ticket?.code}</span>
+          </div>
+        }
+        size="md"
+        footer={
+          <div className="d-flex justify-content-end gap-2 w-100">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary px-3"
+              disabled={cancelling}
+              onClick={() => setShowCancelModal(false)}
+            >
+              Đóng
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-warning fw-bold px-3 d-inline-flex align-items-center gap-1.5"
+              disabled={cancelling || cancelReason.trim().length < 3}
+              onClick={handleConfirmCancel}
+            >
+              {cancelling ? (
+                <>
+                  <span className="spinner-border spinner-border-sm" role="status"></span>
+                  <span>Đang hủy...</span>
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-ban"></i>
+                  <span>Xác nhận Hủy phiếu</span>
+                </>
+              )}
+            </button>
+          </div>
+        }
+      >
+        {ticket && (
+          <div>
+            <div className="alert alert-warning py-2.5 px-3 small border-warning mb-3">
+              <div className="fw-bold mb-1">
+                <i className="fas fa-exclamation-triangle me-1"></i>Lưu ý khi Hủy phiếu:
+              </div>
+              <ul className="mb-0 ps-3">
+                <li>Phiếu sẽ được chuyển sang trạng thái <strong>ĐÃ HỦY (CANCELLED)</strong> và lưu vết kiểm toán.</li>
+                <li>Nếu máy photocopy đang ở trạng thái báo hỏng, hệ thống sẽ tự động khôi phục máy về <strong>Hoạt động</strong>.</li>
+                <li>Không thể hủy nếu phiếu đã có linh kiện thực xuất từ kho.</li>
+              </ul>
+            </div>
+
+            <div className="mb-2">
+              <label className="form-label small fw-bold text-dark">
+                Lý do hủy phiếu <span className="text-danger">*</span>
+              </label>
+              <textarea
+                className="form-control form-control-sm"
+                rows={3}
+                placeholder="VD: Khách hàng tự lấy giấy kẹt xong, Tạo trùng phiếu, Khách xin hoãn sang tuần sau..."
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                autoFocus
+              />
+              <div className="form-text text-muted" style={{ fontSize: "11px" }}>
+                Nhập tối thiểu 3 ký tự giải trình lý do dừng xử lý phiếu.
+              </div>
+            </div>
+          </div>
+        )}
+      </ModalShell>
+
+      {/* Modal Xóa Vĩnh Viễn Phiếu Kỹ Thuật (Hard Delete) */}
+      <ModalShell
+        open={showDeleteModal}
+        onClose={() => !deleting && setShowDeleteModal(false)}
+        title={
+          <div className="d-flex align-items-center gap-2 text-danger">
+            <i className="fas fa-exclamation-triangle fs-5"></i>
+            <span className="fw-bold">Xác nhận Xóa vĩnh viễn phiếu {ticket?.code}</span>
+          </div>
+        }
+        size="md"
+        footer={
+          <div className="d-flex justify-content-end gap-2 w-100">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary px-3"
+              disabled={deleting}
+              onClick={() => setShowDeleteModal(false)}
+            >
+              {ticket?.status === "COMPLETED" ? "Đóng" : "Hủy bỏ"}
+            </button>
+            {ticket?.status !== "COMPLETED" && (
+              <button
+                type="button"
+                className="btn btn-sm btn-danger fw-bold px-3 d-inline-flex align-items-center gap-1.5"
+                disabled={deleting}
+                onClick={handleConfirmDelete}
+              >
+                {deleting ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm" role="status"></span>
+                    <span>Đang xóa...</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-trash-alt"></i>
+                    <span>Xác nhận Xóa vĩnh viễn</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        }
+      >
+        {ticket && (
+          <div>
+            {ticket.status === "COMPLETED" ? (
+              <div className="alert alert-warning py-2.5 px-3 small border-warning mb-3">
+                <div className="fw-bold fs-6 mb-1 text-dark">
+                  <i className="fas fa-lock me-1 text-warning"></i>Phiếu kỹ thuật đã hoàn thành (COMPLETED)
+                </div>
+                <div className="text-secondary">
+                  Phiếu này <strong>không thể xóa</strong> để đảm bảo toàn vẹn dữ liệu: đã có biên bản nghiệm thu, chốt chỉ số công-tơ (Counter), linh kiện thay thế và đối soát số liệu kế toán.
+                </div>
+              </div>
+            ) : (
+              <div className="alert alert-danger py-2.5 px-3 small border-danger mb-3">
+                <div className="fw-bold fs-6 mb-1">
+                  <i className="fas fa-skull-crossbones me-1"></i>Hành động này KHÔNG THỂ HOÀN TÁC!
+                </div>
+                <div>
+                  Phiếu kỹ thuật <strong>{ticket.code}</strong> sẽ bị xóa hoàn toàn khỏi cơ sở dữ liệu.
+                </div>
+              </div>
+            )}
+
+            <div className="p-2.5 bg-light rounded border small text-secondary">
+              <div className="fw-bold text-dark mb-1">Quy định an toàn toàn vẹn hệ thống:</div>
+              <ul className="mb-0 ps-3">
+                <li>Chỉ áp dụng khi tạo nhầm phiếu hoặc phiếu rác chưa xử lý hiện trường.</li>
+                <li>Hệ thống <strong>tự động chặn xóa</strong> nếu phiếu đã xuất linh kiện kho, đã thay linh kiện, đã chốt Counter hoặc KTV đã Check-in GPS.</li>
+                <li>Mọi thao tác xóa đều được ghi nhận vào Nhật ký kiểm toán (Audit Log) của Giám đốc.</li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </ModalShell>
     </>
   );
 }

@@ -312,7 +312,7 @@ model Contract {
 model Equipment {
   id             String             @id @default(cuid())
   code           String?            @unique // Mã quản lý thiết bị (VD: TB-2026-0001)
-  serialNumber   String             @unique
+  serialNumber   String?            @unique // Số Serial Number (tùy chọn, không bắt buộc)
   qrCode         String             @unique @default(cuid()) // Mã QR/Barcode duy nhất
   model          String
   brand          String? // Hãng sản xuất (Ricoh, Canon, Toshiba, Xerox, HP...)
@@ -395,8 +395,8 @@ model Ticket {
   code              String         @unique // VD: TK-2026-000123
   customerId        String
   customer          Customer       @relation(fields: [customerId], references: [id])
-  equipmentId       String
-  equipment         Equipment      @relation(fields: [equipmentId], references: [id])
+  equipmentId       String?
+  equipment         Equipment?     @relation(fields: [equipmentId], references: [id])
   assigneeId        String? // Kỹ thuật viên phụ trách
   assignee          User?          @relation("TicketAssignee", fields: [assigneeId], references: [id])
   creatorId         String?

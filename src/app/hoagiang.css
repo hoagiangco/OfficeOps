@@ -2332,3 +2332,9 @@ a {
   }
 }
 
+/* Utility for Flexbox shrink prevention */
+.min-w-0 {
+  min-width: 0 !important;
+}
+
+

@@ -6,7 +6,7 @@ import Link from "next/link";
 interface EquipmentLabelData {
   id: string;
   code: string | null;
-  serialNumber: string;
+  serialNumber: string | null;
   qrCode: string;
   model: string;
   brand: string | null;
@@ -170,10 +170,12 @@ function EquipmentLabelPrintContent({
                       {equipment.brand ? `${equipment.brand} ` : ""}{equipment.model}
                     </div>
 
-                    <div className="d-flex gap-1 mb-1">
-                      <span className="text-muted">Serial:</span>
-                      <strong className="font-monospace text-dark">{equipment.serialNumber}</strong>
-                    </div>
+                    {equipment.serialNumber && (
+                      <div className="d-flex gap-1 mb-1">
+                        <span className="text-muted">Serial:</span>
+                        <strong className="font-monospace text-dark">{equipment.serialNumber}</strong>
+                      </div>
+                    )}
 
                     {equipment.code && (
                       <div className="d-flex gap-1 mb-1">

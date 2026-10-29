@@ -248,7 +248,7 @@ export default async function DashboardPage() {
     // 5. Phiếu chờ điều phối KTV
     canDispatch ? prisma.ticket.count({ where: { status: "PENDING" } }) : 0,
     // 6. Tổng phiếu đang xử lý toàn hệ thống
-    canTicket && role !== "FIELD_TECH"
+    canTicket && (role !== "FIELD_TECH" || canDispatch)
       ? prisma.ticket.count({
           where: { status: { notIn: ["COMPLETED", "CANCELLED"] } },
         })
@@ -277,11 +277,11 @@ export default async function DashboardPage() {
     canAdmin ? prisma.user.count() : 0,
   ]);
 
-  // Cấu hình các cảnh báo thuộc Alert Center:
-  // NGUYÊN TẮC: Chức năng nào user không có quyền -> ẨN LUÔN KHỎI KHUNG CẢNH BÁO
+  // Cấu hình các cảnh báo thuộc Alert Center dựa trực tiếp trên quyền thực tế của người dùng:
+  // NGUYÊN TẮC: Có quyền nào thì hiển thị cảnh báo của phân hệ đó, không phụ thuộc cứng vào tên Role
   const activeAlerts: AlertItemConfig[] = [];
 
-  if (role === "FIELD_TECH") {
+  if (role === "FIELD_TECH" && !canDispatch) {
     if (canTicket) {
       activeAlerts.push({
         id: "ft-open",
@@ -326,10 +326,10 @@ export default async function DashboardPage() {
         subClass: "text-success",
       });
     }
-  } else if (role === "DISPATCHER") {
+  } else {
     if (canDispatch) {
       activeAlerts.push({
-        id: "disp-pending",
+        id: "alert-dispatch",
         href: "/dispatch",
         icon: "fas fa-bell",
         borderClass: "border-left-danger",
@@ -340,23 +340,20 @@ export default async function DashboardPage() {
             : "Tất cả phiếu đã được phân công KTV",
         sub:
           pendingDispatchCount > 0
-            ? "Cần phân công kỹ thuật viên ngay"
+            ? "Cần chỉ định kỹ thuật viên ngay"
             : "Tiến độ điều phối hoàn thành",
         subClass: pendingDispatchCount > 0 ? "text-danger fw-bold" : "text-muted",
       });
     }
 
-    if (canStockApprove) {
+    if (canStockApprove && pendingStockIssuesCount > 0) {
       activeAlerts.push({
-        id: "disp-stock",
+        id: "alert-stock-approve",
         href: "/stock-issues",
         icon: "fas fa-boxes",
         borderClass: "border-left-warning",
         iconClass: "text-warning",
-        title:
-          pendingStockIssuesCount > 0
-            ? `${pendingStockIssuesCount} yêu cầu xuất kho kỹ thuật chờ duyệt`
-            : "Kho vật tư ổn định",
+        title: `${pendingStockIssuesCount} yêu cầu xuất kho kỹ thuật chờ duyệt`,
         sub: "Duyệt xuất kho FIFO",
         subClass: "text-warning fw-bold",
       });
@@ -364,20 +361,36 @@ export default async function DashboardPage() {
 
     if (canTicket) {
       activeAlerts.push({
-        id: "disp-open",
+        id: "alert-ticket",
         href: "/tickets",
         icon: "fas fa-spinner fa-spin",
         borderClass: "border-left-info",
         iconClass: "text-info",
-        title: `${openTicketsCount} phiếu kỹ thuật đang xử lý hiện trường`,
+        title:
+          openTicketsCount > 0
+            ? `${openTicketsCount} phiếu kỹ thuật đang xử lý`
+            : "Không có phiếu chờ xử lý",
         sub: "Giám sát tiến độ & SLA",
         subClass: "text-muted",
       });
     }
-  } else if (role === "ADMIN") {
+
+    if (canEquipment && faultyEquipmentCount > 0) {
+      activeAlerts.push({
+        id: "alert-faulty",
+        href: "/equipment?status=FAULTY",
+        icon: "fas fa-calendar-alt",
+        borderClass: "border-left-warning",
+        iconClass: "text-warning",
+        title: `${faultyEquipmentCount} máy đang báo lỗi / cần bảo trì`,
+        sub: "Cần lên lịch kỹ thuật viên",
+        subClass: "text-warning fw-bold",
+      });
+    }
+
     if (canFinance) {
       activeAlerts.push({
-        id: "admin-invoice",
+        id: "alert-invoice",
         href: "/finance/invoices",
         icon: "fas fa-receipt",
         borderClass: "border-left-success",
@@ -393,7 +406,7 @@ export default async function DashboardPage() {
 
     if (canContract) {
       activeAlerts.push({
-        id: "admin-contract",
+        id: "alert-contract",
         href: "/contracts",
         icon: "fas fa-file-contract",
         borderClass: "border-left-info",
@@ -401,88 +414,6 @@ export default async function DashboardPage() {
         title: `${activeContractCount} hợp đồng dịch vụ đang hiệu lực`,
         sub: "Kỳ chốt cước & thanh toán",
         subClass: "text-muted",
-      });
-    }
-
-    if (canCustomer) {
-      activeAlerts.push({
-        id: "admin-customer",
-        href: "/customers",
-        icon: "fas fa-building",
-        borderClass: "border-left-warning",
-        iconClass: "text-warning",
-        title: `${customerCount} đối tác khách hàng`,
-        sub: "Thông tin thuế & thanh toán",
-        subClass: "text-muted",
-      });
-    }
-  } else {
-    // SUPER_ADMIN (Giám đốc)
-    if (pendingDispatchCount > 0 && canDispatch) {
-      activeAlerts.push({
-        id: "sa-dispatch",
-        href: "/dispatch",
-        icon: "fas fa-bell",
-        borderClass: "border-left-danger",
-        iconClass: "text-danger",
-        title: `${pendingDispatchCount} phiếu kỹ thuật đang chờ điều phối KTV`,
-        sub: "Cần chỉ định kỹ thuật viên",
-        subClass: "text-danger fw-bold",
-      });
-    }
-
-    if (canTicket) {
-      activeAlerts.push({
-        id: "sa-ticket",
-        href: "/tickets",
-        icon: "fas fa-spinner fa-spin",
-        borderClass: "border-left-info",
-        iconClass: "text-info",
-        title:
-          openTicketsCount > 0
-            ? `${openTicketsCount} phiếu kỹ thuật đang xử lý`
-            : "Không có phiếu chờ xử lý",
-        sub: "Dịch vụ & sửa chữa kỹ thuật",
-        subClass: "text-muted",
-      });
-    }
-
-    if (canEquipment) {
-      if (faultyEquipmentCount > 0) {
-        activeAlerts.push({
-          id: "sa-faulty",
-          href: "/equipment?status=FAULTY",
-          icon: "fas fa-calendar-alt",
-          borderClass: "border-left-warning",
-          iconClass: "text-warning",
-          title: `${faultyEquipmentCount} máy đang báo lỗi / cần bảo trì`,
-          sub: "Cần lên lịch kỹ thuật viên",
-          subClass: "text-warning fw-bold",
-        });
-      }
-
-      activeAlerts.push({
-        id: "sa-active-eq",
-        href: "/equipment?status=ACTIVE",
-        icon: "fas fa-check-double",
-        borderClass: "border-left-success",
-        iconClass: "text-success",
-        title: `${activeEquipmentCount} máy đang vận hành bình thường`,
-        sub: "Hiệu suất hoạt động tốt",
-        subClass: "text-success",
-      });
-    }
-
-    if (unpaidInvoiceCount > 0 && canFinance) {
-      activeAlerts.push({
-        id: "sa-unpaid",
-        href: "/finance/invoices",
-        icon: "fas fa-receipt",
-        borderClass: "border-left-success",
-        iconClass: "text-success",
-        title: `${unpaidInvoiceCount} hóa đơn cước đang chờ thu`,
-        sub: "Dòng tiền & thu hồi công nợ",
-        subClass: "text-danger fw-bold",
       });
     }
   }
@@ -589,8 +520,8 @@ export default async function DashboardPage() {
         </span>
       </div>
 
-      {/* Giao diện Thẻ Chức Năng theo Vai Trò */}
-      {role === "FIELD_TECH" && (
+      {/* Giao diện Thẻ Chức Năng theo Phân Quyền Thực Tế (Chức năng có quyền -> Mở, không có quyền -> Đã khóa) */}
+      {role === "FIELD_TECH" && !canDispatch && !isCustomized ? (
         <div className="row g-2">
           {/* Card 1: Phiếu của tôi */}
           <StatCardItem
@@ -658,11 +589,21 @@ export default async function DashboardPage() {
             lockedReason="Chưa cấp quyền bảo trì thiết bị"
           />
         </div>
-      )}
-
-      {role === "DISPATCHER" && (
+      ) : (
+        /* Hiển thị đầy đủ 12 phân hệ chức năng: Mở khóa / Đã khóa tự động chính xác theo quyền được cấp */
         <div className="row g-2">
-          {/* Card 1: Bảng Điều phối */}
+          {/* 1. Phiếu kỹ thuật */}
+          <StatCardItem
+            title="Phiếu kỹ thuật"
+            value={canTicket ? openTicketsCount : 0}
+            footer="Xử lý ngay"
+            href="/tickets"
+            accent="danger"
+            hasPerm={canTicket}
+            lockedReason="Chưa cấp quyền phiếu kỹ thuật"
+          />
+
+          {/* 2. Bảng Điều phối */}
           <StatCardItem
             title="Bảng Điều phối"
             value={canDispatch ? pendingDispatchCount : 0}
@@ -673,18 +614,7 @@ export default async function DashboardPage() {
             lockedReason="Chưa cấp quyền điều phối KTV"
           />
 
-          {/* Card 2: Phiếu kỹ thuật */}
-          <StatCardItem
-            title="Phiếu kỹ thuật"
-            value={canTicket ? openTicketsCount : 0}
-            footer="Đang xử lý"
-            href="/tickets"
-            accent="info"
-            hasPerm={canTicket}
-            lockedReason="Chưa cấp quyền phiếu kỹ thuật"
-          />
-
-          {/* Card 3: Duyệt xuất kho */}
+          {/* 3. Duyệt xuất kho */}
           <StatCardItem
             title="Duyệt xuất kho"
             value={canStockApprove ? pendingStockIssuesCount : 0}
@@ -695,55 +625,51 @@ export default async function DashboardPage() {
             lockedReason="Chưa cấp quyền duyệt xuất kho"
           />
 
-          {/* Card 4: Kho linh kiện */}
+          {/* 4. Kho linh kiện */}
           <StatCardItem
             title="Kho linh kiện"
             value={canInventory ? "Vật tư" : 0}
-            footer="Tồn kho & Định mức"
+            footer="Tồn kho & Lô FIFO"
             href="/inventory"
-            accent="primary"
+            accent="warning"
             hasPerm={canInventory}
-            lockedReason="Chưa cấp quyền xem kho vật tư"
+            lockedReason="Chưa cấp quyền xem kho linh kiện"
           />
 
-          {/* Card 5: Thiết bị */}
+          {/* 5. Thiết bị */}
           <StatCardItem
             title="Thiết bị"
             value={canEquipment ? equipmentCount : 0}
-            footer={canEquipment ? `${faultyEquipmentCount} máy cần sửa` : "Tài sản máy"}
+            footer={canEquipment ? `${faultyEquipmentCount} máy cần sửa` : "Tài sản cho thuê"}
             href="/equipment"
             accent="primary"
             hasPerm={canEquipment}
             lockedReason="Chưa cấp quyền xem thiết bị"
           />
 
-          {/* Card 6: Khách hàng */}
+          {/* 6. Lịch bảo trì */}
+          <StatCardItem
+            title="Lịch bảo trì"
+            value={canMaintenance ? "Định kỳ" : 0}
+            footer="Quét Cron tự động"
+            href="/maintenance"
+            accent="primary"
+            hasPerm={canMaintenance}
+            lockedReason="Chưa cấp quyền bảo trì thiết bị"
+          />
+
+          {/* 7. Khách hàng */}
           <StatCardItem
             title="Khách hàng"
             value={canCustomer ? customerCount : 0}
-            footer="Đối tác & Địa điểm"
+            footer="Đối tác doanh nghiệp"
             href="/customers"
-            accent="success"
+            accent="info"
             hasPerm={canCustomer}
             lockedReason="Chưa cấp quyền xem khách hàng"
           />
-        </div>
-      )}
 
-      {role === "ADMIN" && (
-        <div className="row g-2">
-          {/* Card 1: Hóa đơn cước */}
-          <StatCardItem
-            title="Hóa đơn cước"
-            value={canFinance ? invoiceCount : 0}
-            footer={canFinance ? `${unpaidInvoiceCount} chờ thu` : "Công nợ"}
-            href="/finance/invoices"
-            accent="success"
-            hasPerm={canFinance}
-            lockedReason="Chưa cấp quyền quản lý hóa đơn"
-          />
-
-          {/* Card 2: Hợp đồng */}
+          {/* 8. Hợp đồng */}
           <StatCardItem
             title="Hợp đồng"
             value={canContract ? activeContractCount : 0}
@@ -754,40 +680,18 @@ export default async function DashboardPage() {
             lockedReason="Chưa cấp quyền quản lý hợp đồng"
           />
 
-          {/* Card 3: Khách hàng */}
+          {/* 9. Hóa đơn cước */}
           <StatCardItem
-            title="Khách hàng"
-            value={canCustomer ? customerCount : 0}
-            footer="Đối tác doanh nghiệp"
-            href="/customers"
-            accent="primary"
-            hasPerm={canCustomer}
-            lockedReason="Chưa cấp quyền xem khách hàng"
+            title="Hóa đơn cước"
+            value={canFinance ? invoiceCount : 0}
+            footer={canFinance ? `${unpaidInvoiceCount} chờ thu` : "Công nợ"}
+            href="/finance/invoices"
+            accent="success"
+            hasPerm={canFinance}
+            lockedReason="Chưa cấp quyền quản lý hóa đơn"
           />
 
-          {/* Card 4: Thiết bị */}
-          <StatCardItem
-            title="Thiết bị"
-            value={canEquipment ? equipmentCount : 0}
-            footer="Tài sản cho thuê"
-            href="/equipment"
-            accent="primary"
-            hasPerm={canEquipment}
-            lockedReason="Chưa cấp quyền xem thiết bị"
-          />
-
-          {/* Card 5: Kho linh kiện */}
-          <StatCardItem
-            title="Kho linh kiện"
-            value={canInventory ? "Vật tư" : 0}
-            footer="Theo dõi xuất nhập"
-            href="/inventory"
-            accent="warning"
-            hasPerm={canInventory}
-            lockedReason="Chưa cấp quyền xem kho linh kiện"
-          />
-
-          {/* Card 6: Báo cáo */}
+          {/* 10. Báo cáo tài chính */}
           <StatCardItem
             title="Báo cáo"
             value={canReports ? "Doanh thu" : 0}
@@ -795,132 +699,29 @@ export default async function DashboardPage() {
             href="/reports"
             accent="success"
             hasPerm={canReports}
-            lockedReason="Chưa cấp quyền xem báo cáo tài chính"
-          />
-        </div>
-      )}
-
-      {role === "SUPER_ADMIN" && (
-        /* SUPER_ADMIN (Giám đốc): Hiển thị toàn cảnh 12 module cốt lõi của hệ thống */
-        <div className="row g-2">
-          {/* 1. Phiếu kỹ thuật */}
-          <StatCardItem
-            title="Phiếu kỹ thuật"
-            value={openTicketsCount}
-            footer="Xử lý ngay"
-            href="/tickets"
-            accent="danger"
-            hasPerm={canTicket}
-          />
-
-          {/* 2. Bảng Điều phối */}
-          <StatCardItem
-            title="Bảng Điều phối"
-            value={pendingDispatchCount}
-            footer="Chờ giao việc"
-            href="/dispatch"
-            accent="danger"
-            hasPerm={canDispatch}
-          />
-
-          {/* 3. Duyệt xuất kho */}
-          <StatCardItem
-            title="Duyệt xuất kho"
-            value={pendingStockIssuesCount}
-            footer="Xuất kho FIFO"
-            href="/stock-issues"
-            accent="warning"
-            hasPerm={canStockApprove}
-          />
-
-          {/* 4. Kho linh kiện */}
-          <StatCardItem
-            title="Kho linh kiện"
-            value="Vật tư"
-            footer="Tồn kho & Lô FIFO"
-            href="/inventory"
-            accent="warning"
-            hasPerm={canInventory}
-          />
-
-          {/* 5. Thiết bị */}
-          <StatCardItem
-            title="Thiết bị"
-            value={equipmentCount}
-            footer={`${faultyEquipmentCount} máy cần sửa`}
-            href="/equipment"
-            accent="primary"
-            hasPerm={canEquipment}
-          />
-
-          {/* 6. Lịch bảo trì */}
-          <StatCardItem
-            title="Lịch bảo trì"
-            value="Định kỳ"
-            footer="Quét Cron tự động"
-            href="/maintenance"
-            accent="primary"
-            hasPerm={canMaintenance}
-          />
-
-          {/* 7. Khách hàng */}
-          <StatCardItem
-            title="Khách hàng"
-            value={customerCount}
-            footer="Đối tác doanh nghiệp"
-            href="/customers"
-            accent="info"
-            hasPerm={canCustomer}
-          />
-
-          {/* 8. Hợp đồng */}
-          <StatCardItem
-            title="Hợp đồng"
-            value={activeContractCount}
-            footer="Đang hiệu lực"
-            href="/contracts"
-            accent="info"
-            hasPerm={canContract}
-          />
-
-          {/* 9. Hóa đơn cước */}
-          <StatCardItem
-            title="Hóa đơn cước"
-            value={invoiceCount}
-            footer={`${unpaidInvoiceCount} chờ thu`}
-            href="/finance/invoices"
-            accent="success"
-            hasPerm={canFinance}
-          />
-
-          {/* 10. Báo cáo tài chính */}
-          <StatCardItem
-            title="Báo cáo"
-            value="Doanh thu"
-            footer="Phân tích cước"
-            href="/reports"
-            accent="success"
-            hasPerm={canReports}
+            lockedReason="Chưa cấp quyền xem báo cáo"
           />
 
           {/* 11. Quản trị người dùng */}
           <StatCardItem
             title="Tài khoản"
-            value={userCount}
+            value={canAdmin ? userCount : 0}
             footer="Quản trị người dùng"
             href="/admin"
             accent="danger"
             hasPerm={canAdmin}
+            lockedReason="Chưa cấp quyền quản trị tài khoản"
           />
 
           {/* 12. Nhật ký hệ thống */}
           <StatCardItem
             title="Nhật ký"
-            value="Audit"
+            value={canAudit ? "Audit" : 0}
             footer="Truy vết thao tác"
             href="/admin/audit-logs"
             accent="secondary"
             hasPerm={canAudit}
+            lockedReason="Chưa cấp quyền xem nhật ký"
           />
         </div>
       )}

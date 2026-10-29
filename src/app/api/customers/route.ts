@@ -31,6 +31,85 @@ function generateCustomerCode(): string {
   return `KH${year}${rand}`;
 }
 
+/**
+ * Tách tiền tố chữ và phần số để so sánh tự nhiên (Natural alphanumeric sort)
+ * Ví dụ: "KH09" -> prefix: "KH", num: 9
+ *       "KH10" -> prefix: "KH", num: 10
+ *       "KH11" -> prefix: "KH", num: 11
+ *       "KH100" -> prefix: "KH", num: 100
+ * Đảm bảo KH11 luôn đứng sau KH10 và trước KH100 thay vì nhảy vọt từ 10 lên 100 do sắp xếp chuỗi thuần túy.
+ */
+function parseCustomerCode(code?: string | null) {
+  if (!code || !code.trim()) {
+    return { prefix: "\uffff", num: Infinity, suffix: "", raw: "" };
+  }
+  const trimmed = code.trim();
+  const match = trimmed.match(/^([^\d]*)(\d+)(.*)$/);
+  if (match) {
+    const cleanPrefix = match[1].replace(/[-_.\s]/g, "").toUpperCase();
+    let numVal = Infinity;
+    try {
+      numVal = Number(BigInt(match[2]));
+    } catch {
+      numVal = parseInt(match[2], 10) || Infinity;
+    }
+    return {
+      prefix: cleanPrefix,
+      num: numVal,
+      suffix: match[3],
+      raw: trimmed,
+    };
+  }
+  return { prefix: trimmed.toUpperCase(), num: Infinity, suffix: "", raw: trimmed };
+}
+
+function compareCustomerCodes(
+  a?: string | null,
+  b?: string | null,
+  order: "asc" | "desc" = "asc"
+): number {
+  if (!a && !b) return 0;
+  if (!a || !a.trim()) return 1; // null hoặc rỗng luôn xếp cuối
+  if (!b || !b.trim()) return -1;
+
+  const pa = parseCustomerCode(a);
+  const pb = parseCustomerCode(b);
+
+  let cmp = pa.prefix.localeCompare(pb.prefix, "vi", { sensitivity: "base" });
+  if (cmp === 0) {
+    if (pa.num !== pb.num) {
+      cmp = pa.num - pb.num;
+    } else {
+      cmp = pa.suffix.localeCompare(pb.suffix, "vi", { sensitivity: "base" });
+      if (cmp === 0) {
+        cmp = pa.raw.localeCompare(pb.raw, "vi");
+      }
+    }
+  }
+
+  return order === "desc" ? -cmp : cmp;
+}
+
+function compareCustomerItems(
+  a: { code?: string | null; name: string; createdAt?: Date | string | null },
+  b: { code?: string | null; name: string; createdAt?: Date | string | null },
+  order: "asc" | "desc" = "desc"
+): number {
+  const codeCmp = compareCustomerCodes(a.code, b.code, order);
+  if (codeCmp !== 0) return codeCmp;
+
+  // Nếu trùng mã hoặc cùng chưa có mã: nhập sau hiện trước (desc)
+  if (a.createdAt && b.createdAt) {
+    const timeA = new Date(a.createdAt).getTime();
+    const timeB = new Date(b.createdAt).getTime();
+    if (timeA !== timeB) {
+      return order === "desc" ? timeB - timeA : timeA - timeB;
+    }
+  }
+
+  return a.name.localeCompare(b.name, "vi");
+}
+
 export const GET = withErrors(async (req: Request) => {
   const s = await requirePermission("customer:view");
   if (s instanceof NextResponse) return s;
@@ -42,6 +121,8 @@ export const GET = withErrors(async (req: Request) => {
   const status = url.searchParams.get("status") || undefined;
   const equipFilter = url.searchParams.get("equipFilter") || undefined;
   const debtFilter = url.searchParams.get("debtFilter") || undefined;
+  const sortBy = url.searchParams.get("sortBy") || "code";
+  const sortOrder = (url.searchParams.get("sortOrder") === "asc" ? "asc" : "desc") as "asc" | "desc";
 
   const { page, pageSize, q } = parseQuery(req, pagingSchema);
 
@@ -82,57 +163,74 @@ export const GET = withErrors(async (req: Request) => {
 
   const where = andConditions.length > 0 ? { AND: andConditions } : {};
 
-  const [items, total, groupStats, debtInvoices, activeCount, totalEquipCount, totalAll] = await Promise.all([
-    prisma.customer.findMany({
-      where,
+  const customerIncludes = {
+    _count: {
+      select: {
+        equipment: true,
+        contracts: true,
+        branches: true,
+        tickets: true,
+        invoices: true,
+      },
+    },
+    branches: {
       include: {
-        _count: {
-          select: {
-            equipment: true,
-            contracts: true,
-            branches: true,
-            tickets: true,
-            invoices: true,
-          },
-        },
-        branches: {
+        buildings: {
           include: {
-            buildings: {
-              include: {
-                departments: true,
-              },
-            },
+            departments: true,
           },
         },
-        equipment: {
+      },
+    },
+    equipment: {
+      select: {
+        id: true,
+        code: true,
+        model: true,
+        brand: true,
+        type: true,
+        group: true,
+        relationType: true,
+        serialNumber: true,
+        status: true,
+        currentCounter: true,
+        locationNote: true,
+        notes: true,
+        healthScore: true,
+        baseQuota: true,
+        overagePrice: true,
+        warrantyUntil: true,
+        categoryId: true,
+        customerId: true,
+        warehouseId: true,
+        contractId: true,
+        branchId: true,
+        buildingId: true,
+        departmentId: true,
+        category: {
           select: {
             id: true,
-            code: true,
-            model: true,
-            brand: true,
-            type: true,
-            group: true,
-            relationType: true,
-            serialNumber: true,
-            status: true,
-            currentCounter: true,
-            locationNote: true,
-            branchId: true,
-            buildingId: true,
-            departmentId: true,
-            category: {
-              select: {
-                id: true,
-                name: true,
-              },
-            },
-            branch: {
-              select: {
-                id: true,
-                name: true,
-                address: true,
-              },
-            },
+            name: true,
+          },
+        },
+        branch: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+          },
+        },
+        building: {
+          select: {
+            id: true,
+            name: true,
+            branch: { select: { id: true, name: true } },
+          },
+        },
+        department: {
+          select: {
+            id: true,
+            name: true,
             building: {
               select: {
                 id: true,
@@ -140,27 +238,68 @@ export const GET = withErrors(async (req: Request) => {
                 branch: { select: { id: true, name: true } },
               },
             },
-            department: {
-              select: {
-                id: true,
-                name: true,
-                building: {
-                  select: {
-                    id: true,
-                    name: true,
-                    branch: { select: { id: true, name: true } },
-                  },
-                },
-              },
-            },
           },
         },
       },
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.customer.count({ where }),
+    },
+  };
+
+  let items: any[] = [];
+  let total = 0;
+
+  if (sortBy === "code") {
+    // Tách tiền tố và số để sắp xếp tự nhiên chuẩn xác (Natural alphanumeric sort)
+    // Ví dụ: KH09 -> KH10 -> KH11 -> ... -> KH99 -> KH100 thay vì nhảy vọt từ 10 lên 100
+    const matchingCustomers = await prisma.customer.findMany({
+      where,
+      select: { id: true, code: true, name: true, createdAt: true },
+    });
+
+    total = matchingCustomers.length;
+    matchingCustomers.sort((a, b) => compareCustomerItems(a, b, sortOrder));
+
+    const pageIds = matchingCustomers
+      .slice((page - 1) * pageSize, page * pageSize)
+      .map((c) => c.id);
+
+    if (pageIds.length > 0) {
+      const pageRecords = await prisma.customer.findMany({
+        where: { id: { in: pageIds } },
+        include: customerIncludes,
+      });
+
+      const map = new Map(pageRecords.map((r) => [r.id, r]));
+      items = pageIds.map((id) => map.get(id)).filter(Boolean);
+    }
+  } else {
+    let orderBy: any = { createdAt: "desc" };
+    if (sortBy === "name") {
+      orderBy = [
+        { name: sortOrder },
+        { id: "asc" },
+      ];
+    } else if (sortBy === "createdAt") {
+      orderBy = { createdAt: sortOrder };
+    } else if (sortBy === "status") {
+      orderBy = { status: sortOrder };
+    }
+
+    const [dbItems, dbTotal] = await Promise.all([
+      prisma.customer.findMany({
+        where,
+        include: customerIncludes,
+        orderBy,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.customer.count({ where }),
+    ]);
+
+    items = dbItems;
+    total = dbTotal;
+  }
+
+  const [groupStats, debtInvoices, activeCount, totalEquipCount, totalAll] = await Promise.all([
     prisma.customer.groupBy({
       by: ["group"],
       _count: { _all: true },

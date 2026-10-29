@@ -16,7 +16,7 @@ interface PartOption {
 interface TicketOption {
   id: string;
   code: string;
-  equipment: { serialNumber: string; model: string };
+  equipment: { serialNumber?: string | null; model: string };
 }
 
 interface StockIssueItem {
@@ -33,7 +33,7 @@ interface StockIssueItem {
   ticket: {
     id: string;
     code: string;
-    equipment: { serialNumber: string; model: string };
+    equipment: { serialNumber?: string | null; model: string };
   } | null;
   items: {
     id: string;
@@ -292,7 +292,8 @@ export default function StockIssuesPage() {
                           <div>
                             <span className="font-monospace fw-bold">{iss.ticket.code}</span>
                             <div className="text-muted" style={{ fontSize: "0.73rem" }}>
-                              {iss.ticket.equipment.model} #{iss.ticket.equipment.serialNumber}
+                              {iss.ticket.equipment.model}
+                              {iss.ticket.equipment.serialNumber ? ` #${iss.ticket.equipment.serialNumber}` : ""}
                             </div>
                           </div>
                         ) : (
@@ -405,7 +406,8 @@ export default function StockIssuesPage() {
                 <option value="">-- Không gắn phiếu kỹ thuật --</option>
                 {tickets.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.code} – {t.equipment?.model} (#{t.equipment?.serialNumber})
+                    {t.code} – {t.equipment?.model}
+                    {t.equipment?.serialNumber ? ` (#${t.equipment.serialNumber})` : ""}
                   </option>
                 ))}
               </select>

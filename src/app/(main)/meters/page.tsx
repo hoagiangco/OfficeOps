@@ -24,7 +24,7 @@ interface MeterLogItem {
   rejectionReason?: string | null;
   equipment: {
     id: string;
-    serialNumber: string;
+    serialNumber?: string | null;
     model: string;
     brand: string | null;
     currentCounter: number;
@@ -44,7 +44,7 @@ interface MeterLogItem {
 
 interface EquipmentOption {
   id: string;
-  serialNumber: string;
+  serialNumber?: string | null;
   model: string;
   brand?: string | null;
   currentCounter: number;
@@ -133,7 +133,7 @@ export default function MeterManagementPage() {
       if (!q.trim()) return true;
       const kw = q.trim().toLowerCase();
       return (
-        item.equipment.serialNumber.toLowerCase().includes(kw) ||
+        (item.equipment.serialNumber ? item.equipment.serialNumber.toLowerCase().includes(kw) : false) ||
         item.equipment.model.toLowerCase().includes(kw) ||
         (item.equipment.customer?.name || "").toLowerCase().includes(kw) ||
         (item.recordedBy?.name || "").toLowerCase().includes(kw) ||
@@ -146,7 +146,9 @@ export default function MeterManagementPage() {
   const handleApprove = async (item: MeterLogItem) => {
     const isLower = item.counterValue < item.equipment.currentCounter;
     const confirmMsg = isLower
-      ? `Xác nhận DUYỆT điều chỉnh giảm chỉ số máy ${item.equipment.model} (SN: ${item.equipment.serialNumber}) từ ${item.equipment.currentCounter.toLocaleString("vi-VN")} xuống ${item.counterValue.toLocaleString("vi-VN")} bản?\n\nLý do KTV khai báo: ${item.adjustmentReason || "Không có"}`
+      ? `Xác nhận DUYỆT điều chỉnh giảm chỉ số máy ${item.equipment.model}${
+          item.equipment.serialNumber ? ` (SN: ${item.equipment.serialNumber})` : ""
+        } từ ${item.equipment.currentCounter.toLocaleString("vi-VN")} xuống ${item.counterValue.toLocaleString("vi-VN")} bản?\n\nLý do KTV khai báo: ${item.adjustmentReason || "Không có"}`
       : `Xác nhận duyệt chỉ số counter ${item.counterValue.toLocaleString("vi-VN")} cho thiết bị ${item.equipment.model}?`;
 
     if (!confirm(confirmMsg)) return;
@@ -270,7 +272,7 @@ export default function MeterManagementPage() {
       filteredLogs.map((l) => [
         new Date(l.logDate).toLocaleString("vi-VN"),
         l.equipment.model,
-        l.equipment.serialNumber,
+        l.equipment.serialNumber || "",
         l.equipment.customer?.name || "Trong kho",
         l.counterValue,
         METER_SOURCE_LABELS[l.source] || l.source,
@@ -473,9 +475,11 @@ export default function MeterManagementPage() {
                       </td>
                       <td>
                         <div className="fw-bold text-primary">{item.equipment.model}</div>
-                        <div className="small font-monospace text-muted">
-                          SN: {item.equipment.serialNumber}
-                        </div>
+                        {item.equipment.serialNumber && (
+                          <div className="small font-monospace text-muted">
+                            SN: {item.equipment.serialNumber}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <div className="fw-semibold text-dark">
@@ -632,7 +636,7 @@ export default function MeterManagementPage() {
               <option value="">-- Chọn máy --</option>
               {equipments.map((eq) => (
                 <option key={eq.id} value={eq.id}>
-                  {eq.model} (SN: {eq.serialNumber}) — Khách: {eq.customer?.name || "Trong kho"} [Counter: {eq.currentCounter.toLocaleString("vi-VN")}]
+                  {eq.model}{eq.serialNumber ? ` (SN: ${eq.serialNumber})` : ""} — Khách: {eq.customer?.name || "Trong kho"} [Counter: {eq.currentCounter.toLocaleString("vi-VN")}]
                 </option>
               ))}
             </select>

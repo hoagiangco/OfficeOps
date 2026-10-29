@@ -78,6 +78,17 @@ export const PUT = withErrors(async (req: Request) => {
   const r = await parseBody(req, updateUserPermsSchema);
   if (r.error) return r.error;
 
+  const target = await prisma.user.findUnique({
+    where: { id: r.data.userId },
+    select: { role: true },
+  });
+  if (target?.role === "SUPER_ADMIN") {
+    return NextResponse.json(
+      { error: "Tài khoản Giám đốc (Super Admin) luôn có toàn quyền cố định, không thể tùy chỉnh phân quyền." },
+      { status: 400 }
+    );
+  }
+
   const updatedPermissions = await updateUserPermissions(
     r.data.userId,
     r.data.updates,

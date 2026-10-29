@@ -77,11 +77,14 @@ export default function FileManager({
 
     let isMounted = true;
     api
-      .get<{ role?: string }>("/auth/me")
+      .get<{ role?: string; permissions?: Record<string, boolean> }>("/auth/me")
       .then((res) => {
         if (!isMounted) return;
         const role = res.data?.role || "";
-        const allowed = ["SUPER_ADMIN", "ADMIN", "DISPATCHER"].includes(role);
+        const perms = res.data?.permissions;
+        const allowed =
+          role === "SUPER_ADMIN" ||
+          (perms ? !!perms["media:manage"] : ["ADMIN", "DISPATCHER"].includes(role));
         setCanManage(allowed);
       })
       .catch(() => {

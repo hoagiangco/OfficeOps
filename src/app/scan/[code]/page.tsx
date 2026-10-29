@@ -6,7 +6,7 @@ import Link from "next/link";
 interface EquipmentScanInfo {
   id: string;
   code: string | null;
-  serialNumber: string;
+  serialNumber: string | null;
   qrCode: string;
   model: string;
   brand: string | null;
@@ -244,7 +244,7 @@ function PublicScanContent({
                 <div className="col-5 text-muted">Thiết bị:</div>
                 <div className="col-7 fw-bold">{equipment.brand} {equipment.model}</div>
                 <div className="col-5 text-muted">Mã Serial:</div>
-                <div className="col-7 font-monospace">{equipment.serialNumber}</div>
+                <div className="col-7 font-monospace">{equipment.serialNumber || "—"}</div>
                 <div className="col-5 text-muted">Người liên hệ:</div>
                 <div className="col-7">{contactName} ({contactPhone})</div>
                 <div className="col-5 text-muted">Hiện tượng:</div>
@@ -277,9 +277,15 @@ function PublicScanContent({
             {/* Thẻ Thông Tin Máy (Asset Card) */}
             <div className="card shadow-sm border-0 rounded-4 overflow-hidden mb-3 bg-white">
               <div className="card-header bg-gradient bg-light border-bottom py-2 px-3 d-flex justify-content-between align-items-center">
-                <span className="badge bg-secondary-subtle text-dark border">
-                  <i className="fas fa-barcode me-1"></i> SN: {equipment.serialNumber}
-                </span>
+                {equipment.serialNumber ? (
+                  <span className="badge bg-secondary-subtle text-dark border">
+                    <i className="fas fa-barcode me-1"></i> SN: {equipment.serialNumber}
+                  </span>
+                ) : (
+                  <span className="badge bg-secondary-subtle text-dark border">
+                    <i className="fas fa-tag me-1"></i> {equipment.model}
+                  </span>
+                )}
                 <span className={`badge ${equipment.status === "ACTIVE" ? "bg-success" : "bg-warning text-dark"}`}>
                   {equipment.status === "ACTIVE" ? "Đang vận hành" : "Cần bảo trì / Báo hỏng"}
                 </span>

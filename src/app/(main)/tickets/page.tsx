@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "react-toastify";
 import { ModalShell } from "@/components/ModalShell";
+import CreateTicketModal from "@/components/CreateTicketModal";
 import FileManager from "@/components/FileManager";
 import { ActiveFilterChips, type FilterChip } from "@/components/ActiveFilterChips";
 import { Loading } from "@/components/Loading";
@@ -41,7 +42,7 @@ interface TicketItem {
   customer: { id: string; name: string; phone: string; address: string; latitude?: number | null; longitude?: number | null };
   equipment: {
     id: string;
-    serialNumber: string;
+    serialNumber: string | null;
     model: string;
     brand: string | null;
     status: string;
@@ -95,7 +96,7 @@ interface CustomerOption {
 
 interface EquipmentOption {
   id: string;
-  serialNumber: string;
+  serialNumber: string | null;
   model: string;
   customerId: string | null;
   currentCounter: number;
@@ -121,6 +122,7 @@ interface CurrentUser {
   id: string;
   name: string;
   role: string;
+  permissions?: Record<string, boolean>;
 }
 
 export default function TicketsPage() {
@@ -140,18 +142,10 @@ export default function TicketsPage() {
   const [typeFilter, setTypeFilter] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
 
-  // Create Modal
+  // Create / Edit Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingTicket, setEditingTicket] = useState<TicketItem | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    customerId: "",
-    equipmentId: "",
-    assigneeId: "",
-    type: "REPAIR",
-    priority: "NORMAL",
-    source: "CUSTOMER",
-    description: "",
-  });
 
   // Detail & Workflow Modal
   const [selectedTicket, setSelectedTicket] = useState<TicketDetail | null>(null);
@@ -175,12 +169,30 @@ export default function TicketsPage() {
   const [reqPartQty, setReqPartQty] = useState(1);
   const [reqPartNote, setReqPartNote] = useState("");
 
-  const isFieldTech = currentUser?.role === "FIELD_TECH";
   const isSuperAdmin = currentUser?.role === "SUPER_ADMIN";
-  const canAssign = currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "DISPATCHER";
+  const canAssign =
+    isSuperAdmin ||
+    (currentUser?.permissions
+      ? !!currentUser.permissions["ticket:assign"]
+      : currentUser?.role === "DISPATCHER");
+  const isFieldTech = currentUser?.role === "FIELD_TECH" && !canAssign;
+  const canDeleteTicket =
+    isSuperAdmin ||
+    (currentUser?.permissions
+      ? !!currentUser.permissions["ticket:cancel"]
+      : currentUser?.role === "ADMIN" || currentUser?.role === "DISPATCHER");
+
+  // Modal Hủy & Xóa phiếu
+  const [cancelTargetTicket, setCancelTargetTicket] = useState<{ id: string; code: string; customerName?: string } | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+
+  const [deleteTargetTicket, setDeleteTargetTicket] = useState<{ id: string; code: string; status?: string; customerName?: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const isSelectedCompleted = selectedTicket?.status === "COMPLETED";
-  const isSelectedLocked = isSelectedCompleted && !isSuperAdmin;
+  const isSelectedCancelled = selectedTicket?.status === "CANCELLED";
+  const isSelectedLocked = isSelectedCancelled || (isSelectedCompleted && !isSuperAdmin);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -250,7 +262,7 @@ export default function TicketsPage() {
       setCounterAtCloseInput(
         detail.counterAtClose != null
           ? String(detail.counterAtClose)
-          : String(detail.equipment.currentCounter)
+          : String(detail.equipment?.currentCounter ?? 0)
       );
       const sig = detail.customerSignature;
       setSignatureInput(
@@ -263,6 +275,18 @@ export default function TicketsPage() {
     } finally {
       setLoadingDetail(false);
     }
+  };
+
+  const handleOpenEditModal = (t: TicketItem) => {
+    if (t.status === "CANCELLED") {
+      toast.warning("Phiếu kỹ thuật này đã bị hủy, không thể chỉnh sửa");
+      return;
+    }
+    if (t.status === "COMPLETED" && !isSuperAdmin) {
+      toast.warning("Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc mới có quyền chỉnh sửa");
+      return;
+    }
+    setEditingTicket(t);
   };
 
   const filteredTickets = useMemo(() => {
@@ -285,8 +309,8 @@ export default function TicketsPage() {
           t.code.toLowerCase().includes(kw) ||
           t.description.toLowerCase().includes(kw) ||
           t.customer.name.toLowerCase().includes(kw) ||
-          t.equipment.serialNumber.toLowerCase().includes(kw) ||
-          t.equipment.model.toLowerCase().includes(kw);
+          (t.equipment?.serialNumber ? t.equipment.serialNumber.toLowerCase().includes(kw) : false) ||
+          (t.equipment?.model ? t.equipment.model.toLowerCase().includes(kw) : false);
         if (!match) return false;
       }
       return true;
@@ -369,50 +393,12 @@ export default function TicketsPage() {
     setAssigneeFilter("");
   };
 
-  const availableEquipmentForCreate = useMemo(() => {
-    if (!createForm.customerId) return equipmentList;
-    return equipmentList.filter((e) => e.customerId === createForm.customerId);
-  }, [equipmentList, createForm.customerId]);
-
-  const handleCreateTicket = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!createForm.customerId || !createForm.equipmentId) {
-      toast.warning("Vui lòng chọn khách hàng và thiết bị");
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/tickets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...createForm,
-          assigneeId: createForm.assigneeId || null,
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || "Không thể tạo phiếu");
-      toast.success(`Đã tạo phiếu ${body.code}`);
-      setShowCreateModal(false);
-      setCreateForm({
-        customerId: "",
-        equipmentId: "",
-        assigneeId: "",
-        type: "REPAIR",
-        priority: "NORMAL",
-        source: "CUSTOMER",
-        description: "",
-      });
-      fetchAll();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Lỗi tạo phiếu");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const handleTicketAction = async (payload: Record<string, unknown>, successMsg: string) => {
     if (!selectedTicket) return;
+    if (selectedTicket.status === "CANCELLED") {
+      toast.warning("Phiếu kỹ thuật này đã bị hủy, không thể thực hiện thao tác");
+      return;
+    }
     if (selectedTicket.status === "COMPLETED" && !isSuperAdmin) {
       toast.warning("Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc mới có quyền chỉnh sửa!");
       return;
@@ -440,6 +426,10 @@ export default function TicketsPage() {
     e.preventDefault();
     if (!selectedTicket || !reqPartId || reqPartQty < 1) {
       toast.warning("Vui lòng chọn linh kiện và số lượng hợp lệ");
+      return;
+    }
+    if (selectedTicket.status === "CANCELLED") {
+      toast.warning("Phiếu kỹ thuật này đã bị hủy, không thể thực hiện thao tác");
       return;
     }
     if (selectedTicket.status === "COMPLETED" && !isSuperAdmin) {
@@ -490,6 +480,10 @@ export default function TicketsPage() {
   const handleUploadAttachment = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedTicket) return;
+    if (selectedTicket.status === "CANCELLED") {
+      toast.warning("Phiếu kỹ thuật này đã bị hủy, không thể thực hiện thao tác");
+      return;
+    }
     if (selectedTicket.status === "COMPLETED" && !isSuperAdmin) {
       toast.warning("Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc mới có quyền tải tài liệu");
       return;
@@ -529,6 +523,10 @@ export default function TicketsPage() {
 
   const handleSelectMediaFiles = async (urls: string[]) => {
     if (!selectedTicket || urls.length === 0) return;
+    if (selectedTicket.status === "CANCELLED") {
+      toast.warning("Phiếu kỹ thuật này đã bị hủy, không thể thực hiện thao tác");
+      return;
+    }
     if (selectedTicket.status === "COMPLETED" && !isSuperAdmin) {
       toast.warning("Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc mới có quyền tải tài liệu");
       return;
@@ -563,6 +561,10 @@ export default function TicketsPage() {
 
   const handleDeleteAttachment = async (attId: string) => {
     if (!selectedTicket) return;
+    if (selectedTicket.status === "CANCELLED") {
+      toast.warning("Phiếu kỹ thuật này đã bị hủy, không thể thực hiện thao tác");
+      return;
+    }
     if (selectedTicket.status === "COMPLETED" && !isSuperAdmin) {
       toast.warning("Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc mới có quyền xóa tài liệu");
       return;
@@ -577,6 +579,85 @@ export default function TicketsPage() {
       await openDetailModal(selectedTicket.id);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Lỗi xóa file");
+    }
+  };
+
+  const handleOpenCancelModal = (ticket: { id: string; code: string; customer?: { name: string } }) => {
+    setCancelTargetTicket({
+      id: ticket.id,
+      code: ticket.code,
+      customerName: ticket.customer?.name,
+    });
+    setCancelReason("");
+  };
+
+  const handleConfirmCancelTicket = async () => {
+    if (!cancelTargetTicket) return;
+    const trimmed = cancelReason.trim();
+    if (!trimmed || trimmed.length < 3) {
+      toast.warning("Vui lòng nhập lý do hủy phiếu (tối thiểu 3 ký tự)");
+      return;
+    }
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/tickets/${cancelTargetTicket.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "CANCEL",
+          note: trimmed,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Không thể hủy phiếu kỹ thuật");
+      }
+      toast.success(`Đã hủy phiếu kỹ thuật ${cancelTargetTicket.code}`);
+      setCancelTargetTicket(null);
+      setCancelReason("");
+      if (selectedTicket && selectedTicket.id === cancelTargetTicket.id) {
+        setSelectedTicket((prev) => (prev ? { ...prev, status: "CANCELLED" } : null));
+      }
+      await fetchAll();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Lỗi khi hủy phiếu");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleOpenDeleteModal = (ticket: { id: string; code: string; status?: string; customer?: { name: string } }) => {
+    setDeleteTargetTicket({
+      id: ticket.id,
+      code: ticket.code,
+      status: ticket.status,
+      customerName: ticket.customer?.name,
+    });
+  };
+
+  const handleConfirmDeleteTicket = async () => {
+    if (!deleteTargetTicket) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/tickets/${deleteTargetTicket.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Không thể xóa phiếu kỹ thuật");
+      }
+      const data = await res.json().catch(() => ({}));
+      toast.success(data.message || `Đã xóa vĩnh viễn phiếu ${deleteTargetTicket.code}`);
+      const deletedId = deleteTargetTicket.id;
+      setDeleteTargetTicket(null);
+      if (selectedTicket && selectedTicket.id === deletedId) {
+        setSelectedTicket(null);
+      }
+      await fetchAll();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Lỗi khi xóa phiếu");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -615,7 +696,7 @@ export default function TicketsPage() {
         TICKET_PRIORITY_LABELS[t.priority] || t.priority,
         t.customer.name,
         t.equipment.model,
-        t.equipment.serialNumber,
+        t.equipment.serialNumber || "",
         t.assignee?.name || "Chưa giao",
         TICKET_STATUS_LABELS[t.status] || t.status,
         formatCompactDateTime(t.slaDueAt),
@@ -981,7 +1062,7 @@ export default function TicketsPage() {
                 <option value="UNASSIGNED">Chưa phân công KTV</option>
                 {technicians.map((t) => (
                   <option key={t.id} value={t.id}>
-                    {t.name} ({t.region || "Toàn vùng"})
+                    {t.name}
                   </option>
                 ))}
               </select>
@@ -1009,11 +1090,11 @@ export default function TicketsPage() {
               <tr>
                 <th style={{ width: "135px" }} className="text-nowrap">Mã phiếu</th>
                 <th style={{ width: "145px" }} className="text-nowrap">Loại & Ưu tiên</th>
-                <th className="text-nowrap" style={{ minWidth: "260px" }}>Khách hàng & Sự cố</th>
-                <th className="text-nowrap" style={{ minWidth: "180px" }}>Thiết bị & Vị trí</th>
+                <th className="text-nowrap" style={{ minWidth: "260px" }}>Khách hàng & Nội dung</th>
+                <th className="text-nowrap" style={{ minWidth: "180px" }}>Thiết bị / Dịch vụ</th>
                 <th style={{ width: "175px" }} className="text-nowrap">Kỹ thuật viên</th>
                 <th style={{ width: "135px" }} className="text-nowrap">Trạng thái / SLA</th>
-                <th className="text-center text-nowrap" style={{ width: "95px" }}>
+                <th className="text-center text-nowrap" style={{ width: "140px", minWidth: "140px" }}>
                   Thao tác
                 </th>
               </tr>
@@ -1045,9 +1126,10 @@ export default function TicketsPage() {
                           href="#"
                           onClick={(e) => {
                             e.preventDefault();
-                            openDetailModal(t.id);
+                            handleOpenEditModal(t);
                           }}
                           className="text-decoration-none text-primary d-inline-block text-nowrap"
+                          title="Nhấn vào mã phiếu để chỉnh sửa thông tin phiếu (khách hàng, đổi máy, ngày lập...)"
                         >
                           {t.code}
                         </a>
@@ -1094,22 +1176,31 @@ export default function TicketsPage() {
                         )}
                       </td>
                       <td>
-                        <Link
-                          href={`/equipment/${t.equipment.id}`}
-                          className="fw-semibold text-decoration-none"
-                        >
-                          {t.equipment.model}
-                        </Link>
-                        <div className="small text-muted font-monospace">
-                          SN: {t.equipment.serialNumber} | Counter:{" "}
-                          {t.equipment.currentCounter.toLocaleString("vi-VN")}
-                        </div>
-                        {formatLocationPath(t.equipment) && (
-                          <div className="small text-secondary">
-                            <i className="fas fa-map-pin me-1"></i>
-                            {formatLocationPath(t.equipment)}
-
-
+                        {t.equipment ? (
+                          <>
+                            <Link
+                              href={`/equipment/${t.equipment.id}`}
+                              className="fw-semibold text-decoration-none"
+                            >
+                              {t.equipment.model}
+                            </Link>
+                            <div className="small text-muted font-monospace">
+                              {t.equipment.serialNumber ? `SN: ${t.equipment.serialNumber} | ` : ""}Counter:{" "}
+                              {t.equipment.currentCounter.toLocaleString("vi-VN")}
+                            </div>
+                            {formatLocationPath(t.equipment) && (
+                              <div className="small text-secondary">
+                                <i className="fas fa-map-pin me-1"></i>
+                                {formatLocationPath(t.equipment)}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div>
+                            <span className="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                              <i className="fas fa-file-alt me-1 text-primary"></i>
+                              Phiếu dịch vụ
+                            </span>
                           </div>
                         )}
                       </td>
@@ -1172,15 +1263,43 @@ export default function TicketsPage() {
                           {renderSlaAndCompletion(t)}
                         </div>
                       </td>
-                      <td className="text-center">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline-primary"
-                          onClick={() => openDetailModal(t.id)}
-                          title="Mở xử lý phiếu"
-                        >
-                          <i className="fas fa-tools me-1"></i> Xử lý
-                        </button>
+                      <td className="text-center align-middle text-nowrap" style={{ width: "140px", minWidth: "140px" }}>
+                        <div className="d-inline-flex align-items-center justify-content-center gap-1">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-primary py-1 px-2 fw-semibold d-inline-flex align-items-center gap-1 shadow-2xs"
+                            style={{ fontSize: "12px", height: "28px" }}
+                            onClick={() => openDetailModal(t.id)}
+                            title="Mở xử lý phiếu"
+                          >
+                            <i className="fas fa-tools"></i>
+                            <span>Xử lý</span>
+                          </button>
+
+                          {t.status !== "COMPLETED" && t.status !== "CANCELLED" && (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-warning text-dark py-1 px-1.5 shadow-2xs"
+                              style={{ fontSize: "11px", height: "28px", width: "28px" }}
+                              onClick={() => handleOpenCancelModal(t)}
+                              title="Hủy phiếu kỹ thuật"
+                            >
+                              <i className="fas fa-ban text-warning"></i>
+                            </button>
+                          )}
+
+                          {canDeleteTicket && (
+                            <button
+                              type="button"
+                              className={`btn btn-sm ${t.status === "COMPLETED" ? "btn-outline-secondary opacity-40" : "btn-outline-danger"} py-1 px-1.5 shadow-2xs`}
+                              style={{ fontSize: "11px", height: "28px", width: "28px" }}
+                              onClick={() => handleOpenDeleteModal(t)}
+                              title={t.status === "COMPLETED" ? "Phiếu đã hoàn thành (Không thể xóa - Bấm để xem chi tiết)" : "Xóa vĩnh viễn phiếu tạo nhầm"}
+                            >
+                              <i className="fas fa-trash-alt"></i>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1197,7 +1316,17 @@ export default function TicketsPage() {
               <div className="card shadow-sm h-100 border">
                 <div className="card-header bg-white d-flex justify-content-between align-items-center py-2">
                   <div className="d-flex align-items-center gap-2">
-                    <span className="fw-bold font-monospace text-primary text-nowrap">{t.code}</span>
+                    <a
+                      href="#"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleOpenEditModal(t);
+                      }}
+                      className="fw-bold font-monospace text-primary text-decoration-none text-nowrap"
+                      title="Nhấn vào mã phiếu để chỉnh sửa thông tin phiếu"
+                    >
+                      {t.code}
+                    </a>
                     <span className="text-muted small text-nowrap" style={{ fontSize: "11px" }}>
                       <i className="far fa-calendar-alt me-1 text-secondary"></i>
                       {new Date(t.createdAt).toLocaleDateString("vi-VN", {
@@ -1238,10 +1367,23 @@ export default function TicketsPage() {
                   </p>
                   <div className="bg-light p-2 rounded border mb-2 small">
                     <div>
-                      <strong>Máy:</strong> {t.equipment.model} ({t.equipment.serialNumber})
+                      {t.equipment ? (
+                        <>
+                          <strong>Máy:</strong> {t.equipment.model}
+                          {t.equipment.serialNumber ? ` (${t.equipment.serialNumber})` : ""}
+                        </>
+                      ) : (
+                        <>
+                          <strong>Phân loại:</strong>{" "}
+                          <span className="badge bg-primary-subtle text-primary border border-primary-subtle">
+                            <i className="fas fa-file-alt me-1"></i>
+                            Phiếu dịch vụ
+                          </span>
+                        </>
+                      )}
                     </div>
                     <div>
-                      <strong>Sự cố:</strong> {t.description}
+                      <strong>Nội dung:</strong> {t.description}
                     </div>
                   </div>
                   <div className="d-flex justify-content-between align-items-center small text-muted">
@@ -1271,13 +1413,38 @@ export default function TicketsPage() {
                   </div>
                 </div>
                 <div className="card-footer bg-white border-top-0 pt-0 pb-2">
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary w-100"
-                    onClick={() => openDetailModal(t.id)}
-                  >
-                    <i className="fas fa-play-circle me-1"></i> Mở thao tác KTV
-                  </button>
+                  <div className="d-flex align-items-center gap-1.5">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary flex-grow-1 d-inline-flex align-items-center justify-content-center gap-1"
+                      onClick={() => openDetailModal(t.id)}
+                    >
+                      <i className="fas fa-tools"></i>
+                      <span>Xử lý</span>
+                    </button>
+                    {t.status !== "COMPLETED" && t.status !== "CANCELLED" && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-warning text-dark px-2.5"
+                        style={{ height: "31px" }}
+                        onClick={() => handleOpenCancelModal(t)}
+                        title="Hủy phiếu kỹ thuật"
+                      >
+                        <i className="fas fa-ban text-warning"></i>
+                      </button>
+                    )}
+                    {canDeleteTicket && (
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${t.status === "COMPLETED" ? "btn-outline-secondary opacity-40" : "btn-outline-danger"} px-2.5`}
+                        style={{ height: "31px" }}
+                        onClick={() => handleOpenDeleteModal(t)}
+                        title={t.status === "COMPLETED" ? "Phiếu đã hoàn thành (Không thể xóa - Bấm để xem chi tiết)" : "Xóa vĩnh viễn phiếu"}
+                      >
+                        <i className="fas fa-trash-alt"></i>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1285,174 +1452,19 @@ export default function TicketsPage() {
         </div>
       )}
 
-      {/* Modal 1: Tạo Ticket mới */}
-      <ModalShell
-        open={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Tiếp nhận & Tạo phiếu kỹ thuật"
-        size="lg"
-        footer={
-          <>
-            <button
-              type="button"
-              className="btn btn-sm btn-secondary"
-              onClick={() => setShowCreateModal(false)}
-            >
-              Đóng
-            </button>
-            <button
-              type="submit"
-              form="create-ticket-form"
-              className="btn btn-sm btn-primary"
-              disabled={submitting}
-            >
-              <i className="fas fa-save me-1"></i> Lưu & Phát hành phiếu
-            </button>
-          </>
-        }
-      >
-        <form id="create-ticket-form" onSubmit={handleCreateTicket}>
-          <div className="row g-3">
-            <div className="col-md-6">
-              <label className="form-label small fw-bold">
-                Khách hàng <span className="text-danger">*</span>
-              </label>
-              <select
-                className="form-select form-select-sm"
-                required
-                value={createForm.customerId}
-                onChange={(e) =>
-                  setCreateForm({
-                    ...createForm,
-                    customerId: e.target.value,
-                    equipmentId: "",
-                  })
-                }
-              >
-                <option value="">-- Chọn khách hàng --</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-md-6">
-              <label className="form-label small fw-bold">
-                Thiết bị gặp sự cố / bảo trì <span className="text-danger">*</span>
-              </label>
-              <select
-                className="form-select form-select-sm"
-                required
-                value={createForm.equipmentId}
-                onChange={(e) =>
-                  setCreateForm({ ...createForm, equipmentId: e.target.value })
-                }
-              >
-                <option value="">-- Chọn máy --</option>
-                {availableEquipmentForCreate.map((eq) => (
-                  <option key={eq.id} value={eq.id}>
-                    {eq.model} - SN: {eq.serialNumber} (Counter:{" "}
-                    {eq.currentCounter.toLocaleString("vi-VN")})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-md-4">
-              <label className="form-label small fw-bold">Loại công việc</label>
-              <select
-                className="form-select form-select-sm"
-                value={createForm.type}
-                onChange={(e) => setCreateForm({ ...createForm, type: e.target.value })}
-              >
-                {Object.entries(TICKET_TYPE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-md-4">
-              <label className="form-label small fw-bold">Mức độ ưu tiên (SLA)</label>
-              <select
-                className="form-select form-select-sm"
-                value={createForm.priority}
-                onChange={(e) => setCreateForm({ ...createForm, priority: e.target.value })}
-              >
-                {Object.entries(TICKET_PRIORITY_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="col-md-4">
-              <label className="form-label small fw-bold">Nguồn tiếp nhận</label>
-              <select
-                className="form-select form-select-sm"
-                value={createForm.source}
-                onChange={(e) => setCreateForm({ ...createForm, source: e.target.value })}
-              >
-                {Object.entries(TICKET_SOURCE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {canAssign ? (
-              <div className="col-md-12">
-                <label className="form-label small fw-bold">
-                  Phân công ngay cho Kỹ thuật viên (Tùy chọn)
-                </label>
-                <select
-                  className="form-select form-select-sm"
-                  value={createForm.assigneeId}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, assigneeId: e.target.value })
-                  }
-                >
-                  <option value="">-- Để trống (Chuyển sang Bảng Điều phối) --</option>
-                  {technicians.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} | Khu vực: {t.region || "Toàn vùng"} | Đang xử lý:{" "}
-                      {t.openTicketsCount} phiếu
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div className="col-md-12">
-                <div className="alert alert-info py-2 px-3 small mb-0 d-flex align-items-center gap-2">
-                  <i className="fas fa-info-circle text-primary"></i>
-                  <span>Phiếu kỹ thuật tạo mới sẽ được chuyển đến Điều phối viên để xem xét và giao việc.</span>
-                </div>
-              </div>
-            )}
-
-            <div className="col-md-12">
-              <label className="form-label small fw-bold">
-                Mô tả chi tiết hiện tượng / yêu cầu <span className="text-danger">*</span>
-              </label>
-              <textarea
-                className="form-control form-control-sm"
-                rows={3}
-                required
-                placeholder="VD: Máy báo lỗi SC-542, kẹt giấy khay 2, bản in bị vệt đen dọc..."
-                value={createForm.description}
-                onChange={(e) =>
-                  setCreateForm({ ...createForm, description: e.target.value })
-                }
-              />
-            </div>
-          </div>
-        </form>
-      </ModalShell>
+      {/* Modal 1: Tiếp nhận & Tạo / Chỉnh sửa Ticket */}
+      <CreateTicketModal
+        open={showCreateModal || Boolean(editingTicket)}
+        editingTicket={editingTicket}
+        onClose={() => {
+          setShowCreateModal(false);
+          setEditingTicket(null);
+        }}
+        onSuccess={() => {
+          setEditingTicket(null);
+          fetchAll();
+        }}
+      />
 
       {/* Modal 2: Xử lý toàn trình Ticket */}
       <ModalShell
@@ -1466,6 +1478,7 @@ export default function TicketsPage() {
             : "Đang tải..."
         }
         size="xl"
+        fixedHeight="min(640px, 82vh)"
       >
         {loadingDetail || !selectedTicket ? (
           <Loading text="Đang tải hồ sơ phiếu kỹ thuật..." />
@@ -1510,17 +1523,38 @@ export default function TicketsPage() {
                   </div>
                 </div>
                 <div className="col-md-4">
-                  <div className="text-muted">Thiết bị & Counter hiện tại:</div>
-                  <div className="fw-bold text-primary">
-                    {selectedTicket.equipment.model} (SN: {selectedTicket.equipment.serialNumber})
-                  </div>
-                  <div>
-                    Counter hiện tại:{" "}
-                    <strong className="font-monospace">
-                      {selectedTicket.equipment.currentCounter.toLocaleString("vi-VN")}
-                    </strong>
-                  </div>
-                  <div> Mô tả lỗi: {selectedTicket.description}</div>
+                  {selectedTicket.equipment ? (
+                    <>
+                      <div className="text-muted">Thiết bị & Counter hiện tại:</div>
+                      <div className="fw-bold text-primary">
+                        {selectedTicket.equipment.model}
+                        {selectedTicket.equipment.serialNumber ? ` (SN: ${selectedTicket.equipment.serialNumber})` : ""}
+                      </div>
+                      <div>
+                        Counter hiện tại:{" "}
+                        <strong className="font-monospace">
+                          {selectedTicket.equipment.currentCounter.toLocaleString("vi-VN")}
+                        </strong>
+                      </div>
+                      {formatLocationPath(selectedTicket.equipment) && (
+                        <div className="text-secondary small">
+                          <i className="fas fa-map-pin text-danger me-1"></i>
+                          {formatLocationPath(selectedTicket.equipment)}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-muted">Loại phiếu:</div>
+                      <div className="fw-bold text-dark">
+                        <span className="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
+                          <i className="fas fa-file-alt text-primary me-1"></i>
+                          Phiếu dịch vụ
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  <div className="mt-1"><strong>Nội dung:</strong> {selectedTicket.description}</div>
                 </div>
                 <div className="col-md-4">
                   <div className="text-muted">Điều phối & Tiến độ:</div>
@@ -1566,6 +1600,19 @@ export default function TicketsPage() {
                 </div>
               </div>
             </div>
+
+            {/* Cảnh báo trạng thái phiếu đã hủy */}
+            {isSelectedCancelled && (
+              <div className="alert alert-warning border-warning d-flex align-items-center mb-3 py-2 px-3 small">
+                <i className="fas fa-ban text-danger fa-lg me-2"></i>
+                <div>
+                  <strong className="text-danger">Phiếu kỹ thuật này ĐÃ BỊ HỦY</strong>
+                  <div className="text-secondary mt-0.5">
+                    Phiếu đã dừng xử lý và bị khóa toàn bộ. Không thể phân công KTV, cập nhật tiến độ, xin linh kiện hoặc nghiệm thu hoàn thành phiếu.
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Cảnh báo trạng thái phiếu đã hoàn thành */}
             {isSelectedCompleted && (
@@ -1647,15 +1694,44 @@ export default function TicketsPage() {
               </li>
             </ul>
 
-              <a
-                href={`/tickets/${selectedTicket.id}/print`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-sm btn-outline-dark fw-bold d-flex align-items-center gap-1 shadow-sm px-3"
-              >
-                <i className="fas fa-print text-primary"></i>
-                <span>In Biên Bản Nghiệm Thu (A4)</span>
-              </a>
+              <div className="d-flex align-items-center gap-2 flex-wrap">
+                <a
+                  href={`/tickets/${selectedTicket.id}/print`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-sm btn-outline-dark fw-semibold d-inline-flex align-items-center gap-1 shadow-2xs px-2.5"
+                  style={{ height: "30px", fontSize: "12px" }}
+                >
+                  <i className="fas fa-print text-primary"></i>
+                  <span>In Biên bản (A4)</span>
+                </a>
+
+                {selectedTicket.status !== "COMPLETED" && selectedTicket.status !== "CANCELLED" && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-warning text-dark fw-semibold d-inline-flex align-items-center gap-1 shadow-2xs px-2.5"
+                    style={{ height: "30px", fontSize: "12px" }}
+                    onClick={() => handleOpenCancelModal(selectedTicket)}
+                    title="Hủy phiếu kỹ thuật này"
+                  >
+                    <i className="fas fa-ban text-warning"></i>
+                    <span>Hủy phiếu</span>
+                  </button>
+                )}
+
+                {canDeleteTicket && (
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${selectedTicket.status === "COMPLETED" ? "btn-outline-secondary opacity-50" : "btn-outline-danger"} fw-semibold d-inline-flex align-items-center gap-1 shadow-2xs px-2.5`}
+                    style={{ height: "30px", fontSize: "12px" }}
+                    onClick={() => handleOpenDeleteModal(selectedTicket)}
+                    title={selectedTicket.status === "COMPLETED" ? "Phiếu đã hoàn thành (Không thể xóa - Bấm để xem chi tiết)" : "Xóa vĩnh viễn phiếu tạo nhầm khỏi hệ thống"}
+                  >
+                    <i className="fas fa-trash-alt"></i>
+                    <span>Xóa phiếu</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {activeTab === "workflow" && (
@@ -1667,7 +1743,7 @@ export default function TicketsPage() {
                       1. Điều phối KTV & Check-in GPS
                     </div>
                     <div className="card-body">
-                      {canAssign && (!isSelectedCompleted || isSuperAdmin) ? (
+                      {canAssign && !isSelectedCancelled && (!isSelectedCompleted || isSuperAdmin) ? (
                         <div className="mb-3">
                           <label className="form-label small fw-bold">Kỹ thuật viên phụ trách</label>
                           <div className="input-group input-group-sm">
@@ -1680,7 +1756,7 @@ export default function TicketsPage() {
                               <option value="">-- Chọn KTV --</option>
                               {technicians.map((t) => (
                                 <option key={t.id} value={t.id}>
-                                  {t.name} ({t.region || "Toàn vùng"} - {t.openTicketsCount} việc)
+                                  {t.name} ({t.openTicketsCount} việc)
                                 </option>
                               ))}
                             </select>
@@ -1708,7 +1784,7 @@ export default function TicketsPage() {
                               {selectedTicket.assignee?.name || "Chưa phân công"}
                             </div>
                             <span className="badge bg-secondary-subtle text-secondary small">
-                              {isSelectedCompleted ? "Phiếu đã đóng" : "Không có quyền giao việc"}
+                              {isSelectedCancelled ? "Phiếu đã hủy" : isSelectedCompleted ? "Phiếu đã đóng" : "Không có quyền giao việc"}
                             </span>
                           </div>
                         </div>
@@ -1763,7 +1839,9 @@ export default function TicketsPage() {
                           className="form-control form-control-sm"
                           rows={2}
                           placeholder={
-                            isSelectedLocked
+                            isSelectedCancelled
+                              ? "Phiếu đã bị hủy (Khóa chỉnh sửa)"
+                              : isSelectedLocked
                               ? "Phiếu đã hoàn thành (Khóa chỉnh sửa chẩn đoán)"
                               : "VD: Mòn trống hình + rách bao lụa sấy, cần xuất linh kiện thay thế..."
                           }
@@ -1837,22 +1915,34 @@ export default function TicketsPage() {
                       {selectedTicket.status === "COMPLETED" && (
                         <span className="badge bg-success">Phiếu đã hoàn thành</span>
                       )}
+                      {selectedTicket.status === "CANCELLED" && (
+                        <span className="badge bg-danger">Phiếu đã bị hủy</span>
+                      )}
                     </div>
                     <div className="card-body">
                       <div className="row g-3 align-items-end">
                         <div className="col-md-4">
-                          <label className="form-label small fw-bold">
-                            Chỉ số Counter khi đóng phiếu (&ge;{" "}
-                            {selectedTicket.equipment.currentCounter.toLocaleString("vi-VN")})
-                          </label>
-                          <input
-                            type="number"
-                            className="form-control form-control-sm font-monospace mb-2"
-                            min={selectedTicket.equipment.currentCounter}
-                            value={counterAtCloseInput}
-                            disabled={isSelectedLocked}
-                            onChange={(e) => setCounterAtCloseInput(e.target.value)}
-                          />
+                          {selectedTicket.equipment ? (
+                            <>
+                              <label className="form-label small fw-bold">
+                                Chỉ số Counter khi đóng phiếu (&ge;{" "}
+                                {selectedTicket.equipment.currentCounter.toLocaleString("vi-VN")})
+                              </label>
+                              <input
+                                type="number"
+                                className="form-control form-control-sm font-monospace mb-2"
+                                min={selectedTicket.equipment.currentCounter}
+                                value={counterAtCloseInput}
+                                disabled={isSelectedLocked}
+                                onChange={(e) => setCounterAtCloseInput(e.target.value)}
+                              />
+                            </>
+                          ) : (
+                            <div className="p-2 mb-2 bg-light rounded border text-secondary small">
+                              <i className="fas fa-info-circle me-1 text-info"></i>
+                              Phiếu dịch vụ (không kèm máy): Không yêu cầu chốt chỉ số Counter.
+                            </div>
+                          )}
                           <label className="form-label small fw-bold">
                             Ghi chú người ký nghiệm thu
                           </label>
@@ -1884,7 +1974,15 @@ export default function TicketsPage() {
                           />
                         </div>
                         <div className="col-md-3">
-                          {isSelectedCompleted ? (
+                          {isSelectedCancelled ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger w-100 py-2 fw-bold"
+                              disabled
+                            >
+                              <i className="fas fa-ban me-1"></i> Phiếu đã bị hủy (Khóa)
+                            </button>
+                          ) : isSelectedCompleted ? (
                             isSuperAdmin ? (
                               <button
                                 type="button"
@@ -1951,7 +2049,12 @@ export default function TicketsPage() {
 
             {activeTab === "parts" && (
               <div>
-                {isSelectedLocked ? (
+                {isSelectedCancelled ? (
+                  <div className="alert alert-secondary py-2 px-3 small rounded border mb-3 d-flex align-items-center">
+                    <i className="fas fa-ban me-2 text-danger"></i>
+                    <span>Phiếu kỹ thuật này đã bị hủy. Tính năng xin xuất kho linh kiện đã bị khóa.</span>
+                  </div>
+                ) : isSelectedLocked ? (
                   <div className="alert alert-secondary py-2 px-3 small rounded border mb-3 d-flex align-items-center">
                     <i className="fas fa-lock me-2 text-secondary"></i>
                     <span>Phiếu kỹ thuật đã hoàn thành. Tính năng xin xuất kho linh kiện đã khóa (chỉ Giám đốc mới có quyền tạo yêu cầu).</span>
@@ -2075,7 +2178,12 @@ export default function TicketsPage() {
             {activeTab === "attachments" && (
               <div>
                 {/* Form Upload ảnh & tài liệu mới */}
-                {isSelectedLocked ? (
+                {isSelectedCancelled ? (
+                  <div className="alert alert-secondary py-2 px-3 small rounded border mb-3 d-flex align-items-center">
+                    <i className="fas fa-ban me-2 text-danger"></i>
+                    <span>Phiếu kỹ thuật này đã bị hủy. Tính năng tải lên và đính kèm tài liệu đã bị khóa.</span>
+                  </div>
+                ) : isSelectedLocked ? (
                   <div className="alert alert-secondary py-2 px-3 small rounded border mb-3 d-flex align-items-center">
                     <i className="fas fa-lock me-2 text-secondary"></i>
                     <span>Phiếu kỹ thuật đã hoàn thành. Tính năng tải lên và xóa tài liệu/ảnh đã bị khóa (chỉ Giám đốc mới có quyền thay đổi).</span>
@@ -2328,6 +2436,159 @@ export default function TicketsPage() {
         zIndex={1150}
         title={`Chọn tài liệu / hình ảnh đính kèm (${TICKET_ATTACHMENT_KIND_LABELS[attachmentKind]?.label || attachmentKind})`}
       />
+
+      {/* Modal Hủy Phiếu Kỹ Thuật */}
+      <ModalShell
+        open={Boolean(cancelTargetTicket)}
+        onClose={() => !cancelling && setCancelTargetTicket(null)}
+        title={
+          <div className="d-flex align-items-center gap-2 text-warning-emphasis">
+            <i className="fas fa-ban fs-5 text-warning"></i>
+            <span className="fw-bold">Hủy phiếu kỹ thuật {cancelTargetTicket?.code}</span>
+          </div>
+        }
+        size="md"
+        footer={
+          <div className="d-flex justify-content-end gap-2 w-100">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary px-3"
+              disabled={cancelling}
+              onClick={() => setCancelTargetTicket(null)}
+            >
+              Đóng
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-warning fw-bold px-3 d-inline-flex align-items-center gap-1.5"
+              disabled={cancelling || cancelReason.trim().length < 3}
+              onClick={handleConfirmCancelTicket}
+            >
+              {cancelling ? (
+                <>
+                  <span className="spinner-border spinner-border-sm" role="status"></span>
+                  <span>Đang hủy...</span>
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-ban"></i>
+                  <span>Xác nhận Hủy phiếu</span>
+                </>
+              )}
+            </button>
+          </div>
+        }
+      >
+        {cancelTargetTicket && (
+          <div>
+            <div className="alert alert-warning py-2.5 px-3 small border-warning mb-3">
+              <div className="fw-bold mb-1">
+                <i className="fas fa-exclamation-triangle me-1"></i>Lưu ý khi Hủy phiếu:
+              </div>
+              <ul className="mb-0 ps-3">
+                <li>Phiếu sẽ được chuyển sang trạng thái <strong>ĐÃ HỦY (CANCELLED)</strong> và lưu vết kiểm toán.</li>
+                <li>Nếu máy photocopy đang ở trạng thái báo hỏng, hệ thống sẽ tự động khôi phục máy về <strong>Hoạt động</strong>.</li>
+                <li>Không thể hủy nếu phiếu đã có linh kiện thực xuất từ kho.</li>
+              </ul>
+            </div>
+
+            <div className="mb-2">
+              <label className="form-label small fw-bold text-dark">
+                Lý do hủy phiếu <span className="text-danger">*</span>
+              </label>
+              <textarea
+                className="form-control form-control-sm"
+                rows={3}
+                placeholder="VD: Khách hàng tự lấy giấy kẹt xong, Tạo trùng phiếu, Khách xin hoãn sang tuần sau..."
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                autoFocus
+              />
+              <div className="form-text text-muted" style={{ fontSize: "11px" }}>
+                Nhập tối thiểu 3 ký tự giải trình lý do dừng xử lý phiếu.
+              </div>
+            </div>
+          </div>
+        )}
+      </ModalShell>
+
+      {/* Modal Xóa Vĩnh Viễn Phiếu Kỹ Thuật (Hard Delete) */}
+      <ModalShell
+        open={Boolean(deleteTargetTicket)}
+        onClose={() => !deleting && setDeleteTargetTicket(null)}
+        title={
+          <div className="d-flex align-items-center gap-2 text-danger">
+            <i className="fas fa-exclamation-triangle fs-5"></i>
+            <span className="fw-bold">Xác nhận Xóa vĩnh viễn phiếu {deleteTargetTicket?.code}</span>
+          </div>
+        }
+        size="md"
+        footer={
+          <div className="d-flex justify-content-end gap-2 w-100">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary px-3"
+              disabled={deleting}
+              onClick={() => setDeleteTargetTicket(null)}
+            >
+              {deleteTargetTicket?.status === "COMPLETED" ? "Đóng" : "Hủy bỏ"}
+            </button>
+            {deleteTargetTicket?.status !== "COMPLETED" && (
+              <button
+                type="button"
+                className="btn btn-sm btn-danger fw-bold px-3 d-inline-flex align-items-center gap-1.5"
+                disabled={deleting}
+                onClick={handleConfirmDeleteTicket}
+              >
+                {deleting ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm" role="status"></span>
+                    <span>Đang xóa...</span>
+                  </>
+                ) : (
+                  <>
+                    <i className="fas fa-trash-alt"></i>
+                    <span>Xác nhận Xóa vĩnh viễn</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        }
+      >
+        {deleteTargetTicket && (
+          <div>
+            {deleteTargetTicket.status === "COMPLETED" ? (
+              <div className="alert alert-warning py-2.5 px-3 small border-warning mb-3">
+                <div className="fw-bold fs-6 mb-1 text-dark">
+                  <i className="fas fa-lock me-1 text-warning"></i>Phiếu kỹ thuật đã hoàn thành (COMPLETED)
+                </div>
+                <div className="text-secondary">
+                  Phiếu này <strong>không thể xóa</strong> để đảm bảo toàn vẹn dữ liệu: đã có biên bản nghiệm thu, chốt chỉ số công-tơ (Counter), linh kiện thay thế và đối soát số liệu kế toán.
+                </div>
+              </div>
+            ) : (
+              <div className="alert alert-danger py-2.5 px-3 small border-danger mb-3">
+                <div className="fw-bold fs-6 mb-1">
+                  <i className="fas fa-skull-crossbones me-1"></i>Hành động này KHÔNG THỂ HOÀN TÁC!
+                </div>
+                <div>
+                  Phiếu kỹ thuật <strong>{deleteTargetTicket.code}</strong> sẽ bị xóa hoàn toàn khỏi cơ sở dữ liệu.
+                </div>
+              </div>
+            )}
+
+            <div className="p-2.5 bg-light rounded border small text-secondary">
+              <div className="fw-bold text-dark mb-1">Quy định an toàn toàn vẹn hệ thống:</div>
+              <ul className="mb-0 ps-3">
+                <li>Chỉ áp dụng khi tạo nhầm phiếu hoặc phiếu rác chưa xử lý hiện trường.</li>
+                <li>Hệ thống <strong>tự động chặn xóa</strong> nếu phiếu đã xuất linh kiện kho, đã thay linh kiện, đã chốt Counter hoặc KTV đã Check-in GPS.</li>
+                <li>Mọi thao tác xóa đều được ghi nhận vào Nhật ký kiểm toán (Audit Log) của Giám đốc.</li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </ModalShell>
     </div>
   );
 }

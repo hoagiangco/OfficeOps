@@ -108,8 +108,8 @@ export const POST = withErrors(async (req: Request) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
   const [canCust, canEquip] = await Promise.all([
-    checkUserPermission(s.userId, s.role, "customer:write"),
-    checkUserPermission(s.userId, s.role, "equipment:write"),
+    checkUserPermission(s.userId, s.role, "customer:location-manage"),
+    checkUserPermission(s.userId, s.role, "equipment:assign"),
   ]);
   if (!canCust && !canEquip) {
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
@@ -140,8 +140,8 @@ export const PATCH = withErrors(async (req: Request) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
   const [canCust, canEquip] = await Promise.all([
-    checkUserPermission(s.userId, s.role, "customer:write"),
-    checkUserPermission(s.userId, s.role, "equipment:write"),
+    checkUserPermission(s.userId, s.role, "customer:location-manage"),
+    checkUserPermission(s.userId, s.role, "equipment:assign"),
   ]);
   if (!canCust && !canEquip) {
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
@@ -174,8 +174,8 @@ export const DELETE = withErrors(async (req: Request) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
   const [canCust, canEquip] = await Promise.all([
-    checkUserPermission(s.userId, s.role, "customer:write"),
-    checkUserPermission(s.userId, s.role, "equipment:write"),
+    checkUserPermission(s.userId, s.role, "customer:location-manage"),
+    checkUserPermission(s.userId, s.role, "equipment:assign"),
   ]);
   if (!canCust && !canEquip) {
     return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });

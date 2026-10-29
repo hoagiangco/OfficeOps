@@ -26,7 +26,7 @@ interface EquipmentInfo {
   id: string;
   model: string;
   brand?: string | null;
-  serialNumber: string;
+  serialNumber?: string | null;
   branchId?: string | null;
   buildingId?: string | null;
   departmentId?: string | null;
@@ -155,7 +155,9 @@ export default function ChangeEquipmentLocationModal({
       }
 
       toast.success(
-        `Đã cập nhật vị trí thiết bị ${equipment.model} (${equipment.serialNumber}) thành công!`
+        `Đã cập nhật vị trí thiết bị ${equipment.model}${
+          equipment.serialNumber ? ` (${equipment.serialNumber})` : ""
+        } thành công!`
       );
       onSuccess();
       onClose();
@@ -193,9 +195,11 @@ export default function ChangeEquipmentLocationModal({
               {equipment.brand ? `${equipment.brand} ` : ""}
               {equipment.model}
             </span>
-            <span className="font-monospace text-primary fw-bold" style={{ fontSize: "12px" }}>
-              SN: {equipment.serialNumber}
-            </span>
+            {equipment.serialNumber && (
+              <span className="font-monospace text-primary fw-bold" style={{ fontSize: "12px" }}>
+                SN: {equipment.serialNumber}
+              </span>
+            )}
           </div>
           {customer && (
             <div className="small text-secondary mb-1">

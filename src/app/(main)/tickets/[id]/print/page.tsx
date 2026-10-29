@@ -35,7 +35,7 @@ interface TicketPrintData {
   equipment: {
     id: string;
     code: string | null;
-    serialNumber: string;
+    serialNumber?: string | null;
     model: string;
     brand: string | null;
     currentCounter: number;
@@ -52,7 +52,7 @@ interface TicketPrintData {
         branch?: { name: string };
       };
     } | null;
-  };
+  } | null;
   assignee?: {
     id: string;
     name: string;
@@ -148,9 +148,10 @@ function TicketPrintContent({
   }
 
   // Vị trí lắp đặt
-  const locPath = formatLocationPath(ticket.equipment);
-  const locationDetail =
-    [locPath, ticket.equipment.locationNote].filter(Boolean).join(" - ") || "---";
+  const locPath = ticket.equipment ? formatLocationPath(ticket.equipment) : "";
+  const locationDetail = ticket.equipment
+    ? [locPath, ticket.equipment.locationNote].filter(Boolean).join(" - ") || "---"
+    : "Tại địa chỉ khách hàng";
 
   return (
     <div className="bg-light min-vh-100 py-3 print-bg-white">
@@ -273,24 +274,43 @@ function TicketPrintContent({
             <div className="col-6">
               <table className="table table-sm table-borderless mb-0">
                 <tbody>
-                  <tr>
-                    <td className="text-muted text-nowrap" style={{ width: "130px" }}>Dòng máy (Model):</td>
-                    <td className="fw-bold text-dark">{ticket.equipment.brand ? `${ticket.equipment.brand} ` : ""}{ticket.equipment.model}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-muted">Số Serial (SN):</td>
-                    <td className="font-monospace fw-bold">{ticket.equipment.serialNumber}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-muted">Mã quản lý máy:</td>
-                    <td>{ticket.equipment.code || "---"}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-muted">Chỉ số Counter chốt:</td>
-                    <td className="fw-bold text-primary">
-                      {ticket.counterAtClose ? ticket.counterAtClose.toLocaleString("vi-VN") : ticket.equipment.currentCounter.toLocaleString("vi-VN")} bản in
-                    </td>
-                  </tr>
+                  {ticket.equipment ? (
+                    <>
+                      <tr>
+                        <td className="text-muted text-nowrap" style={{ width: "130px" }}>Dòng máy (Model):</td>
+                        <td className="fw-bold text-dark">{ticket.equipment.brand ? `${ticket.equipment.brand} ` : ""}{ticket.equipment.model}</td>
+                      </tr>
+                      <tr>
+                        <td className="text-muted">Số Serial (SN):</td>
+                        <td className="font-monospace fw-bold">{ticket.equipment.serialNumber || "---"}</td>
+                      </tr>
+                      <tr>
+                        <td className="text-muted">Mã quản lý máy:</td>
+                        <td>{ticket.equipment.code || "---"}</td>
+                      </tr>
+                      <tr>
+                        <td className="text-muted">Chỉ số Counter chốt:</td>
+                        <td className="fw-bold text-primary">
+                          {ticket.counterAtClose ? ticket.counterAtClose.toLocaleString("vi-VN") : ticket.equipment.currentCounter.toLocaleString("vi-VN")} bản in
+                        </td>
+                      </tr>
+                    </>
+                  ) : (
+                    <>
+                      <tr>
+                        <td className="text-muted text-nowrap" style={{ width: "130px" }}>Phân loại phiếu:</td>
+                        <td className="fw-bold text-dark">Phiếu dịch vụ</td>
+                      </tr>
+                      <tr>
+                        <td className="text-muted">Thiết bị:</td>
+                        <td className="text-muted fst-italic">Phiếu không kèm thiết bị</td>
+                      </tr>
+                      <tr>
+                        <td className="text-muted">Chỉ số Counter:</td>
+                        <td className="text-muted">Không áp dụng</td>
+                      </tr>
+                    </>
+                  )}
                 </tbody>
               </table>
             </div>

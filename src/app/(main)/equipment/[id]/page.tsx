@@ -12,7 +12,7 @@ const fmtDate = (d: Date) => d.toLocaleDateString("vi-VN");
 
 export default async function EquipmentDetail({ params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
-  if (!session || !(await checkUserPermission(session.userId, session.role, "equipment:read"))) redirect("/");
+  if (!session || !(await checkUserPermission(session.userId, session.role, "equipment:view"))) redirect("/");
   const { id } = await params;
 
   const e = await prisma.equipment.findUnique({
@@ -42,7 +42,8 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
   if (!e) notFound();
 
   const role = session.role;
-  const showContract = role === "SUPER_ADMIN" || role === "ADMIN";
+  const showContract =
+    role === "SUPER_ADMIN" || (await checkUserPermission(session.userId, session.role, "contract:view"));
   const showLocation = true;
   const showHistory =
     role === "SUPER_ADMIN" || (await checkUserPermission(session.userId, session.role, "equipment:history"));
@@ -65,7 +66,7 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
           <div className="vr mx-1" style={{ height: "20px" }}></div>
           <h1 className="h6 mb-0 text-dark fw-bold">
             HỒ SƠ MÁY: {e.brand ? `${e.brand} ` : ""}
-            {e.model} <span className="text-primary font-monospace">#{e.serialNumber}</span>
+            {e.model} {e.serialNumber && <span className="text-primary font-monospace">#{e.serialNumber}</span>}
           </h1>
           {e.code && (
             <span className="badge bg-light text-secondary border font-monospace">{e.code}</span>

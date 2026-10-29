@@ -17,7 +17,7 @@ interface MaintenanceScheduleItem {
   isActive: boolean;
   equipment: {
     id: string;
-    serialNumber: string;
+    serialNumber?: string | null;
     model: string;
     brand: string | null;
     currentCounter: number;
@@ -28,7 +28,7 @@ interface MaintenanceScheduleItem {
 
 interface EquipmentOption {
   id: string;
-  serialNumber: string;
+  serialNumber?: string | null;
   model: string;
   contractId: string | null;
   customer?: { name: string } | null;
@@ -125,7 +125,7 @@ export default function MaintenancePage() {
       if (q.trim()) {
         const kw = q.trim().toLowerCase();
         const match =
-          s.equipment.serialNumber.toLowerCase().includes(kw) ||
+          (s.equipment.serialNumber ? s.equipment.serialNumber.toLowerCase().includes(kw) : false) ||
           s.equipment.model.toLowerCase().includes(kw) ||
           (s.equipment.customer?.name || "").toLowerCase().includes(kw) ||
           (s.contract?.code || "").toLowerCase().includes(kw);
@@ -211,7 +211,13 @@ export default function MaintenancePage() {
   };
 
   const handleDeleteSchedule = async (s: MaintenanceScheduleItem) => {
-    if (!confirm(`Xóa lịch bảo trì của máy ${s.equipment.model} (${s.equipment.serialNumber})?`))
+    if (
+      !confirm(
+        `Xóa lịch bảo trì của máy ${s.equipment.model}${
+          s.equipment.serialNumber ? ` (${s.equipment.serialNumber})` : ""
+        }?`
+      )
+    )
       return;
     const res = await fetch(`/api/maintenance?id=${s.id}`, { method: "DELETE" });
     const body = await res.json().catch(() => ({}));
@@ -229,7 +235,7 @@ export default function MaintenancePage() {
       ["Model", "Serial", "Khách hàng", "Mã Hợp đồng", "Chu kỳ (ngày)", "Kỳ tiếp theo", "Trạng thái"],
       filtered.map((s) => [
         s.equipment.model,
-        s.equipment.serialNumber,
+        s.equipment.serialNumber || "",
         s.equipment.customer?.name || "Trong kho",
         s.contract?.code || "",
         s.intervalDays,
@@ -385,7 +391,7 @@ export default function MaintenancePage() {
                         {s.equipment.model}
                       </Link>
                       <div className="small text-muted font-monospace">
-                        SN: {s.equipment.serialNumber} | Counter:{" "}
+                        {s.equipment.serialNumber ? `SN: ${s.equipment.serialNumber} | ` : ""}Counter:{" "}
                         {s.equipment.currentCounter.toLocaleString("vi-VN")}
                       </div>
                     </td>
@@ -509,7 +515,7 @@ export default function MaintenancePage() {
               <option value="">-- Chọn máy cần lập lịch --</option>
               {equipmentList.map((eq) => (
                 <option key={eq.id} value={eq.id}>
-                  {eq.model} - SN: {eq.serialNumber} (
+                  {eq.model}{eq.serialNumber ? ` - SN: ${eq.serialNumber}` : ""} (
                   {eq.customer?.name || "Trong kho"})
                 </option>
               ))}

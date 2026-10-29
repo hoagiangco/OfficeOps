@@ -54,9 +54,9 @@ interface TechTicket {
     latitude?: number | null;
     longitude?: number | null;
   };
-  equipment: {
+  equipment?: {
     id: string;
-    serialNumber: string;
+    serialNumber?: string | null;
     model: string;
     brand: string | null;
     status: string;
@@ -69,7 +69,7 @@ interface TechTicket {
         branch?: { name: string };
       };
     } | null;
-  };
+  } | null;
   attachments?: TechTicketAttachment[];
 }
 
@@ -78,7 +78,8 @@ interface PartItem {
   partCode: string;
   name: string;
   unit: string;
-  totalQuantity: number;
+  currentQuantity?: number;
+  totalQuantity?: number;
 }
 
 interface UserProfile {
@@ -95,7 +96,7 @@ interface UserProfile {
 interface EquipmentHistoryData {
   id: string;
   code: string | null;
-  serialNumber: string;
+  serialNumber?: string | null;
   model: string;
   brand: string | null;
   status: string;
@@ -162,7 +163,7 @@ interface EquipmentHistoryData {
 
 interface EquipmentLookup {
   id: string;
-  serialNumber: string;
+  serialNumber?: string | null;
   model: string;
   brand: string | null;
   status: string;
@@ -250,6 +251,7 @@ export default function TechMobilePage() {
 
   // Đề xuất linh kiện
   const [parts, setParts] = useState<PartItem[]>([]);
+  const [partSearch, setPartSearch] = useState("");
   const [selectedPartId, setSelectedPartId] = useState("");
   const [partQty, setPartQty] = useState(1);
   const [requestReason, setRequestReason] = useState("");
@@ -286,6 +288,16 @@ export default function TechMobilePage() {
     }
     return can(profile.role as Role, "equipment:history");
   }, [profile]);
+
+  const filteredParts = useMemo(() => {
+    const q = partSearch.trim().toLowerCase();
+    if (!q) return parts;
+    return parts.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.partCode.toLowerCase().includes(q)
+    );
+  }, [parts, partSearch]);
 
   const signatureRef = useRef<HTMLDivElement | null>(null);
 
@@ -423,7 +435,7 @@ export default function TechMobilePage() {
   const openTicketAction = (t: TechTicket) => {
     setSelectedTicket(t);
     setDiagnosis(t.diagnosis || "");
-    setNewCounter(t.equipment.currentCounter);
+    setNewCounter(t.equipment ? t.equipment.currentCounter : "");
     setMeterSource("TECH");
     const sig = t.customerSignature;
     setSignature(
@@ -604,10 +616,12 @@ export default function TechMobilePage() {
       toast.warning("Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc mới có quyền chỉnh sửa!");
       return;
     }
+    const hasEquipment = Boolean(selectedTicket.equipment);
     const currentCounter = selectedTicket.equipment?.currentCounter ?? 0;
-    const isLowerCounter = newCounter !== "" && Number(newCounter) < currentCounter;
+    const isLowerCounter =
+      hasEquipment && newCounter !== "" && Number(newCounter) < currentCounter;
 
-    if (newCounter === "") {
+    if (hasEquipment && newCounter === "") {
       toast.error("Vui lòng nhập số Counter chốt sau khi xử lý");
       return;
     }
@@ -624,7 +638,7 @@ export default function TechMobilePage() {
     setSubmitting(true);
     const payload = {
       action: "COMPLETE",
-      counterAtClose: Number(newCounter),
+      counterAtClose: hasEquipment && newCounter !== "" ? Number(newCounter) : null,
       meterSource: meterSource,
       customerSignature: signature || undefined,
       diagnosis: diagnosis || undefined,
@@ -914,11 +928,12 @@ export default function TechMobilePage() {
 
   return (
     <div
-      className="mx-auto bg-white d-flex flex-column shadow-lg position-relative"
+      className="mx-auto bg-white d-flex flex-column shadow-lg position-relative w-100"
       style={{
         maxWidth: "480px",
         minHeight: "100vh",
         paddingBottom: "80px",
+        overflowX: "hidden",
       }}
     >
       {/* Top Header Mobile */}
@@ -973,7 +988,7 @@ export default function TechMobilePage() {
       </header>
 
       {/* Main Tab Views */}
-      <main className="flex-grow-1 p-3">
+      <main className="flex-grow-1 p-3" style={{ minWidth: 0, overflowX: "hidden" }}>
         {/* ================= TAB 1: VIỆC CỦA TÔI ================= */}
         {activeTab === "jobs" && (
           <div>
@@ -1231,25 +1246,43 @@ export default function TechMobilePage() {
                           </div>
                         </div>
 
-                        {/* 2. Cụm Thiết bị: Tinh gọn, hiển thị Model & SN & Vị trí */}
+                        {/* 2. Cụm Phân loại phiếu / Thiết bị: Hiển thị rõ Phiếu dịch vụ hoặc Phiếu máy */}
                         <div className="mb-2">
-                          <div className="d-flex justify-content-between align-items-baseline gap-2 mb-0.5">
-                            <div className="fw-bold text-dark fs-6 text-truncate">
-                              {t.equipment?.brand &&
-                              !t.equipment.model.toLowerCase().startsWith(t.equipment.brand.toLowerCase())
-                                ? `${t.equipment.brand} ${t.equipment.model}`
-                                : t.equipment?.model || "Thiết bị"}
-                            </div>
-                            {t.equipment?.serialNumber && (
-                              <span className="badge bg-light text-muted border font-monospace flex-shrink-0" style={{ fontSize: "10.5px" }}>
-                                SN: {t.equipment.serialNumber}
+                          {t.equipment ? (
+                            <>
+                              <div className="d-flex justify-content-between align-items-baseline gap-2 mb-0.5">
+                                <div className="fw-bold text-dark fs-6 text-truncate">
+                                  <i className="fas fa-print text-primary me-1.5" style={{ fontSize: "13px" }}></i>
+                                  {t.equipment.brand &&
+                                  !t.equipment.model.toLowerCase().startsWith(t.equipment.brand.toLowerCase())
+                                    ? `${t.equipment.brand} ${t.equipment.model}`
+                                    : t.equipment.model}
+                                </div>
+                                {t.equipment.serialNumber && (
+                                  <span className="badge bg-light text-muted border font-monospace flex-shrink-0" style={{ fontSize: "10.5px" }}>
+                                    SN: {t.equipment.serialNumber}
+                                  </span>
+                                )}
+                              </div>
+                              {t.equipment.department && (
+                                <div className="text-muted small text-truncate" style={{ fontSize: "12px" }}>
+                                  Vị trí: <span className="text-dark">{t.equipment.department.name}</span>
+                                  {t.equipment.department.building?.name ? ` (${t.equipment.department.building.name})` : ""}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="d-flex justify-content-between align-items-center gap-2">
+                              <div className="fw-bold text-dark fs-6 text-truncate d-flex align-items-center gap-1.5">
+                                <i className="fas fa-file-alt text-primary" style={{ fontSize: "14px" }}></i>
+                                <span>Phiếu dịch vụ</span>
+                              </div>
+                              <span
+                                className="badge bg-primary-subtle text-primary border border-primary-subtle flex-shrink-0"
+                                style={{ fontSize: "10.5px" }}
+                              >
+                                Không kèm máy
                               </span>
-                            )}
-                          </div>
-                          {t.equipment?.department && (
-                            <div className="text-muted small text-truncate" style={{ fontSize: "12px" }}>
-                              Vị trí: <span className="text-dark">{t.equipment.department.name}</span>
-                              {t.equipment.department.building?.name ? ` (${t.equipment.department.building.name})` : ""}
                             </div>
                           )}
                         </div>
@@ -1303,7 +1336,7 @@ export default function TechMobilePage() {
                               lineHeight: "1.45",
                             }}
                           >
-                            <strong className="text-danger me-1.5">Sự cố:</strong>
+                            <strong className="text-danger me-1">Nội dung:</strong>{" "}
                             <span className="text-dark">{t.description}</span>
                           </div>
                         )}
@@ -1436,13 +1469,17 @@ export default function TechMobilePage() {
 
         {/* ================= TAB 2: KHO & LINH KIỆN ================= */}
         {activeTab === "parts" && (
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h6 className="fw-bold mb-3 text-dark d-flex align-items-center justify-content-between">
               <span>
                 <i className="fas fa-boxes text-primary me-2"></i>
                 Vật tư &amp; Linh kiện trong kho
               </span>
-              <button className="btn btn-sm btn-outline-dark py-0 px-2" onClick={loadParts}>
+              <button
+                className="btn btn-sm btn-outline-dark py-0 px-2"
+                onClick={loadParts}
+                title="Làm mới danh sách linh kiện"
+              >
                 <i className="fas fa-sync-alt"></i>
               </button>
             </h6>
@@ -1455,50 +1492,66 @@ export default function TechMobilePage() {
                 type="text"
                 className="form-control"
                 placeholder="Tra cứu tên / mã linh kiện..."
-                onChange={(e) => {
-                  const val = e.target.value.toLowerCase();
-                  if (!val) loadParts();
-                  else {
-                    setParts((prev) =>
-                      prev.filter(
-                        (p) =>
-                          p.name.toLowerCase().includes(val) ||
-                          p.partCode.toLowerCase().includes(val)
-                      )
-                    );
-                  }
-                }}
+                value={partSearch}
+                onChange={(e) => setPartSearch(e.target.value)}
               />
+              {partSearch && (
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary border-start-0 bg-white text-muted"
+                  onClick={() => setPartSearch("")}
+                >
+                  <i className="fas fa-times"></i>
+                </button>
+              )}
             </div>
 
-            <div className="d-flex flex-column gap-2">
-              {parts.length === 0 ? (
-                <div className="text-center py-4 text-muted small">Chưa có dữ liệu linh kiện.</div>
+            <div className="d-flex flex-column gap-2" style={{ minWidth: 0 }}>
+              {filteredParts.length === 0 ? (
+                <div className="text-center py-4 text-muted small">
+                  {partSearch ? "Không tìm thấy linh kiện phù hợp với từ khóa." : "Chưa có dữ liệu linh kiện."}
+                </div>
               ) : (
-                parts.map((p) => (
-                  <div key={p.id} className="p-2 border rounded-3 bg-white shadow-sm d-flex justify-content-between align-items-center">
-                    <div>
-                      <div className="fw-bold small text-dark">{p.name}</div>
-                      <div className="text-muted font-monospace" style={{ fontSize: "11px" }}>
-                        Mã: <span className="text-primary">{p.partCode}</span>
+                filteredParts.map((p) => {
+                  const qty = p.currentQuantity ?? p.totalQuantity ?? 0;
+                  return (
+                    <div
+                      key={p.id}
+                      className="p-2.5 border rounded-3 bg-white shadow-sm d-flex justify-content-between align-items-center w-100"
+                      style={{ minWidth: 0 }}
+                    >
+                      <div className="flex-grow-1 me-2" style={{ minWidth: 0 }}>
+                        <div
+                          className="fw-bold small text-dark"
+                          style={{
+                            lineHeight: "1.35",
+                            wordBreak: "break-word",
+                            overflowWrap: "anywhere",
+                          }}
+                        >
+                          {p.name}
+                        </div>
+                        <div className="text-muted font-monospace mt-0.5" style={{ fontSize: "11px" }}>
+                          Mã: <span className="text-primary">{p.partCode}</span>
+                        </div>
+                      </div>
+                      <div className="text-end flex-shrink-0 ms-auto">
+                        <span
+                          className={`badge ${
+                            qty > 5
+                              ? "bg-success"
+                              : qty > 0
+                              ? "bg-warning text-dark"
+                              : "bg-danger"
+                          }`}
+                          style={{ fontSize: "12px", whiteSpace: "nowrap" }}
+                        >
+                          Tồn: {qty.toLocaleString("vi-VN")} {p.unit || "cái"}
+                        </span>
                       </div>
                     </div>
-                    <div className="text-end">
-                      <span
-                        className={`badge ${
-                          p.totalQuantity > 5
-                            ? "bg-success"
-                            : p.totalQuantity > 0
-                            ? "bg-warning text-dark"
-                            : "bg-danger"
-                        }`}
-                        style={{ fontSize: "12px" }}
-                      >
-                        Tồn: {p.totalQuantity} {p.unit}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -1629,10 +1682,12 @@ export default function TechMobilePage() {
                 </span>
                 <div className="text-truncate min-w-0">
                   <span className="fw-bold text-dark small">
-                    {selectedTicket.equipment?.brand &&
-                    !selectedTicket.equipment?.model?.toLowerCase().startsWith(selectedTicket.equipment.brand.toLowerCase())
-                      ? `${selectedTicket.equipment.brand} ${selectedTicket.equipment?.model}`
-                      : selectedTicket.equipment?.model || "Thiết bị"}
+                    {selectedTicket.equipment
+                      ? selectedTicket.equipment.brand &&
+                        !selectedTicket.equipment.model?.toLowerCase().startsWith(selectedTicket.equipment.brand.toLowerCase())
+                        ? `${selectedTicket.equipment.brand} ${selectedTicket.equipment.model}`
+                        : selectedTicket.equipment.model
+                      : "Phiếu dịch vụ"}
                   </span>
                   {selectedTicket.equipment?.serialNumber && (
                     <span className="text-primary font-monospace small ms-1 text-nowrap">
@@ -1776,29 +1831,44 @@ export default function TechMobilePage() {
                     )}
                   </div>
 
-                  {/* Thông tin thiết bị */}
+                  {/* Thông tin phân loại phiếu & thiết bị */}
                   <div className="border rounded-3 p-3 bg-white">
-                    <div className="d-flex justify-content-between align-items-start mb-2">
-                      <div>
-                        <div className="small text-muted" style={{ fontSize: "11px" }}>Thiết bị xử lý:</div>
-                        <h6 className="fw-bold text-dark mb-0 fs-6">
-                          {selectedTicket.equipment?.brand &&
-                          !selectedTicket.equipment?.model?.toLowerCase().startsWith(selectedTicket.equipment.brand.toLowerCase())
-                            ? `${selectedTicket.equipment.brand} ${selectedTicket.equipment?.model}`
-                            : selectedTicket.equipment?.model || "Chưa có thiết bị"}
-                        </h6>
-                        {selectedTicket.equipment?.serialNumber && (
-                          <span className="text-primary font-monospace small fw-semibold">
-                            (SN: {selectedTicket.equipment.serialNumber})
+                    {selectedTicket.equipment ? (
+                      <div className="d-flex justify-content-between align-items-start mb-2">
+                        <div>
+                          <div className="small text-muted" style={{ fontSize: "11px" }}>Thiết bị xử lý (Phiếu máy):</div>
+                          <h6 className="fw-bold text-dark mb-0 fs-6">
+                            {selectedTicket.equipment.brand &&
+                            !selectedTicket.equipment.model?.toLowerCase().startsWith(selectedTicket.equipment.brand.toLowerCase())
+                              ? `${selectedTicket.equipment.brand} ${selectedTicket.equipment.model}`
+                              : selectedTicket.equipment.model}
+                          </h6>
+                          {selectedTicket.equipment.serialNumber && (
+                            <span className="text-primary font-monospace small fw-semibold">
+                              (SN: {selectedTicket.equipment.serialNumber})
+                            </span>
+                          )}
+                        </div>
+                        {selectedTicket.equipment.status && (
+                          <span className="badge bg-light text-dark border" style={{ fontSize: "10.5px" }}>
+                            {STATUS_LABELS[selectedTicket.equipment.status] || selectedTicket.equipment.status}
                           </span>
                         )}
                       </div>
-                      {selectedTicket.equipment?.status && (
-                        <span className="badge bg-light text-dark border" style={{ fontSize: "10.5px" }}>
-                          {selectedTicket.equipment.status}
+                    ) : (
+                      <div className="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                          <div className="small text-muted" style={{ fontSize: "11px" }}>Phân loại phiếu:</div>
+                          <h6 className="fw-bold text-dark mb-0 fs-6 d-flex align-items-center gap-1.5 mt-0.5">
+                            <i className="fas fa-file-alt text-primary"></i>
+                            <span>Phiếu dịch vụ</span>
+                          </h6>
+                        </div>
+                        <span className="badge bg-primary-subtle text-primary border border-primary-subtle" style={{ fontSize: "10.5px" }}>
+                          Không kèm máy
                         </span>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
                     {selectedTicket.equipment?.department && (
                       <div className="small text-info mb-2" style={{ fontSize: "11.5px" }}>
@@ -1821,7 +1891,7 @@ export default function TechMobilePage() {
 
                     {selectedTicket.description && (
                       <div className="small bg-light p-2 rounded border text-dark mb-2">
-                        <span className="text-danger fw-semibold">Sự cố: </span>
+                        <span className="text-danger fw-semibold">Nội dung: </span>
                         <span>{selectedTicket.description}</span>
                       </div>
                     )}
@@ -1866,7 +1936,7 @@ export default function TechMobilePage() {
                           hasEquipmentHistoryPerm ? "btn-outline-dark" : "btn-outline-secondary opacity-75"
                         }`}
                         style={{ fontSize: "12px" }}
-                        onClick={() => handleOpenHistory(selectedTicket.equipment.id)}
+                        onClick={() => selectedTicket.equipment?.id && handleOpenHistory(selectedTicket.equipment.id)}
                       >
                         <i className={`fas ${hasEquipmentHistoryPerm ? "fa-history text-primary" : "fa-lock text-warning"}`}></i>
                         <span className="fw-semibold">Xem toàn bộ lịch sử máy này</span>
@@ -1900,11 +1970,12 @@ export default function TechMobilePage() {
                     </button>
                   </div>
 
-                  {/* Chụp & Đính kèm ảnh thực tế máy hỏng */}
+                  {/* Chụp & Đính kèm ảnh thực tế */}
                   <div className="p-2 border rounded-3 bg-white shadow-sm">
                     <div className="d-flex justify-content-between align-items-center mb-1.5">
                       <span className="small fw-bold text-dark">
-                        <i className="fas fa-camera text-primary me-1"></i> Ảnh thực tế máy hỏng
+                        <i className="fas fa-camera text-primary me-1"></i>{" "}
+                        {selectedTicket.equipment ? "Ảnh thực tế thiết bị" : "Ảnh thực tế / biên nhận"}
                       </span>
                       {!isSelectedLocked && (
                         <div className="d-flex gap-1 align-items-center">
@@ -1955,7 +2026,7 @@ export default function TechMobilePage() {
                       </div>
                     ) : (
                       <div className="text-muted text-center py-2" style={{ fontSize: "11px" }}>
-                        Chưa có ảnh chụp sự cố. Chạm "Chụp ảnh" để lưu hình ảnh máy lỗi.
+                        Chưa có ảnh chụp đính kèm. Chạm &quot;Chụp nhanh&quot; để lưu hình ảnh thực tế.
                       </div>
                     )}
                   </div>
@@ -2005,11 +2076,14 @@ export default function TechMobilePage() {
                           required
                         >
                           <option value="">-- Chọn linh kiện trong kho --</option>
-                          {parts.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              [{p.partCode}] {p.name} (Tồn: {p.totalQuantity} {p.unit})
-                            </option>
-                          ))}
+                          {parts.map((p) => {
+                            const qty = p.currentQuantity ?? p.totalQuantity ?? 0;
+                            return (
+                              <option key={p.id} value={p.id}>
+                                [{p.partCode}] {p.name} (Tồn: {qty.toLocaleString("vi-VN")} {p.unit || "cái"})
+                              </option>
+                            );
+                          })}
                         </select>
                       </div>
 
@@ -2069,84 +2143,98 @@ export default function TechMobilePage() {
               {/* BƯỚC 3: GHI COUNTER, CHỮ KÝ VÀ HOÀN TẤT */}
               {actionStep === "complete" && (
                 <div className="d-flex flex-column gap-3">
-                  <div className="p-2 border rounded-3 bg-light">
-                    <div className="small text-muted">Counter hiện tại của máy:</div>
-                    <div className="fw-bold font-monospace text-dark fs-6">
-                      {selectedTicket.equipment?.currentCounter != null
-                        ? `${selectedTicket.equipment.currentCounter.toLocaleString("vi-VN")} bản`
-                        : "—"}
-                    </div>
-                  </div>
+                  {selectedTicket.equipment ? (
+                    <>
+                      <div className="p-2 border rounded-3 bg-light">
+                        <div className="small text-muted">Counter hiện tại của máy:</div>
+                        <div className="fw-bold font-monospace text-dark fs-6">
+                          {selectedTicket.equipment.currentCounter != null
+                            ? `${selectedTicket.equipment.currentCounter.toLocaleString("vi-VN")} bản`
+                            : "—"}
+                        </div>
+                      </div>
 
-                  <div>
-                    <div className="d-flex justify-content-between align-items-center mb-1">
-                      <label className="form-label small fw-bold text-dark mb-0">
-                        Chỉ số Counter chốt sau khi xử lý (*):
-                      </label>
-                      {meterSource === "OCR" && (
-                        <span className="badge bg-success-subtle text-success border border-success-subtle" style={{ fontSize: "11px" }}>
-                          <i className="fas fa-magic me-1"></i>Nguồn: AI OCR
-                        </span>
-                      )}
-                    </div>
-                    <div className="input-group input-group-sm">
-                      <input
-                        type="number"
-                        className="form-control form-control-sm font-monospace fw-bold fs-6"
-                        value={newCounter}
-                        disabled={isSelectedLocked}
-                        onChange={(e) => {
-                          setNewCounter(e.target.value === "" ? "" : Number(e.target.value));
-                          setMeterSource("TECH");
-                        }}
-                        placeholder="Nhập số counter mới..."
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-warning text-dark fw-bold d-inline-flex align-items-center gap-1"
-                        disabled={isSelectedLocked}
-                        onClick={() => {
-                          const latestCounterPhoto = selectedTicket.attachments?.filter(
-                            (a) => a.kind === "COUNTER_PHOTO"
-                          ).pop();
-                          setOcrTargetImage(latestCounterPhoto?.url || null);
-                          setShowOcrModal(true);
-                        }}
-                        title="Quét số tự động qua AI OCR từ ảnh đồng hồ"
-                      >
-                        <i className="fas fa-magic"></i>
-                        <span>Quét OCR</span>
-                      </button>
-                    </div>
-                    {newCounter !== "" &&
-                    selectedTicket.equipment?.currentCounter != null &&
-                    Number(newCounter) < selectedTicket.equipment.currentCounter ? (
-                      <div className="p-2.5 rounded-3 border border-warning bg-warning-subtle mt-2">
-                        <div className="small fw-bold text-warning-emphasis mb-1">
-                          <i className="fas fa-exclamation-triangle me-1"></i>
-                          Chỉ số thấp hơn Counter hiện tại ({selectedTicket.equipment.currentCounter.toLocaleString("vi-VN")})
+                      <div>
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <label className="form-label small fw-bold text-dark mb-0">
+                            Chỉ số Counter chốt sau khi xử lý (*):
+                          </label>
+                          {meterSource === "OCR" && (
+                            <span className="badge bg-success-subtle text-success border border-success-subtle" style={{ fontSize: "11px" }}>
+                              <i className="fas fa-magic me-1"></i>Nguồn: AI OCR
+                            </span>
+                          )}
                         </div>
-                        <div className="text-muted mb-2" style={{ fontSize: "11px" }}>
-                          Trường hợp thay bo mạch/reset số counter sẽ được gửi Kế toán / Giám đốc phê duyệt.
+                        <div className="input-group input-group-sm">
+                          <input
+                            type="number"
+                            className="form-control form-control-sm font-monospace fw-bold fs-6"
+                            value={newCounter}
+                            disabled={isSelectedLocked}
+                            onChange={(e) => {
+                              setNewCounter(e.target.value === "" ? "" : Number(e.target.value));
+                              setMeterSource("TECH");
+                            }}
+                            placeholder="Nhập số counter mới..."
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-warning text-dark fw-bold d-inline-flex align-items-center gap-1"
+                            disabled={isSelectedLocked}
+                            onClick={() => {
+                              const latestCounterPhoto = selectedTicket.attachments?.filter(
+                                (a) => a.kind === "COUNTER_PHOTO"
+                              ).pop();
+                              setOcrTargetImage(latestCounterPhoto?.url || null);
+                              setShowOcrModal(true);
+                            }}
+                            title="Quét số tự động qua AI OCR từ ảnh đồng hồ"
+                          >
+                            <i className="fas fa-magic"></i>
+                            <span>Quét OCR</span>
+                          </button>
                         </div>
-                        <label className="form-label small fw-bold text-dark mb-1">
-                          Lý do điều chỉnh giảm (*):
-                        </label>
-                        <input
-                          type="text"
-                          className="form-control form-control-sm"
-                          value={adjustmentReason}
-                          disabled={isSelectedLocked}
-                          onChange={(e) => setAdjustmentReason(e.target.value)}
-                          placeholder="VD: Thay bo mạch chính mới, reset counter..."
-                        />
+                        {newCounter !== "" &&
+                        selectedTicket.equipment.currentCounter != null &&
+                        Number(newCounter) < selectedTicket.equipment.currentCounter ? (
+                          <div className="p-2.5 rounded-3 border border-warning bg-warning-subtle mt-2">
+                            <div className="small fw-bold text-warning-emphasis mb-1">
+                              <i className="fas fa-exclamation-triangle me-1"></i>
+                              Chỉ số thấp hơn Counter hiện tại ({selectedTicket.equipment.currentCounter.toLocaleString("vi-VN")})
+                            </div>
+                            <div className="text-muted mb-2" style={{ fontSize: "11px" }}>
+                              Trường hợp thay bo mạch/reset số counter sẽ được gửi Kế toán / Giám đốc phê duyệt.
+                            </div>
+                            <label className="form-label small fw-bold text-dark mb-1">
+                              Lý do điều chỉnh giảm (*):
+                            </label>
+                            <input
+                              type="text"
+                              className="form-control form-control-sm"
+                              value={adjustmentReason}
+                              disabled={isSelectedLocked}
+                              onChange={(e) => setAdjustmentReason(e.target.value)}
+                              placeholder="VD: Thay bo mạch chính mới, reset counter..."
+                            />
+                          </div>
+                        ) : (
+                          <div className="text-muted mt-1" style={{ fontSize: "11px" }}>
+                            * Thông thường chỉ số mới phải lớn hơn hoặc bằng Counter ban đầu.
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <div className="text-muted mt-1" style={{ fontSize: "11px" }}>
-                        * Thông thường chỉ số mới phải lớn hơn hoặc bằng Counter ban đầu.
+                    </>
+                  ) : (
+                    <div className="p-2.5 rounded-3 border bg-light text-secondary small d-flex align-items-center gap-2">
+                      <i className="fas fa-file-alt text-primary fs-5"></i>
+                      <div>
+                        <strong className="text-dark">Phiếu dịch vụ (Không kèm máy)</strong>
+                        <div className="text-muted" style={{ fontSize: "11.5px" }}>
+                          Không yêu cầu chốt chỉ số Counter khi đóng phiếu.
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Chữ ký khách hàng */}
                   <div ref={signatureRef}>
@@ -2344,7 +2432,9 @@ export default function TechMobilePage() {
                         {qrResult.brand ? `${qrResult.brand} ` : ""}
                         {qrResult.model}
                       </h6>
-                      <div className="text-primary font-monospace small">#{qrResult.serialNumber}</div>
+                      {qrResult.serialNumber && (
+                        <div className="text-primary font-monospace small">#{qrResult.serialNumber}</div>
+                      )}
                     </div>
                     <span className="badge bg-success">{qrResult.status}</span>
                   </div>
@@ -2567,9 +2657,11 @@ export default function TechMobilePage() {
                             ? `${equipmentHistory.brand} ${equipmentHistory.model}`
                             : equipmentHistory.model}
                         </div>
-                        <span className="text-primary font-monospace small fw-semibold">
-                          #{equipmentHistory.serialNumber}
-                        </span>
+                        {equipmentHistory.serialNumber && (
+                          <span className="text-primary font-monospace small fw-semibold">
+                            #{equipmentHistory.serialNumber}
+                          </span>
+                        )}
                         {equipmentHistory.code && (
                           <span className="badge bg-light text-secondary border font-monospace ms-1.5" style={{ fontSize: "10.5px" }}>
                             {equipmentHistory.code}
@@ -2703,9 +2795,9 @@ export default function TechMobilePage() {
                               </span>
                             </div>
 
-                            {/* Mô tả sự cố */}
+                            {/* Nội dung phiếu */}
                             <div className="small text-dark mb-2">
-                              <span className="text-danger fw-semibold">Hiện tượng: </span>
+                              <span className="text-danger fw-semibold">Nội dung: </span>
                               <span>{t.description}</span>
                             </div>
 
@@ -3046,7 +3138,7 @@ export default function TechMobilePage() {
         onSelectFiles={handleTechSelectMediaPhotos}
         onSelectFile={(url) => handleTechSelectMediaPhotos([url])}
         zIndex={1200}
-        title="Thư viện Media — Chọn ảnh thiết bị máy hỏng"
+        title="Thư viện Media — Chọn ảnh đính kèm phiếu kỹ thuật"
       />
 
       {/* Modal AI OCR Quét số Counter */}
@@ -3056,7 +3148,7 @@ export default function TechMobilePage() {
         imageSrc={ocrTargetImage}
         previousCounter={selectedTicket?.equipment?.currentCounter ?? null}
         equipmentModel={
-          selectedTicket
+          selectedTicket?.equipment
             ? `${selectedTicket.equipment.brand || ""} ${selectedTicket.equipment.model}`.trim()
             : null
         }

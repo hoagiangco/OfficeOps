@@ -73,6 +73,22 @@ export const POST = withErrors(async (req: Request) => {
   const r = await parseBody(req, userCreateSchema);
   if (r.error) return r.error;
 
+  // RULE: Hệ thống chỉ cho phép duy nhất 1 tài khoản Giám đốc (SUPER_ADMIN)
+  if (r.data.role === Role.SUPER_ADMIN) {
+    const existingSuperAdmin = await prisma.user.findFirst({
+      where: { role: Role.SUPER_ADMIN },
+      select: { id: true, name: true, email: true },
+    });
+    if (existingSuperAdmin) {
+      return NextResponse.json(
+        {
+          error: `Hệ thống chỉ cho phép duy nhất 1 tài khoản Giám đốc (Super Admin). Hiện tại tài khoản này là ${existingSuperAdmin.name} (${existingSuperAdmin.email}).`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const passwordHash = await bcrypt.hash(r.data.password, 10);
   const created = await prisma.user.create({
     data: {

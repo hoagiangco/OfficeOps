@@ -148,7 +148,7 @@ export function getTicketCompletionEmailHtml(params: {
   customerName: string;
   ticketCode: string;
   equipmentModel: string;
-  serialNumber: string;
+  serialNumber?: string | null;
   completedAt: string | Date;
   counterAtClose?: number | null;
   technicianName: string;
@@ -206,7 +206,7 @@ export function getTicketCompletionEmailHtml(params: {
                 </tr>
                 <tr>
                   <td style="color: #64748b; border-bottom: 1px solid #e2e8f0;">Thiết bị:</td>
-                  <td style="font-weight: bold; color: #0f172a; border-bottom: 1px solid #e2e8f0;">${equipmentModel} (Serial: ${serialNumber})</td>
+                  <td style="font-weight: bold; color: #0f172a; border-bottom: 1px solid #e2e8f0;">${equipmentModel}${serialNumber ? ` (Serial: ${serialNumber})` : ""}</td>
                 </tr>
                 <tr>
                   <td style="color: #64748b; border-bottom: 1px solid #e2e8f0;">Kỹ thuật viên phụ trách:</td>

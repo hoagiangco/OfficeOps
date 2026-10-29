@@ -320,10 +320,6 @@ export default function QuickEquipmentModal({
       toast.warning("Vui lòng nhập Dòng máy (Model)");
       return;
     }
-    if (!formData.serialNumber.trim()) {
-      toast.warning("Vui lòng nhập Số Serial Number");
-      return;
-    }
 
     const finalBrand =
       (isCustomBrand ? formData.customBrand.trim() : formData.brand.trim()) || "Khác";
@@ -350,7 +346,7 @@ export default function QuickEquipmentModal({
         : ["", ""];
 
       const payload = {
-        serialNumber: formData.serialNumber.trim(),
+        serialNumber: formData.serialNumber.trim() || null,
         model: formData.model.trim(),
         brand: finalBrand,
         type: finalType,
@@ -502,7 +498,7 @@ export default function QuickEquipmentModal({
           <div className="col-12 col-md-6">
             <label className="form-label small fw-semibold text-secondary mb-1 d-flex justify-content-between align-items-center">
               <span>
-                Số Serial Number (S/N) <span className="text-danger">*</span>
+                Số Serial Number (S/N) <span className="text-secondary fw-normal">(tùy chọn)</span>
               </span>
               <button
                 type="button"
@@ -520,9 +516,8 @@ export default function QuickEquipmentModal({
               <input
                 type="text"
                 className="form-control form-control-sm font-monospace fw-bold"
-                placeholder="VD: RC-5054-9988..."
+                placeholder="VD: RC-5054-9988 (nếu có)"
                 value={formData.serialNumber}
-                required
                 onChange={(e) => setFormData({ ...formData, serialNumber: e.target.value })}
               />
             </div>

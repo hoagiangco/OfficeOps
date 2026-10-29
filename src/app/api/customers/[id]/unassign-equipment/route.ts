@@ -19,7 +19,7 @@ const unassignSchema = z.object({
 export const POST = withErrors(async (req: Request, { params }: Ctx) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!(await checkUserPermission(s.userId, s.role, "equipment:write"))) return NextResponse.json({ error: "Không có quyền thu hồi thiết bị" }, { status: 403 });
+  if (!(await checkUserPermission(s.userId, s.role, "equipment:recall"))) return NextResponse.json({ error: "Không có quyền thu hồi thiết bị" }, { status: 403 });
 
   const { id: customerId } = await params;
   const customer = await prisma.customer.findUnique({

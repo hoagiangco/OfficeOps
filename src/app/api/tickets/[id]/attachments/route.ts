@@ -35,6 +35,14 @@ export const POST = withErrors(async (req: Request, { params }: Ctx) => {
   });
   if (!ticket) throw new HttpError(404, "Không tìm thấy phiếu kỹ thuật");
 
+  // Phiếu đã hủy không cho phép thêm đính kèm
+  if (ticket.status === "CANCELLED") {
+    throw new HttpError(
+      400,
+      "Phiếu kỹ thuật này đã bị hủy. Không thể thêm ảnh hoặc tài liệu đính kèm."
+    );
+  }
+
   // Phiếu đã hoàn thành chỉ cho phép Super Admin thêm đính kèm
   if (ticket.status === "COMPLETED" && session.role !== "SUPER_ADMIN") {
     throw new HttpError(

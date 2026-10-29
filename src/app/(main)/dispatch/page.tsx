@@ -106,7 +106,7 @@ interface DispatchTicket {
   createdAt: string;
   assigneeId: string | null;
   customer: { id: string; name: string; phone: string; address: string; latitude?: number | null; longitude?: number | null };
-  equipment: {
+  equipment?: {
     id: string;
     serialNumber: string;
     model: string;
@@ -115,7 +115,7 @@ interface DispatchTicket {
       name: string;
       building?: { name: string; branch?: { name: string } };
     } | null;
-  };
+  } | null;
   assignee?: { id: string; name: string; region: string | null } | null;
 }
 
@@ -142,7 +142,7 @@ interface Technician {
     status: string;
     priority: string;
     customer: { name: string };
-    equipment: { model: string; serialNumber: string };
+    equipment?: { model: string; serialNumber: string } | null;
   }[];
 }
 
@@ -281,13 +281,15 @@ export default function DispatchPage() {
           }
 
           // 3. Kỹ năng chuyên môn
-          const eqText = `${selectedTicket.equipment.brand || ""} ${
-            selectedTicket.equipment.model
-          }`.toLowerCase();
-          const matchedSkill = tech.skills.find((s) => eqText.includes(s.toLowerCase()));
-          if (matchedSkill) {
-            score += 20;
-            reasons.push(`Chuyên môn ${matchedSkill}`);
+          if (selectedTicket.equipment) {
+            const eqText = `${selectedTicket.equipment.brand || ""} ${
+              selectedTicket.equipment.model
+            }`.toLowerCase();
+            const matchedSkill = tech.skills.find((s) => eqText.includes(s.toLowerCase()));
+            if (matchedSkill) {
+              score += 20;
+              reasons.push(`Chuyên môn ${matchedSkill}`);
+            }
           }
         }
 
@@ -442,7 +444,7 @@ export default function DispatchPage() {
                     <tr>
                       <th style={{ minWidth: "155px" }}>Mã phiếu & Thời gian</th>
                       <th>Khách hàng & Khu vực</th>
-                      <th>Thiết bị & Lỗi</th>
+                      <th>Thiết bị / Dịch vụ & Nội dung</th>
                       <th style={{ minWidth: "135px" }}>KTV hiện tại</th>
                     </tr>
                   </thead>
@@ -566,7 +568,9 @@ export default function DispatchPage() {
                               </div>
                             </td>
                             <td>
-                              <div className="fw-semibold">{t.equipment.model}</div>
+                              <div className="fw-semibold">
+                                {t.equipment ? t.equipment.model : "Phiếu dịch vụ"}
+                              </div>
                               <div className="small text-muted">
                                 {TICKET_TYPE_LABELS[t.type]}: {t.description}
                               </div>
@@ -651,8 +655,13 @@ export default function DispatchPage() {
                       </span>
                     </div>
                     <div>
-                      Địa chỉ: <strong>{selectedTicket.customer.address}</strong> | Máy:{" "}
-                      <strong>{selectedTicket.equipment.model}</strong>
+                      Địa chỉ: <strong>{selectedTicket.customer.address}</strong> |{" "}
+                      {selectedTicket.equipment ? "Máy:" : "Phân loại:"}{" "}
+                      <strong>
+                        {selectedTicket.equipment
+                          ? selectedTicket.equipment.model
+                          : "Phiếu dịch vụ"}
+                      </strong>
                       {selectedTicket.slaDueAt && (
                         <span className="ms-2">
                           | Hạn SLA:{" "}
@@ -810,7 +819,7 @@ export default function DispatchPage() {
                                     e.stopPropagation();
                                     setViewTicketId(at.id);
                                   }}
-                                  title={`Nhấp để mở chi tiết phiếu: ${at.code} - ${at.customer.name} - ${at.equipment.model}`}
+                                  title={`Nhấp để mở chi tiết phiếu: ${at.code} - ${at.customer.name} - ${at.equipment?.model || "Phiếu dịch vụ"}`}
                                 >
                                   <i className="fas fa-ticket-alt text-primary flex-shrink-0" style={{ fontSize: "11px" }}></i>
                                   <span className="font-monospace fw-bold text-primary flex-shrink-0">{at.code}:</span>
@@ -818,7 +827,7 @@ export default function DispatchPage() {
                                     {at.customer.name}
                                   </span>
                                   <span className="badge bg-secondary-subtle text-secondary border flex-shrink-0 ms-auto" style={{ fontSize: "10.5px" }}>
-                                    {at.equipment.model}
+                                    {at.equipment?.model || "Phiếu dịch vụ"}
                                   </span>
                                 </button>
                               ))}

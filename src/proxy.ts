@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { decrypt, SESSION_COOKIE } from "@/lib/session";
-import { ROUTE_ROLES } from "@/lib/rbac";
 
 const isPublicPath = (pathname: string) => {
   return (
@@ -18,7 +17,7 @@ const isPublicPath = (pathname: string) => {
   );
 };
 
-// Kiểm tra lạc quan (optimistic) dựa trên cookie; API vẫn phải kiểm tra quyền riêng bằng requirePermission.
+// Kiểm tra xác thực phiên đăng nhập qua cookie; quyền chi tiết từng user được kiểm tra theo DB (getUserPermissions / requirePermission).
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (isPublicPath(pathname)) return NextResponse.next();
@@ -31,11 +30,6 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  const rule = ROUTE_ROLES.find((r) => pathname === r.prefix || pathname.startsWith(r.prefix + "/"));
-  if (rule && !rule.roles.includes(session.role)) {
-    if (isApi) return NextResponse.json({ error: "Không có quyền thực hiện" }, { status: 403 });
-    return NextResponse.redirect(new URL("/", request.url));
-  }
   return NextResponse.next();
 }
 

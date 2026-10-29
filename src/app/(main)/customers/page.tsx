@@ -11,6 +11,7 @@ import CustomerGroupModal from "@/components/CustomerGroupModal";
 import CustomerDeleteModal from "@/components/CustomerDeleteModal";
 import CustomerLocationTreeModal from "@/components/CustomerLocationTreeModal";
 import QuickEquipmentModal from "@/components/QuickEquipmentModal";
+import EquipmentEditModal, { EditableEquipmentTarget } from "@/components/EquipmentEditModal";
 import ChangeEquipmentLocationModal from "@/components/ChangeEquipmentLocationModal";
 import LocationPickerModal from "@/components/LocationPickerModal";
 import { formatLocationPath, resolveLocationConfig, getDirectionsUrl, parseCoordinates } from "@/lib/location";
@@ -37,7 +38,7 @@ interface BranchNode {
 interface EquipmentItem {
   id: string;
   code?: string | null;
-  serialNumber: string;
+  serialNumber?: string | null;
   model: string;
   brand: string | null;
   type?: string;
@@ -73,7 +74,7 @@ interface EquipmentItem {
 interface AvailableEquipment {
   id: string;
   code?: string | null;
-  serialNumber: string;
+  serialNumber?: string | null;
   model: string;
   brand: string | null;
   type?: string;
@@ -98,7 +99,7 @@ interface TicketItem {
   description: string;
   createdAt: string;
   assignee?: { id: string; name: string; phone: string | null } | null;
-  equipment?: { id: string; model: string; serialNumber: string } | null;
+  equipment?: { id: string; model: string; serialNumber?: string | null } | null;
 }
 
 interface FeedbackItem {
@@ -225,6 +226,8 @@ export default function CustomersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [equipFilter, setEquipFilter] = useState<string>("");
   const [debtFilter, setDebtFilter] = useState<string>("");
+  const [sortBy, setSortBy] = useState<string>("code");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const [groupCounts, setGroupCounts] = useState<Record<string, number>>({});
   const [totalReceivable, setTotalReceivable] = useState(0);
@@ -285,6 +288,17 @@ export default function CustomersPage() {
   const [showChangeLocModal, setShowChangeLocModal] = useState(false);
   const [changeLocEquipment, setChangeLocEquipment] = useState<EquipmentItem | null>(null);
   const [changeLocCustomer, setChangeLocCustomer] = useState<CustomerItem | null>(null);
+
+  // Modal Chỉnh sửa thiết bị (giống bên trang Thiết bị)
+  const [showEditEquipmentModal, setShowEditEquipmentModal] = useState(false);
+  const [editingEquipment, setEditingEquipment] = useState<EditableEquipmentTarget | null>(null);
+  const [editingEquipmentCustId, setEditingEquipmentCustId] = useState<string | null>(null);
+
+  const openEditEquipmentModal = (eq: EquipmentItem, customerId?: string | null) => {
+    setEditingEquipment(eq);
+    setEditingEquipmentCustId(customerId || null);
+    setShowEditEquipmentModal(true);
+  };
   const [availableEquipments, setAvailableEquipments] = useState<AvailableEquipment[]>([]);
   const [assignLoading, setAssignLoading] = useState(false);
   const [assignSubmitting, setAssignSubmitting] = useState(false);
@@ -429,6 +443,17 @@ export default function CustomersPage() {
     }
   };
 
+  // Xử lý sắp xếp theo Mã KH bằng nút mũi tên (mặc định giảm dần: nhập sau hiện trước)
+  const handleToggleSort = (field: string = "code") => {
+    if (sortBy === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      setSortOrder("desc");
+    }
+    setPage(1);
+  };
+
   // Modal Thu hồi thiết bị
   const [showUnassignModal, setShowUnassignModal] = useState(false);
   const [unassignEquipment, setUnassignEquipment] = useState<EquipmentItem | null>(null);
@@ -466,6 +491,8 @@ export default function CustomersPage() {
       if (statusFilter) sp.set("status", statusFilter);
       if (equipFilter) sp.set("equipFilter", equipFilter);
       if (debtFilter) sp.set("debtFilter", debtFilter);
+      if (sortBy) sp.set("sortBy", sortBy);
+      if (sortOrder) sp.set("sortOrder", sortOrder);
 
       const res = await fetch(`/api/customers?${sp.toString()}`);
       if (!res.ok) throw new Error("Không tải được danh sách khách hàng");
@@ -499,7 +526,7 @@ export default function CustomersPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, groupFilter, statusFilter, equipFilter, debtFilter]);
+  }, [page, pageSize, search, groupFilter, statusFilter, equipFilter, debtFilter, sortBy, sortOrder]);
 
   useEffect(() => {
     loadData();
@@ -1013,7 +1040,7 @@ export default function CustomersPage() {
     setTicketForm({
       type: "REPAIR",
       priority: "NORMAL",
-      description: `Báo sửa chữa cho máy ${eq.model} (S/N: ${eq.serialNumber})`,
+      description: `Báo sửa chữa cho máy ${eq.model}${eq.serialNumber ? ` (S/N: ${eq.serialNumber})` : ""}`,
     });
     setShowTicketModal(true);
   };
@@ -1396,7 +1423,7 @@ export default function CustomersPage() {
       {/* 2. Dense Filter Bar chuẩn phong cách Ticket */}
       <div className="bg-light p-2 rounded border mb-2">
         <div className="row g-2 align-items-center">
-          <div className="col-md-4">
+          <div className="col-12 col-md-3">
             <div className="input-group input-group-sm">
               <span className="input-group-text bg-white">
                 <i className="fas fa-search text-muted"></i>
@@ -1414,7 +1441,7 @@ export default function CustomersPage() {
             </div>
           </div>
 
-          <div className="col-md-2">
+          <div className="col-6 col-md-2">
             <select
               className="form-select form-select-sm"
               value={groupFilter}
@@ -1432,7 +1459,7 @@ export default function CustomersPage() {
             </select>
           </div>
 
-          <div className="col-md-2">
+          <div className="col-6 col-md-2">
             <select
               className="form-select form-select-sm"
               value={statusFilter}
@@ -1448,7 +1475,7 @@ export default function CustomersPage() {
             </select>
           </div>
 
-          <div className="col-md-2">
+          <div className="col-6 col-md-2">
             <select
               className="form-select form-select-sm"
               value={equipFilter}
@@ -1463,19 +1490,61 @@ export default function CustomersPage() {
             </select>
           </div>
 
-          <div className="col-md-2">
-            <select
-              className="form-select form-select-sm"
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setPage(1);
-              }}
-            >
-              <option value={15}>15 dòng / trang</option>
-              <option value={25}>25 dòng / trang</option>
-              <option value={50}>50 dòng / trang</option>
-            </select>
+          <div className="col-12 col-md-3">
+            <div className="d-flex align-items-center gap-1 justify-content-md-end">
+              <select
+                className="form-select form-select-sm flex-grow-1"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+                style={{ minWidth: "115px", maxWidth: "145px" }}
+                title="Số dòng trên mỗi trang"
+              >
+                <option value={15}>15 dòng / trang</option>
+                <option value={25}>25 dòng / trang</option>
+                <option value={50}>50 dòng / trang</option>
+              </select>
+
+              <div className="btn-group btn-group-sm flex-shrink-0" role="group">
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary px-2 d-inline-flex align-items-center justify-content-center shadow-none"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  title={page <= 1 ? "Đang ở trang đầu" : `Về trang trước (Trang ${page - 1})`}
+                  style={{ height: "31px", minWidth: "30px" }}
+                >
+                  <i className="fas fa-chevron-left" style={{ fontSize: "11px" }}></i>
+                </button>
+
+                <span
+                  className="btn btn-light px-2 fw-bold text-dark border font-monospace d-inline-flex align-items-center justify-content-center select-none"
+                  style={{
+                    fontSize: "11.5px",
+                    height: "31px",
+                    pointerEvents: "none",
+                    backgroundColor: "#f8f9fa",
+                    minWidth: "48px",
+                  }}
+                  title={`Trang ${page} trên tổng số ${totalPages} trang (${total} khách hàng)`}
+                >
+                  {page}/{totalPages}
+                </span>
+
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary px-2 d-inline-flex align-items-center justify-content-center shadow-none"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  title={page >= totalPages ? "Đang ở trang cuối" : `Sang trang sau (Trang ${page + 1})`}
+                  style={{ height: "31px", minWidth: "30px" }}
+                >
+                  <i className="fas fa-chevron-right" style={{ fontSize: "11px" }}></i>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1494,6 +1563,8 @@ export default function CustomersPage() {
                 setStatusFilter("");
                 setEquipFilter("");
                 setDebtFilter("");
+                setSortBy("createdAt");
+                setSortOrder("desc");
                 setPage(1);
               }}
             />
@@ -1512,7 +1583,36 @@ export default function CustomersPage() {
           <table className="table table-hover table-bordered mb-0 custom-dense-table table-sticky-header align-middle">
             <thead className="bg-dark text-white text-nowrap align-middle">
               <tr>
-                <th className="py-2.5 px-3">Khách hàng &amp; Thông tin liên hệ</th>
+                <th className="py-2.5 px-3">
+                  <div className="d-flex align-items-center gap-2">
+                    <span style={{ width: "26px", textAlign: "center", fontSize: "11.5px" }} className="text-white-50">STT</span>
+                    <span>Khách hàng &amp; Thông tin liên hệ</span>
+                    <button
+                      type="button"
+                      className={`btn btn-sm p-0 ms-1 d-inline-flex align-items-center justify-content-center text-decoration-none border-0 bg-transparent ${
+                        sortBy === "code" ? "text-warning" : "text-white-50"
+                      }`}
+                      style={{ width: "22px", height: "22px", cursor: "pointer" }}
+                      onClick={() => handleToggleSort("code")}
+                      title={
+                        sortBy === "code"
+                          ? `Đang xếp theo Mã KH (${sortOrder === "asc" ? "Tăng dần A-Z" : "Giảm dần Z-A"}). Nhấn để đổi chiều.`
+                          : "Nhấn để sắp xếp theo Mã KH"
+                      }
+                    >
+                      <i
+                        className={`fas ${
+                          sortBy === "code"
+                            ? sortOrder === "asc"
+                              ? "fa-arrow-up"
+                              : "fa-arrow-down"
+                            : "fa-sort"
+                        }`}
+                        style={{ fontSize: "12px" }}
+                      ></i>
+                    </button>
+                  </div>
+                </th>
                 <th style={{ width: "140px" }} className="text-center py-2.5">Máy dịch vụ</th>
                 <th style={{ width: "160px" }} className="text-center py-2.5">Hợp đồng &amp; Phiếu kỹ thuật</th>
                 <th style={{ width: "130px" }} className="text-center py-2.5">Trạng thái</th>
@@ -1527,12 +1627,13 @@ export default function CustomersPage() {
                   </td>
                 </tr>
               ) : (
-                customers.map((c) => {
+                customers.map((c, index) => {
                   const equipCount = c._count?.equipment ?? c.equipment?.length ?? 0;
                   const contractCount = c._count?.contracts ?? 0;
                   const branchCount = c._count?.branches ?? 0;
                   const ticketCount = c._count?.tickets ?? 0;
                   const isExpanded = expandedRowIds.has(c.id);
+                  const stt = (page - 1) * pageSize + index + 1;
 
                   const rowClass =
                     c.status === "SUSPENDED"
@@ -1547,28 +1648,50 @@ export default function CustomersPage() {
                         {/* 1. Khách hàng & Thông tin liên hệ */}
                         <td className="align-middle py-2.5">
                           <div className="d-flex align-items-start gap-2.5">
-                            <button
-                              type="button"
-                              className={`btn btn-sm ${isExpanded ? "btn-dark text-white" : "btn-light text-secondary border"} p-0 d-inline-flex align-items-center justify-content-center flex-shrink-0 mt-0.5`}
-                              style={{ width: "24px", height: "24px", borderRadius: "5px" }}
-                              onClick={() => toggleRow(c.id)}
-                              title={isExpanded ? "Thu gọn" : "Mở xem máy dịch vụ & chi tiết phụ"}
-                            >
-                              <i className={`fas fa-chevron-${isExpanded ? "down" : "right"}`} style={{ fontSize: "10px" }}></i>
-                            </button>
+                            {/* Cột toggle mở rộng + Số thứ tự (STT) */}
+                            <div className="d-flex flex-column align-items-center flex-shrink-0" style={{ width: "26px" }}>
+                              <button
+                                type="button"
+                                className={`btn btn-sm ${isExpanded ? "btn-dark text-white" : "btn-light text-secondary border"} p-0 d-inline-flex align-items-center justify-content-center flex-shrink-0 mt-0.5`}
+                                style={{ width: "24px", height: "24px", borderRadius: "5px" }}
+                                onClick={() => toggleRow(c.id)}
+                                title={isExpanded ? "Thu gọn" : "Mở xem máy dịch vụ & chi tiết phụ"}
+                              >
+                                <i className={`fas fa-chevron-${isExpanded ? "down" : "right"}`} style={{ fontSize: "10px" }}></i>
+                              </button>
+                              <span
+                                className="fw-bold text-dark mt-1 text-center select-none"
+                                style={{ fontSize: "13px", lineHeight: "1.2" }}
+                                title={`Số thứ tự: ${stt}`}
+                              >
+                                {stt}
+                              </span>
+                            </div>
 
                             <div className="min-w-0 flex-grow-1">
-                              {/* Dòng 1: Tên khách hàng + Badge phân nhóm (Ẩn ID/Mã trên danh sách) */}
-                              <div className="d-flex align-items-center gap-2 flex-wrap">
+                              {/* Dòng 1: Tên khách hàng [Trái] + Mã KH (#ID) & Nhãn Loại khách [Canh phải của ô] */}
+                              <div className="d-flex align-items-center justify-content-between gap-2">
                                 <span
-                                  className="fw-bold text-dark hover-primary"
+                                  className="fw-bold text-dark hover-primary text-truncate min-w-0"
                                   style={{ fontSize: "14.5px", cursor: "pointer" }}
                                   onClick={() => openDetail(c, "equipment")}
+                                  title={c.name}
                                 >
                                   {c.name}
                                 </span>
 
-                                {renderGroupBadge(c.group)}
+                                <div className="d-flex align-items-center gap-1.5 flex-shrink-0 ms-auto">
+                                  {c.code && (
+                                    <span
+                                      className="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace py-0.5 px-1.5 fw-semibold"
+                                      style={{ fontSize: "11.5px" }}
+                                      title={`Mã khách hàng: ${c.code}`}
+                                    >
+                                      #{c.code.replace(/^#/, "")}
+                                    </span>
+                                  )}
+                                  {renderGroupBadge(c.group)}
+                                </div>
                               </div>
 
                               {/* Dòng 2: SĐT + Người liên hệ + MST */}
@@ -1614,34 +1737,36 @@ export default function CustomersPage() {
                                 )}
                               </div>
 
-                              {/* Dòng 3: Địa chỉ + Chỉ đường */}
-                              <div className="text-secondary d-flex align-items-center gap-1.5 mt-0.5 flex-wrap" style={{ fontSize: "12.5px" }}>
-                                <span className="text-truncate" style={{ maxWidth: "560px" }} title={c.address}>
+                              {/* Dòng 3: Địa chỉ [Canh trái] + Chỉ đường [Canh phải của ô] */}
+                              <div className="text-secondary d-flex align-items-center justify-content-between gap-2 mt-0.5" style={{ fontSize: "12.5px" }}>
+                                <span className="text-truncate min-w-0" style={{ maxWidth: "560px" }} title={c.address}>
                                   <i className="fas fa-map-marker-alt text-danger me-1.5" style={{ fontSize: "11px" }}></i>
                                   {c.address}
                                 </span>
                                 {c.address && (
-                                  <a
-                                    href={getDirectionsUrl(c)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="btn btn-link p-0 text-primary text-decoration-none fw-semibold small d-inline-flex align-items-center gap-1 ms-1"
-                                    style={{ fontSize: "11.5px" }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    title="Mở chỉ đường Google Maps dẫn đến địa chỉ khách hàng"
-                                  >
-                                    <i className="fas fa-location-arrow text-danger" style={{ fontSize: "10px" }}></i>
-                                    <span>Chỉ đường</span>
-                                    {c.latitude != null && c.longitude != null && (
-                                      <span
-                                        className="badge bg-success-subtle text-success border border-success-subtle py-0 px-1 font-monospace"
-                                        style={{ fontSize: "9px" }}
-                                        title={`Tọa độ GPS: ${c.latitude}, ${c.longitude}`}
-                                      >
-                                        GPS
-                                      </span>
-                                    )}
-                                  </a>
+                                  <div className="flex-shrink-0 ms-auto text-nowrap">
+                                    <a
+                                      href={getDirectionsUrl(c)}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="btn btn-link p-0 text-primary text-decoration-none fw-semibold small d-inline-flex align-items-center gap-1"
+                                      style={{ fontSize: "11.5px" }}
+                                      onClick={(e) => e.stopPropagation()}
+                                      title="Mở chỉ đường Google Maps dẫn đến địa chỉ khách hàng"
+                                    >
+                                      <i className="fas fa-location-arrow text-danger" style={{ fontSize: "10px" }}></i>
+                                      <span>Chỉ đường</span>
+                                      {c.latitude != null && c.longitude != null && (
+                                        <span
+                                          className="badge bg-success-subtle text-success border border-success-subtle py-0 px-1 font-monospace ms-0.5"
+                                          style={{ fontSize: "9px" }}
+                                          title={`Tọa độ GPS: ${c.latitude}, ${c.longitude}`}
+                                        >
+                                          GPS
+                                        </span>
+                                      )}
+                                    </a>
+                                  </div>
                                 )}
                               </div>
                             </div>
@@ -1819,10 +1944,25 @@ export default function CustomersPage() {
                                             return (
                                               <tr key={eq.id}>
                                                 <td className="fw-semibold text-dark">
-                                                  {eq.model}
+                                                  <span
+                                                    role="button"
+                                                    tabIndex={0}
+                                                    className="cursor-pointer fw-semibold text-primary text-decoration-none"
+                                                    style={{ fontSize: "12px" }}
+                                                    onClick={() => openEditEquipmentModal(eq, c.id)}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === "Enter" || e.key === " ") {
+                                                        e.preventDefault();
+                                                        openEditEquipmentModal(eq, c.id);
+                                                      }
+                                                    }}
+                                                    title="Bấm để mở bảng chỉnh sửa thiết bị"
+                                                  >
+                                                    {eq.model}
+                                                  </span>
                                                 </td>
                                                 <td className="font-monospace text-primary fw-bold">
-                                                  {eq.serialNumber}
+                                                  {eq.serialNumber || <span className="text-muted fw-normal fst-italic">—</span>}
                                                 </td>
                                                 <td>
                                                   <div className="d-flex align-items-center gap-1 flex-wrap">
@@ -1848,21 +1988,21 @@ export default function CustomersPage() {
                                                   </div>
                                                 </td>
                                                 <td
-                                                  className="text-secondary text-truncate"
-                                                  style={{ minWidth: "160px", maxWidth: "260px" }}
+                                                  className="text-secondary"
+                                                  style={{ minWidth: "220px", whiteSpace: "normal", wordBreak: "break-word" }}
                                                   title={locStr}
                                                 >
-                                                  <div className="d-flex align-items-center gap-1.5 text-truncate">
-                                                    <i className="fas fa-map-marker-alt text-danger opacity-75 flex-shrink-0" style={{ fontSize: "11px" }}></i>
+                                                  <div className="d-flex align-items-start gap-1.5">
+                                                    <i className="fas fa-map-marker-alt text-danger opacity-75 flex-shrink-0 mt-1" style={{ fontSize: "11px" }}></i>
                                                     {locPath ? (
-                                                      <span className="text-truncate">
+                                                      <span>
                                                         <span className="text-dark fw-semibold">{locPath}</span>
                                                         {eq.locationNote && (
                                                           <span className="text-secondary small ms-1">({eq.locationNote})</span>
                                                         )}
                                                       </span>
                                                     ) : eq.locationNote ? (
-                                                      <span className="text-dark fw-medium text-truncate">{eq.locationNote}</span>
+                                                      <span className="text-dark fw-medium">{eq.locationNote}</span>
                                                     ) : (
                                                       <span className="text-muted fst-italic">Tại trụ sở chính</span>
                                                     )}
@@ -1974,24 +2114,39 @@ export default function CustomersPage() {
         /* CARD VIEW */
         <div className="bg-white p-3 rounded shadow-sm border">
           <div className="row g-3">
-            {customers.map((c) => {
+            {customers.map((c, index) => {
               const equipCount = c._count?.equipment ?? c.equipment?.length ?? 0;
               const contractCount = c._count?.contracts ?? 0;
               const isVip = c.group === "Khách VIP";
+              const stt = (page - 1) * pageSize + index + 1;
 
               return (
                 <div key={c.id} className="col-12 col-md-6 col-xl-4">
                   <div className={`card h-100 border shadow-sm rounded ${isVip ? "border-warning border-2" : ""}`}>
                     <div className="card-header bg-white d-flex justify-content-between align-items-center py-2 border-bottom">
-                      <div
-                        className="fw-bold text-dark text-truncate me-2 cursor-pointer"
-                        style={{ fontSize: "13.5px" }}
-                        onClick={() => openDetail(c, "equipment")}
-                        title={c.name}
-                      >
-                        {c.name}
+                      <div className="d-flex align-items-center gap-1.5 min-w-0 me-2">
+                        <span className="badge bg-secondary-subtle text-secondary border border-secondary-subtle font-monospace py-0.5 px-1.5 flex-shrink-0" style={{ fontSize: "11px" }}>
+                          #{stt}
+                        </span>
+                        <div
+                          className="fw-bold text-dark text-truncate cursor-pointer"
+                          style={{ fontSize: "13.5px" }}
+                          onClick={() => openDetail(c, "equipment")}
+                          title={c.name}
+                        >
+                          {c.name}
+                        </div>
                       </div>
                       <div className="d-flex gap-1 align-items-center flex-shrink-0">
+                        {c.code && (
+                          <span
+                            className="badge bg-primary-subtle text-primary border border-primary-subtle font-monospace py-0.5 px-1.5 fw-semibold"
+                            style={{ fontSize: "11px" }}
+                            title={`Mã khách hàng: ${c.code}`}
+                          >
+                            #{c.code.replace(/^#/, "")}
+                          </span>
+                        )}
                         {renderGroupBadge(c.group)}
                         <span
                           className={`badge ${
@@ -2047,7 +2202,23 @@ export default function CustomersPage() {
                                 style={{ fontSize: "11px" }}
                               >
                                 <span>
-                                  <strong className="text-dark">{eq.model}</strong> ({eq.serialNumber})
+                                  <strong
+                                    role="button"
+                                    tabIndex={0}
+                                    className="text-primary cursor-pointer"
+                                    style={{ fontSize: "11px" }}
+                                    onClick={() => openEditEquipmentModal(eq, c.id)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        openEditEquipmentModal(eq, c.id);
+                                      }
+                                    }}
+                                    title="Bấm để mở bảng chỉnh sửa thiết bị"
+                                  >
+                                    {eq.model}
+                                  </strong>
+                                  {eq.serialNumber ? ` (${eq.serialNumber})` : ""}
                                 </span>
                                 <span className="badge bg-success-subtle text-success">Hoạt động</span>
                               </div>
@@ -2122,14 +2293,14 @@ export default function CustomersPage() {
             <button
               className="btn btn-outline-secondary btn-sm"
               disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
               <i className="fas fa-chevron-left me-1"></i> Trước
             </button>
             <button
               className="btn btn-outline-secondary btn-sm"
               disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             >
               Sau <i className="fas fa-chevron-right ms-1"></i>
             </button>
@@ -2314,7 +2485,7 @@ export default function CustomersPage() {
                           <th style={{ minWidth: "120px" }}>Model</th>
                           <th style={{ minWidth: "120px" }}>Serial Number</th>
                           <th style={{ minWidth: "130px" }}>Hình thức &amp; Danh mục</th>
-                          <th style={{ minWidth: "180px", maxWidth: "280px" }}>Vị trí lắp đặt</th>
+                          <th style={{ minWidth: "220px" }}>Vị trí lắp đặt</th>
                           <th className="text-end" style={{ minWidth: "100px" }}>Chỉ số Counter</th>
                           <th style={{ minWidth: "90px" }}>Hợp đồng</th>
                           <th className="text-center" style={{ minWidth: "95px" }}>Trạng thái</th>
@@ -2332,10 +2503,25 @@ export default function CustomersPage() {
                           return (
                             <tr key={eq.id}>
                               <td className="fw-bold text-dark text-nowrap">
-                                {eq.model}
+                                <span
+                                  role="button"
+                                  tabIndex={0}
+                                  className="cursor-pointer fw-bold text-primary text-decoration-none"
+                                  style={{ fontSize: "inherit" }}
+                                  onClick={() => openEditEquipmentModal(eq, detailCustomer.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                      e.preventDefault();
+                                      openEditEquipmentModal(eq, detailCustomer.id);
+                                    }
+                                  }}
+                                  title="Bấm để mở bảng chỉnh sửa thiết bị"
+                                >
+                                  {eq.model}
+                                </span>
                               </td>
                               <td className="font-monospace text-primary fw-semibold text-nowrap">
-                                {eq.serialNumber}
+                                {eq.serialNumber || <span className="text-muted fw-normal fst-italic">—</span>}
                               </td>
                               <td>
                                 <div className="d-flex align-items-center gap-1 flex-wrap">
@@ -2362,27 +2548,27 @@ export default function CustomersPage() {
                               </td>
                               <td
                                 className="small text-secondary cursor-pointer"
-                                style={{ minWidth: "180px", maxWidth: "280px" }}
+                                style={{ minWidth: "220px", whiteSpace: "normal", wordBreak: "break-word" }}
                                 title={`Vị trí: ${locStr} (Bấm để đổi vị trí)`}
                                 onClick={() => openChangeLocationModal(eq, detailCustomer)}
                               >
-                                <div className="d-flex align-items-center justify-content-between gap-1">
-                                  <div className="d-flex align-items-center gap-1.5 text-truncate">
-                                    <i className="fas fa-map-marker-alt text-danger opacity-75 flex-shrink-0" style={{ fontSize: "11px" }}></i>
+                                <div className="d-flex align-items-start justify-content-between gap-1">
+                                  <div className="d-flex align-items-start gap-1.5">
+                                    <i className="fas fa-map-marker-alt text-danger opacity-75 flex-shrink-0 mt-1" style={{ fontSize: "11px" }}></i>
                                     {locPath ? (
-                                      <span className="text-truncate">
+                                      <span>
                                         <span className="text-dark fw-semibold">{locPath}</span>
                                         {eq.locationNote && (
                                           <span className="text-secondary small ms-1">({eq.locationNote})</span>
                                         )}
                                       </span>
                                     ) : eq.locationNote ? (
-                                      <span className="text-dark fw-medium text-truncate">{eq.locationNote}</span>
+                                      <span className="text-dark fw-medium">{eq.locationNote}</span>
                                     ) : (
                                       <span className="text-muted fst-italic">{detailCustomer.address || "Tại trụ sở chính"}</span>
                                     )}
                                   </div>
-                                  <i className="fas fa-pen text-muted opacity-50 flex-shrink-0" style={{ fontSize: "10px" }} title="Đổi vị trí"></i>
+                                  <i className="fas fa-pen text-muted opacity-50 flex-shrink-0 mt-1" style={{ fontSize: "10px" }} title="Đổi vị trí"></i>
                                 </div>
                               </td>
                               <td className="fw-semibold text-end text-nowrap">
@@ -2500,7 +2686,8 @@ export default function CustomersPage() {
                             <td>
                               {tk.equipment ? (
                                 <span className="small text-secondary">
-                                  {tk.equipment.model} ({tk.equipment.serialNumber})
+                                  {tk.equipment.model}
+                                  {tk.equipment.serialNumber ? ` (${tk.equipment.serialNumber})` : ""}
                                 </span>
                               ) : (
                                 "—"
@@ -3082,114 +3269,105 @@ export default function CustomersPage() {
                       </div>
                     </div>
                   ) : (
-                    filteredAvailableEquipments.map((eq) => {
-                      const isSelected = assignForm.equipmentId === eq.id;
-                      return (
-                        <div
-                          key={eq.id}
-                          onClick={() => {
-                            setAssignForm((prev) => ({
-                              ...prev,
-                              equipmentId: eq.id,
-                              initialCounter: eq.currentCounter ?? 0,
-                              relationType: prev.relationType || eq.relationType || "Cho thuê",
-                            }));
-                          }}
-                          className="p-2 mb-1.5 rounded border transition-all"
-                          style={{
-                            cursor: "pointer",
-                            transition: "all 0.15s ease-in-out",
-                            backgroundColor: isSelected ? "#eff6ff" : "#ffffff",
-                            borderColor: isSelected ? "#3b82f6" : "#cbd5e1",
-                            borderLeft: isSelected
-                              ? "4px solid #2563eb"
-                              : "1px solid #cbd5e1",
-                          }}
-                        >
-                          {/* Hàng 1: Tên máy + S/N + Loại + Nút chọn */}
-                          <div className="d-flex justify-content-between align-items-center">
-                            <div className="d-flex align-items-center gap-1.5 text-truncate me-2">
-                              <span
-                                className={`fw-bold text-truncate ${
-                                  isSelected ? "text-primary" : "text-dark"
-                                }`}
-                                style={{ fontSize: "13px" }}
+                    <div className="table-responsive border rounded-2 bg-white shadow-2xs">
+                      <table className="table table-hover table-sm align-middle mb-0" style={{ fontSize: "12px" }}>
+                        <thead className="table-light border-bottom text-secondary" style={{ fontSize: "11px", position: "sticky", top: 0, zIndex: 1 }}>
+                          <tr>
+                            <th style={{ width: "36px" }} className="text-center py-2">Chọn</th>
+                            <th className="py-2">Thiết bị &amp; Model</th>
+                            <th className="py-2">Serial (SN)</th>
+                            <th className="py-2">Kho lưu trữ</th>
+                            <th className="py-2 text-end">Counter</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredAvailableEquipments.map((eq) => {
+                            const isSelected = assignForm.equipmentId === eq.id;
+                            return (
+                              <tr
+                                key={eq.id}
+                                onClick={() => {
+                                  setAssignForm((prev) => ({
+                                    ...prev,
+                                    equipmentId: eq.id,
+                                    initialCounter: eq.currentCounter ?? 0,
+                                    relationType: prev.relationType || eq.relationType || "Cho thuê",
+                                  }));
+                                }}
+                                className={isSelected ? "table-primary" : ""}
+                                style={{ cursor: "pointer", transition: "background-color 0.15s ease" }}
                               >
-                                {getEquipmentDisplayName(eq.brand, eq.model)}
-                              </span>
-                              <span
-                                className="badge font-monospace text-primary bg-primary-subtle border border-primary-subtle px-1.5 py-0.5 fw-semibold"
-                                style={{ fontSize: "11px" }}
-                              >
-                                S/N: {eq.serialNumber}
-                              </span>
-                              {eq.type && (
-                                <span
-                                  className="badge bg-light text-secondary border font-normal"
-                                  style={{ fontSize: "10px" }}
-                                >
-                                  {eq.type}
-                                </span>
-                              )}
-                            </div>
-
-                            <div>
-                              {isSelected ? (
-                                <span
-                                  className="badge bg-primary text-white px-2.5 py-1 rounded-pill shadow-xs"
-                                  style={{ fontSize: "11px" }}
-                                >
-                                  <i className="fas fa-check-circle me-1"></i>Đang chọn
-                                </span>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="btn btn-outline-primary btn-sm py-0.5 px-2.5 rounded-pill fw-semibold"
-                                  style={{ fontSize: "11px" }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setAssignForm((prev) => ({
-                                      ...prev,
-                                      equipmentId: eq.id,
-                                      initialCounter: eq.currentCounter ?? 0,
-                                      relationType:
-                                        prev.relationType || eq.relationType || "Cho thuê",
-                                    }));
-                                  }}
-                                >
-                                  Chọn
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Hàng 2: Kho bãi + Counter */}
-                          <div
-                            className="d-flex justify-content-between align-items-center mt-1 text-muted"
-                            style={{ fontSize: "11.5px" }}
-                          >
-                            <span className="text-truncate me-2">
-                              <i className="fas fa-warehouse text-warning me-1"></i>
-                              <span className="text-dark fw-medium">
-                                {eq.warehouse?.name || "Kho mặc định"}
-                              </span>
-                              {eq.locationNote ? (
-                                <span className="text-secondary ms-1">
-                                  ({eq.locationNote})
-                                </span>
-                              ) : null}
-                            </span>
-                            <span
-                              className="badge font-monospace bg-info-subtle text-info-emphasis border border-info-subtle px-1.5 py-0.5"
-                              style={{ fontSize: "11px" }}
-                            >
-                              <i className="fas fa-tachometer-alt me-1 text-info"></i>
-                              {eq.currentCounter.toLocaleString("vi-VN")}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })
+                                <td className="text-center">
+                                  <input
+                                    type="radio"
+                                    name="assignEquipmentRadio"
+                                    className="form-check-input m-0 cursor-pointer"
+                                    checked={isSelected}
+                                    onChange={() => {
+                                      setAssignForm((prev) => ({
+                                        ...prev,
+                                        equipmentId: eq.id,
+                                        initialCounter: eq.currentCounter ?? 0,
+                                        relationType: prev.relationType || eq.relationType || "Cho thuê",
+                                      }));
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                </td>
+                                <td>
+                                  <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                                    <span className={`fw-bold ${isSelected ? "text-primary" : "text-dark"}`} style={{ fontSize: "12.5px" }}>
+                                      {getEquipmentDisplayName(eq.brand, eq.model)}
+                                    </span>
+                                    {isSelected && (
+                                      <span className="badge bg-primary text-white" style={{ fontSize: "9.5px" }}>
+                                        <i className="fas fa-check me-1"></i>Đang chọn
+                                      </span>
+                                    )}
+                                  </div>
+                                  {eq.type && (
+                                    <div className="text-muted" style={{ fontSize: "10.5px" }}>
+                                      {eq.type}
+                                    </div>
+                                  )}
+                                </td>
+                                <td>
+                                  {eq.serialNumber ? (
+                                    <span className="badge bg-dark text-white font-monospace fw-bold" style={{ fontSize: "10.5px" }}>
+                                      SN: {eq.serialNumber}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted fst-italic small">—</span>
+                                  )}
+                                  {eq.code && (
+                                    <div className="text-muted font-monospace" style={{ fontSize: "10px" }}>
+                                      {eq.code}
+                                    </div>
+                                  )}
+                                </td>
+                                <td>
+                                  <span className="text-dark fw-medium" style={{ fontSize: "11.5px" }}>
+                                    <i className="fas fa-warehouse text-warning me-1"></i>
+                                    {eq.warehouse?.name || "Kho mặc định"}
+                                  </span>
+                                  {eq.locationNote && (
+                                    <div className="text-muted small" style={{ fontSize: "10.5px" }}>
+                                      {eq.locationNote}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="text-end text-nowrap">
+                                  <span className="badge font-monospace bg-info-subtle text-info-emphasis border border-info-subtle px-1.5 py-0.5" style={{ fontSize: "10.5px" }}>
+                                    <i className="fas fa-tachometer-alt me-1 text-info"></i>
+                                    {eq.currentCounter?.toLocaleString("vi-VN") || 0}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </div>
               </div>
@@ -3246,9 +3424,11 @@ export default function CustomersPage() {
                       className="d-flex flex-wrap gap-2 pt-1"
                       style={{ fontSize: "12px" }}
                     >
-                      <span className="badge bg-white text-primary border border-primary-subtle font-monospace px-2 py-1">
-                        S/N: <strong>{selectedAvailableEquipment.serialNumber}</strong>
-                      </span>
+                      {selectedAvailableEquipment.serialNumber && (
+                        <span className="badge bg-white text-primary border border-primary-subtle font-monospace px-2 py-1">
+                          S/N: <strong>{selectedAvailableEquipment.serialNumber}</strong>
+                        </span>
+                      )}
                       <span className="badge bg-white text-dark border px-2 py-1">
                         <i className="fas fa-warehouse text-warning me-1"></i>
                         {selectedAvailableEquipment.warehouse?.name || "Kho mặc định"}
@@ -3474,8 +3654,8 @@ export default function CustomersPage() {
         {unassignEquipment && (
           <form onSubmit={handleUnassignSubmit}>
             <div className="alert alert-info small py-2 mb-3">
-              Bạn đang thực hiện thu hồi máy <strong>{unassignEquipment.model}</strong> (S/N:{" "}
-              {unassignEquipment.serialNumber}) từ khách hàng <strong>{detailCustomer?.name}</strong>.
+              Bạn đang thực hiện thu hồi máy <strong>{unassignEquipment.model}</strong>
+              {unassignEquipment.serialNumber ? ` (S/N: ${unassignEquipment.serialNumber})` : ""} từ khách hàng <strong>{detailCustomer?.name}</strong>.
             </div>
 
             <div className="mb-3">
@@ -3550,7 +3730,8 @@ export default function CustomersPage() {
             <div className="mb-3">
               <span className="small text-muted">Thiết bị:</span>
               <div className="fw-bold">
-                {ticketEquipment.model} ({ticketEquipment.serialNumber})
+                {ticketEquipment.model}
+                {ticketEquipment.serialNumber ? ` (${ticketEquipment.serialNumber})` : ""}
               </div>
             </div>
 
@@ -4054,6 +4235,26 @@ export default function CustomersPage() {
           const target = changeLocCustomer || detailCustomer;
           if (target) {
             openLocationModal(target);
+          }
+        }}
+      />
+
+      {/* Modal Chỉnh sửa thiết bị giống chức năng Thiết bị */}
+      <EquipmentEditModal
+        show={showEditEquipmentModal}
+        equipment={editingEquipment}
+        defaultCustomerId={editingEquipmentCustId}
+        onClose={() => {
+          setShowEditEquipmentModal(false);
+          setEditingEquipment(null);
+          setEditingEquipmentCustId(null);
+        }}
+        onSaved={() => {
+          loadData();
+          if (editingEquipmentCustId && detailCustomer?.id === editingEquipmentCustId) {
+            refreshDetailCustomer(editingEquipmentCustId);
+          } else if (detailCustomer?.id) {
+            refreshDetailCustomer(detailCustomer.id);
           }
         }}
       />

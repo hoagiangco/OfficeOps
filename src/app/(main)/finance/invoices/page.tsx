@@ -60,7 +60,7 @@ interface MeterLogRecord {
   isBilled: boolean;
   equipment: {
     id: string;
-    serialNumber: string;
+    serialNumber?: string | null;
     model: string;
     currentCounter: number;
     baseQuota: number | null;
@@ -90,7 +90,7 @@ interface ContractOption {
   customer: { id: string; name: string };
   equipment: {
     id: string;
-    serialNumber: string;
+    serialNumber?: string | null;
     model: string;
     currentCounter: number;
     baseQuota: number | null;
@@ -100,7 +100,7 @@ interface ContractOption {
 
 interface EquipmentOption {
   id: string;
-  serialNumber: string;
+  serialNumber?: string | null;
   model: string;
   currentCounter: number;
   baseQuota: number | null;
@@ -220,7 +220,9 @@ export default function FinanceInvoicesPage() {
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Không thể ghi nhận counter");
       toast.success(
-        `Đã chốt counter mới (${Number(meterForm.counterValue).toLocaleString("vi-VN")}) cho máy ${body.equipment.serialNumber}`
+        `Đã chốt counter mới (${Number(meterForm.counterValue).toLocaleString("vi-VN")}) cho máy ${
+          body.equipment?.model || ""
+        }${body.equipment?.serialNumber ? ` (${body.equipment.serialNumber})` : ""}`
       );
       setShowMeterModal(false);
       setMeterForm({ equipmentId: "", counterValue: "", source: "MANUAL", photoUrl: "" });
@@ -309,7 +311,7 @@ export default function FinanceInvoicesPage() {
       if (!q.trim()) return true;
       const kw = q.trim().toLowerCase();
       return (
-        m.equipment.serialNumber.toLowerCase().includes(kw) ||
+        (m.equipment.serialNumber ? m.equipment.serialNumber.toLowerCase().includes(kw) : false) ||
         m.equipment.model.toLowerCase().includes(kw) ||
         (m.equipment.customer?.name || "").toLowerCase().includes(kw) ||
         (m.equipment.contract?.code || "").toLowerCase().includes(kw)
@@ -371,7 +373,7 @@ export default function FinanceInvoicesPage() {
         filteredMeters.map((m) => [
           new Date(m.logDate).toLocaleString("vi-VN"),
           m.equipment.model,
-          m.equipment.serialNumber,
+          m.equipment.serialNumber || "",
           m.equipment.customer?.name || "Trong kho",
           m.equipment.contract?.code || "",
           m.counterValue,
@@ -677,9 +679,11 @@ export default function FinanceInvoicesPage() {
                       </td>
                       <td>
                         <div className="fw-bold text-primary">{m.equipment.model}</div>
-                        <div className="small text-muted font-monospace">
-                          SN: {m.equipment.serialNumber}
-                        </div>
+                        {m.equipment.serialNumber && (
+                          <div className="small text-muted font-monospace">
+                            SN: {m.equipment.serialNumber}
+                          </div>
+                        )}
                       </td>
                       <td>
                         <div className="fw-semibold">
@@ -780,7 +784,7 @@ export default function FinanceInvoicesPage() {
               <option value="">-- Chọn máy --</option>
               {equipmentList.map((eq) => (
                 <option key={eq.id} value={eq.id}>
-                  {eq.model} - SN: {eq.serialNumber} | Khách:{" "}
+                  {eq.model}{eq.serialNumber ? ` - SN: ${eq.serialNumber}` : ""} | Khách:{" "}
                   {eq.customer?.name || "Kho"} (Hiện tại:{" "}
                   {eq.currentCounter.toLocaleString("vi-VN")})
                 </option>
@@ -962,7 +966,8 @@ export default function FinanceInvoicesPage() {
                       {selectedContractForGen.equipment.map((eq) => (
                         <tr key={eq.id}>
                           <td>
-                            <strong>{eq.model}</strong> ({eq.serialNumber})
+                            <strong>{eq.model}</strong>
+                            {eq.serialNumber ? ` (${eq.serialNumber})` : ""}
                           </td>
                           <td className="text-end font-monospace">
                             {eq.currentCounter.toLocaleString("vi-VN")}

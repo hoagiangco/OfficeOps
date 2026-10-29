@@ -24,13 +24,13 @@ export interface MapTicket {
     latitude?: number | null;
     longitude?: number | null;
   };
-  equipment: {
+  equipment?: {
     id: string;
     model: string;
     brand: string | null;
     serialNumber: string;
     branch?: { latitude?: number | null; longitude?: number | null } | null;
-  };
+  } | null;
   assignee?: { id: string; name: string } | null;
 }
 
@@ -117,8 +117,8 @@ export function DispatchMap({
   // 2. Chuẩn hóa vị trí của từng phiếu sự cố
   const geocodedTickets = useMemo(() => {
     return tickets.map((t) => {
-      let lat = t.customer.latitude ?? t.equipment.branch?.latitude;
-      let lng = t.customer.longitude ?? t.equipment.branch?.longitude;
+      let lat = t.customer.latitude ?? t.equipment?.branch?.latitude;
+      let lng = t.customer.longitude ?? t.equipment?.branch?.longitude;
       let isEstimated = false;
 
       if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
@@ -453,7 +453,7 @@ export function DispatchMap({
             <i class="fas fa-map-marker-alt text-danger me-1"></i> ${ticket.customer.address}
           </div>
           <div style="color: #475569; font-size: 11px; margin-bottom: 6px;">
-            Máy: <strong>${ticket.equipment.model}</strong> (${ticket.equipment.serialNumber})
+            ${ticket.equipment ? `Máy: <strong>${ticket.equipment.model}</strong> (${ticket.equipment.serialNumber})` : `<span class="badge bg-secondary">Phiếu dịch vụ</span>`}
           </div>
 
           ${

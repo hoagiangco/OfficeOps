@@ -88,7 +88,7 @@ interface EquipmentCategoryNested {
 interface EquipmentItem {
   id: string;
   code: string | null;
-  serialNumber: string;
+  serialNumber: string | null;
   qrCode: string;
   model: string;
   brand: string | null;
@@ -490,7 +490,6 @@ export default function EquipmentPage() {
       const sp = new URLSearchParams(window.location.search);
       const st = sp.get("status");
       if (st) setStatusFilter(st);
-      if (window.innerWidth <= 768) setViewMode("card");
     }
   }, []);
 
@@ -728,7 +727,7 @@ export default function EquipmentPage() {
     setAddingCustomRelation(false);
     setFormData({
       code: eq.code || "",
-      serialNumber: eq.serialNumber,
+      serialNumber: eq.serialNumber || "",
       model: eq.model,
       brand: eq.brand || "",
       type: eq.type || "Máy Photocopy",
@@ -781,7 +780,7 @@ export default function EquipmentPage() {
         const [level, targetId] = formData.departmentId ? formData.departmentId.split(":") : ["", ""];
         const isCust = destinationMode === "CUSTOMER";
         const payload: Record<string, unknown> = {
-        ...(editing ? {} : { serialNumber: formData.serialNumber }),
+        serialNumber: formData.serialNumber.trim() || (editing ? null : undefined),
         code: formData.code.trim() || (editing ? null : undefined),
         model: formData.model.trim(),
         brand: formData.brand.trim() || (editing ? null : undefined),
@@ -1363,7 +1362,11 @@ export default function EquipmentPage() {
         toast.error(data.error || "Không thể tạo phiếu kỹ thuật");
         return;
       }
-      toast.success(`Đã tạo phiếu kỹ thuật ${data.code || ""} cho máy ${ticketTarget.serialNumber}`);
+      toast.success(
+        `Đã tạo phiếu kỹ thuật ${data.code || ""} cho máy ${ticketTarget.model}${
+          ticketTarget.serialNumber ? ` (${ticketTarget.serialNumber})` : ""
+        }`
+      );
       setTicketTarget(null);
       loadData();
     } finally {
@@ -1385,7 +1388,11 @@ export default function EquipmentPage() {
   };
 
   const handleDeleteEquipment = async (eq: EquipmentItem) => {
-    if (!confirm(`Bạn có chắc muốn xóa thiết bị "${eq.model} (SN: ${eq.serialNumber})"?`))
+    if (
+      !confirm(
+        `Bạn có chắc muốn xóa thiết bị "${eq.model}${eq.serialNumber ? ` (SN: ${eq.serialNumber})` : ""}"?`
+      )
+    )
       return;
     const res = await fetch(`/api/equipment/${eq.id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
@@ -1393,7 +1400,7 @@ export default function EquipmentPage() {
       toast.error(data.error || "Không thể xóa thiết bị");
       return;
     }
-    toast.success(`Đã xóa thiết bị ${eq.serialNumber}`);
+    toast.success(`Đã xóa thiết bị ${eq.model}${eq.serialNumber ? ` (${eq.serialNumber})` : ""}`);
     loadData();
   };
 
@@ -1420,7 +1427,7 @@ export default function EquipmentPage() {
         const loc = formatLocationPath(eq) || eq.locationNote || "";
         return [
           eq.code || "",
-          eq.serialNumber,
+          eq.serialNumber || "",
           eq.brand || "",
           eq.model,
           getCategoryPath(eq.category),
@@ -1994,13 +2001,27 @@ export default function EquipmentPage() {
               <input
                 type="text"
                 className="form-control"
-                placeholder="Tìm Serial, Mã TB, Model, Hãng, Vị trí..."
+                placeholder="Tìm Serial, Mã TB, Model, Hãng, Khách hàng, Vị trí..."
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
                   setPage(1);
                 }}
               />
+              {search && (
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary border-start-0 bg-white"
+                  title="Xóa tìm kiếm"
+                  style={{ borderColor: "#ced4da" }}
+                  onClick={() => {
+                    setSearch("");
+                    setPage(1);
+                  }}
+                >
+                  <i className="fas fa-times text-muted"></i>
+                </button>
+              )}
             </div>
           </div>
 
@@ -2247,12 +2268,14 @@ export default function EquipmentPage() {
                                   <span className="fw-bold text-dark fs-6">
                                     {eq.model}
                                   </span>
-                                  <span
-                                    className="text-primary font-monospace fw-medium"
-                                    style={{ fontSize: "12.5px" }}
-                                  >
-                                    (SN: {eq.serialNumber})
-                                  </span>
+                                  {eq.serialNumber && (
+                                    <span
+                                      className="text-primary font-monospace fw-medium"
+                                      style={{ fontSize: "12.5px" }}
+                                    >
+                                      (SN: {eq.serialNumber})
+                                    </span>
+                                  )}
                                 </Link>
                               </div>
                               <div className="mt-1 d-flex flex-column gap-0.5">
@@ -2500,7 +2523,9 @@ export default function EquipmentPage() {
                                                   ? "MAINTENANCE"
                                                   : "REPAIR",
                                               priority: "NORMAL",
-                                              description: `Yêu cầu kỹ thuật (${eq.relationType}) cho máy ${eq.brand || ""} ${eq.model} (SN: ${eq.serialNumber})`,
+                                              description: `Yêu cầu kỹ thuật (${eq.relationType}) cho máy ${eq.brand || ""} ${eq.model}${
+                                                eq.serialNumber ? ` (SN: ${eq.serialNumber})` : ""
+                                              }`,
                                             });
                                           }}
                                         >
@@ -2693,12 +2718,14 @@ export default function EquipmentPage() {
                     <span className="fw-bold text-dark fs-6 text-truncate">
                       {eq.model}
                     </span>
-                    <span
-                      className="text-primary font-monospace fw-medium"
-                      style={{ fontSize: "12px" }}
-                    >
-                      (SN: {eq.serialNumber})
-                    </span>
+                    {eq.serialNumber && (
+                      <span
+                        className="text-primary font-monospace fw-medium"
+                        style={{ fontSize: "12px" }}
+                      >
+                        (SN: {eq.serialNumber})
+                      </span>
+                    )}
                   </Link>
                   <span className={getStatusBadgeClass(eq.status)}>
                     {STATUS_LABELS[eq.status]}
@@ -2877,7 +2904,7 @@ export default function EquipmentPage() {
             <i className={`fas ${editing ? "fa-pen-to-square" : "fa-plus-circle"} text-white-50`}></i>
             <span className="fw-semibold">
               {editing
-                ? `Cập nhật hồ sơ thiết bị: ${editing.serialNumber}`
+                ? `Cập nhật hồ sơ thiết bị: ${editing.model}${editing.serialNumber ? ` (${editing.serialNumber})` : ""}`
                 : "Thêm hồ sơ thiết bị mới"}
             </span>
           </div>
@@ -2939,7 +2966,7 @@ export default function EquipmentPage() {
                   <div className="col-sm-6">
                     <label className="form-label small fw-semibold text-secondary mb-1 d-flex align-items-center" style={{ minHeight: "20px" }}>
                       <span>Số Serial (S/N)</span>
-                      <span className="text-danger ms-1">*</span>
+                      <span className="text-secondary fw-normal ms-1">(tùy chọn)</span>
                     </label>
                     <div className="input-group input-group-sm">
                       <span className="input-group-text bg-light text-secondary" style={{ width: "32px", justifyContent: "center", fontSize: "12px", padding: 0 }}>
@@ -2947,9 +2974,7 @@ export default function EquipmentPage() {
                       </span>
                       <input
                         type="text"
-                        required
-                        disabled={!!editing}
-                        placeholder="VD: RC-MP6055-8821"
+                        placeholder="VD: RC-MP6055-8821 (nếu có)"
                         className="form-control form-control-sm font-monospace"
                         value={formData.serialNumber}
                         onChange={(e) => setFormData({ ...formData, serialNumber: e.target.value })}
@@ -4816,7 +4841,7 @@ export default function EquipmentPage() {
       <ModalShell
         show={!!statusTarget}
         size="sm"
-        title={`Đổi trạng thái: ${statusTarget ? `${statusTarget.model} (SN: ${statusTarget.serialNumber})` : ""}`}
+        title={`Đổi trạng thái: ${statusTarget ? `${statusTarget.model}${statusTarget.serialNumber ? ` (SN: ${statusTarget.serialNumber})` : ""}` : ""}`}
         onClose={() => setStatusTarget(null)}
         footer={
           <>
@@ -4871,9 +4896,9 @@ export default function EquipmentPage() {
       <ModalShell
         show={!!ticketTarget}
         size="md"
-        title={`Tạo phiếu dịch vụ: ${ticketTarget?.brand || ""} ${ticketTarget?.model || ""} (${
-          ticketTarget?.serialNumber || ""
-        })`}
+        title={`Tạo phiếu dịch vụ: ${ticketTarget?.brand || ""} ${ticketTarget?.model || ""}${
+          ticketTarget?.serialNumber ? ` (${ticketTarget.serialNumber})` : ""
+        }`}
         onClose={() => setTicketTarget(null)}
         footer={
           <>

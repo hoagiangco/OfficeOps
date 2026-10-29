@@ -273,18 +273,19 @@ async function executeDailyCron(invokedByUserId: string | null): Promise<CronDai
       },
     });
 
+    const equipmentText = t.equipment ? `xử lý máy ${t.equipment.model}` : "phiếu dịch vụ";
     if (!alertToday && dispatcherUserIds.length > 0) {
       await prisma.notification.createMany({
         data: dispatcherUserIds.map((uid) => ({
           userId: uid,
           channel: "IN_APP",
           title: `⏰ Cảnh báo trễ SLA: Phiếu ${t.code}`,
-          body: `Phiếu kỹ thuật ${t.code} xử lý máy ${t.equipment.model} (${t.customer.name}) đã quá hạn SLA. KTV phụ trách: ${t.assignee?.name || "Chưa phân công"}.`,
+          body: `Phiếu kỹ thuật ${t.code} (${equipmentText}) tại ${t.customer.name} đã quá hạn SLA. KTV phụ trách: ${t.assignee?.name || "Chưa phân công"}.`,
         })),
       });
     }
 
-    slaBreachList.push(`${t.code} - ${t.equipment.model} (${t.customer.name})`);
+    slaBreachList.push(`${t.code} - ${t.equipment ? t.equipment.model : "Phiếu dịch vụ"} (${t.customer.name})`);
   }
 
   // Ghi AuditLog

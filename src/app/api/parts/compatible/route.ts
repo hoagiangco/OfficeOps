@@ -15,7 +15,7 @@ type TargetEquipmentType = Prisma.EquipmentGetPayload<{
 interface EquipmentSummary {
   id: string;
   code: string | null;
-  serialNumber: string;
+  serialNumber: string | null;
   model: string;
   brand: string | null;
   status: string;
@@ -93,7 +93,7 @@ export const GET = withErrors(async (req: Request) => {
         type: string;
         totalUnits: number;
         activeUnits: number;
-        equipments: { id: string; code: string | null; serialNumber: string; customerName: string | null }[];
+        equipments: { id: string; code: string | null; serialNumber: string | null; customerName: string | null }[];
       }
     >();
 
@@ -380,6 +380,7 @@ export const GET = withErrors(async (req: Request) => {
       unit: p.unit,
       minThreshold: p.minThreshold,
       currentQuantity,
+      totalQuantity: currentQuantity,
       isLowStock: currentQuantity <= p.minThreshold,
       isOutOfStock: currentQuantity <= 0,
       salePrice: p.salePrice,

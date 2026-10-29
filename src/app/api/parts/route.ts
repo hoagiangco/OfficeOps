@@ -90,6 +90,7 @@ export const GET = withErrors(async (req: Request) => {
     return {
       ...p,
       currentQuantity,
+      totalQuantity: currentQuantity,
       isLowStock,
     };
   });

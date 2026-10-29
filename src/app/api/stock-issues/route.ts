@@ -65,6 +65,12 @@ export const POST = withErrors(async (req: Request) => {
       where: { id: r.data.ticketId },
       select: { id: true, status: true },
     });
+    if (linkedTicket?.status === "CANCELLED") {
+      throw new HttpError(
+        400,
+        "Phiếu kỹ thuật này đã bị hủy, không thể tạo yêu cầu xuất linh kiện"
+      );
+    }
     if (linkedTicket?.status === "COMPLETED" && s.role !== "SUPER_ADMIN") {
       throw new HttpError(
         403,

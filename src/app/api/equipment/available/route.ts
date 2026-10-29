@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { can } from "@/lib/rbac";
+import { checkUserPermission } from "@/lib/rbacService";
 import { withErrors } from "@/lib/http";
 
 export const GET = withErrors(async (req: Request) => {
   const s = await getSession();
   if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
-  if (!can(s.role, "equipment:read"))
+  if (!(await checkUserPermission(s.userId, s.role, "equipment:view")))
     return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
 
   const url = new URL(req.url);

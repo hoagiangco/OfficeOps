@@ -8,7 +8,7 @@ import Loading from "@/components/Loading";
 interface EquipmentBrief {
   id: string;
   model: string;
-  serialNumber: string;
+  serialNumber?: string | null;
 }
 
 interface DepartmentNode {

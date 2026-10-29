@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requirePermission } from "@/lib/auth";
 import { parseBody, withErrors } from "@/lib/http";
 import { copyUserPermissions } from "@/lib/rbacService";
+import { prisma } from "@/lib/prisma";
 
 const copySchema = z.object({
   sourceUserId: z.string().min(1, "Thiếu ID người dùng nguồn"),
@@ -15,6 +16,17 @@ export const POST = withErrors(async (req: Request) => {
 
   const r = await parseBody(req, copySchema);
   if (r.error) return r.error;
+
+  const target = await prisma.user.findUnique({
+    where: { id: r.data.targetUserId },
+    select: { role: true },
+  });
+  if (target?.role === "SUPER_ADMIN") {
+    return NextResponse.json(
+      { error: "Tài khoản Giám đốc (Super Admin) luôn có toàn quyền cố định, không thể sao chép phân quyền vào tài khoản này." },
+      { status: 400 }
+    );
+  }
 
   const permissions = await copyUserPermissions(
     r.data.sourceUserId,

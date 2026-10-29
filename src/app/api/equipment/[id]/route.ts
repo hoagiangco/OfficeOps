@@ -14,6 +14,7 @@ type Ctx = { params: Promise<{ id: string }> };
 const patchSchema = z
   .object({
     code: z.string().trim().nullable(),
+    serialNumber: z.string().trim().nullable(),
     model: z.string().trim().min(1),
     brand: z.string().trim().nullable(),
     type: z.string().trim(),
@@ -125,6 +126,18 @@ export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
 
   const statusChanged = status !== undefined && status !== current.status;
 
+  const normalizedSerial =
+    rest.serialNumber !== undefined ? (rest.serialNumber?.trim() || null) : undefined;
+  if (normalizedSerial && normalizedSerial !== current.serialNumber) {
+    const dupSerial = await prisma.equipment.findUnique({ where: { serialNumber: normalizedSerial } });
+    if (dupSerial && dupSerial.id !== id) {
+      return NextResponse.json(
+        { error: `Số serial "${normalizedSerial}" đã tồn tại trên thiết bị khác` },
+        { status: 409 }
+      );
+    }
+  }
+
   let locUpdate: Record<string, unknown> = {};
   if (rest.customerId === null) {
     locUpdate = { branchId: null, buildingId: null, departmentId: null };
@@ -150,6 +163,7 @@ export const PATCH = withErrors(async (req: Request, { params }: Ctx) => {
       where: { id },
       data: {
         ...rest,
+        ...(normalizedSerial !== undefined ? { serialNumber: normalizedSerial } : {}),
         ...locUpdate,
         ...(rest.customerId ? { warehouseId: null } : {}),
         ...(rest.customerId === null || status === "IN_STOCK" ? { relationType: "Sẵn hàng" } : {}),

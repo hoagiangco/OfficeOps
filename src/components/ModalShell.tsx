@@ -1,6 +1,60 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+
+function getModalCloseMap(): WeakMap<HTMLElement, () => void> | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as any;
+  if (!w.__modalCloseMap) {
+    w.__modalCloseMap = new WeakMap<HTMLElement, () => void>();
+  }
+  return w.__modalCloseMap;
+}
+
+export function closeTopModalOnEscape(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  if (typeof document === 'undefined') return;
+
+  const allModals = Array.from(
+    document.querySelectorAll<HTMLElement>('.modal.show, .modal.d-block')
+  ).filter((el) => {
+    const style = window.getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  });
+
+  if (allModals.length === 0) return;
+
+  // Sắp xếp theo zIndex tăng dần (giữ nguyên thứ tự DOM nếu cùng zIndex) để lấy modal trên cùng
+  const indexed = allModals.map((el, idx) => ({
+    el,
+    idx,
+    zIndex: parseInt(window.getComputedStyle(el).zIndex || el.style.zIndex || '1050', 10) || 1050,
+  }));
+  indexed.sort((a, b) => (a.zIndex !== b.zIndex ? a.zIndex - b.zIndex : a.idx - b.idx));
+
+  const topModal = indexed[indexed.length - 1].el;
+  const closeMap = getModalCloseMap();
+  const registeredClose = closeMap?.get(topModal);
+
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (registeredClose) {
+    registeredClose();
+    return;
+  }
+
+  // Fallback cho các modal tự dựng không dùng ModalShell (FileManager, Lightbox, modal thuần...)
+  const closeBtn =
+    topModal.querySelector<HTMLElement>('.btn-close, [aria-label="Đóng"], [aria-label="Close"]') ||
+    (topModal.querySelector<HTMLElement>('button i.fa-times')?.closest('button') as HTMLElement | null);
+
+  if (closeBtn) {
+    closeBtn.click();
+  } else {
+    topModal.click();
+  }
+}
 
 interface ModalShellProps {
   show?: boolean;
@@ -20,6 +74,7 @@ interface ModalShellProps {
   dialogStyle?: React.CSSProperties;
   dialogClass?: string;
   fullscreenOnMobile?: boolean; // Mặc định true: tự động 100% full-screen trên mobile / PWA (< 768px)
+  fixedHeight?: boolean | string; // Khóa cố định chiều cao modal để tránh nhảy giật (chớp chớp) khi chuyển tab/chức năng
 }
 
 export function ModalShell({
@@ -40,10 +95,21 @@ export function ModalShell({
   dialogStyle,
   dialogClass = '',
   fullscreenOnMobile = true,
+  fixedHeight,
 }: ModalShellProps) {
   const isVisible = show ?? open ?? isOpen ?? false;
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Đăng ký hàm đóng vào WeakMap để phím ESC luôn đóng đúng modal đang mở ở lớp trên cùng
+  useEffect(() => {
+    if (!isVisible || !modalRef.current) return;
+    const map = getModalCloseMap();
+    map?.set(modalRef.current, () => onCloseRef.current());
+  }, [isVisible]);
 
   // Phát hiện kích thước màn hình Mobile / PWA (< 768px)
   useEffect(() => {
@@ -86,6 +152,20 @@ export function ModalShell({
   // Khi đang ở chế độ phóng to HOẶC đang mở trên màn hình Mobile/PWA
   const effectiveFullscreen = isFullscreen || (fullscreenOnMobile && isMobile);
 
+  // Xác định chiều cao cố định để khóa khung modal không bị nhảy giật khi đổi tab/chức năng
+  const defaultFixedHeightBySize =
+    size === 'xxl' || size === 'xl'
+      ? 'min(620px, 80vh)'
+      : size === 'lg'
+      ? 'min(560px, 78vh)'
+      : 'min(480px, 75vh)';
+
+  const resolvedFixedHeight = fixedHeight
+    ? typeof fixedHeight === 'string'
+      ? fixedHeight
+      : defaultFixedHeightBySize
+    : undefined;
+
   const sizeClass = effectiveFullscreen
     ? 'modal-fullscreen'
     : fullscreenOnMobile
@@ -117,6 +197,7 @@ export function ModalShell({
 
   return (
     <div
+      ref={modalRef}
       className={`modal show d-block app-modal-backdrop ${effectiveFullscreen ? 'p-0' : ''}`}
       tabIndex={-1}
       style={{ backgroundColor: 'rgba(0, 0, 0, 0.55)', zIndex: 1060 }}
@@ -137,10 +218,17 @@ export function ModalShell({
       >
         <div
           className={`modal-content border-0 shadow-lg ${
-            effectiveFullscreen ? 'rounded-0 h-100 d-flex flex-column' : 'rounded-3'
+            effectiveFullscreen ? 'rounded-0 h-100 d-flex flex-column' : 'rounded-3 d-flex flex-column'
           }`}
           style={{
-            ...(effectiveFullscreen ? { height: '100dvh', maxHeight: '100dvh', minHeight: '100dvh' } : {}),
+            ...(effectiveFullscreen
+              ? { height: '100dvh', maxHeight: '100dvh', minHeight: '100dvh' }
+              : resolvedFixedHeight
+              ? {
+                  height: `calc(${resolvedFixedHeight} + ${footer ? '112px' : '56px'})`,
+                  maxHeight: '92vh',
+                }
+              : {}),
             ...(!scrollable ? { overflowX: 'visible', overflowY: 'visible' } : {}),
           }}
         >
@@ -209,6 +297,13 @@ export function ModalShell({
                     paddingBottom: footer ? '1rem' : 'calc(1.5rem + env(safe-area-inset-bottom, 0px))',
                     paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
                     paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
+                  }
+                : resolvedFixedHeight
+                ? {
+                    height: resolvedFixedHeight,
+                    minHeight: resolvedFixedHeight,
+                    maxHeight: resolvedFixedHeight,
+                    overflowY: 'auto',
                   }
                 : !scrollable
                 ? { overflowX: 'visible', overflowY: 'visible' }
