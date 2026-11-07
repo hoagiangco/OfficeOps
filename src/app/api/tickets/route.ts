@@ -6,13 +6,19 @@ import { checkUserPermission } from "@/lib/rbacService";
 import { maskCustomerPhones } from "@/lib/maskUtils";
 import { parseBody, withErrors, HttpError } from "@/lib/http";
 import { getSlaSettings, computeSlaDueAt } from "@/lib/slaSettings";
+import {
+  getTicketCustomTypesMap,
+  isSystemTicketType,
+  setTicketCustomTypeForTicket,
+  toPrismaTicketType,
+} from "@/lib/ticketWorkTypes";
 import type { TicketPriority, TicketSource, TicketStatus, TicketType } from "@prisma/client";
 
 const createSchema = z.object({
   customerId: z.string().min(1, "Vui lòng chọn khách hàng"),
   equipmentId: z.string().trim().optional().nullable(),
   assigneeId: z.string().optional().nullable(),
-  type: z.enum(["INSTALLATION", "INSPECTION", "REPAIR", "MAINTENANCE", "OTHER"]).default("REPAIR"),
+  type: z.string().trim().min(1, "Vui lòng chọn loại công việc").default("REPAIR"),
   priority: z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]).default("NORMAL"),
   source: z.enum(["CUSTOMER", "SCHEDULED", "INTERNAL"]).default("CUSTOMER"),
   description: z.string().min(3, "Mô tả sự cố/yêu cầu tối thiểu 3 ký tự"),
@@ -27,7 +33,7 @@ export const GET = withErrors(async (req: Request) => {
   const sp = new URL(req.url).searchParams;
   const status = sp.get("status") as TicketStatus | null;
   const priority = sp.get("priority") as TicketPriority | null;
-  const type = sp.get("type") as TicketType | null;
+  const type = sp.get("type")?.trim() || null;
   const assigneeId = sp.get("assigneeId");
   const customerId = sp.get("customerId");
   const equipmentId = sp.get("equipmentId");
@@ -40,78 +46,87 @@ export const GET = withErrors(async (req: Request) => {
   const isFieldTech = session.role === "FIELD_TECH" && !canDispatch;
   const effectiveAssigneeId = isFieldTech ? session.userId : assigneeId;
 
-  const tickets = await prisma.ticket.findMany({
-    where: {
-      ...(status ? { status } : {}),
-      ...(priority ? { priority } : {}),
-      ...(type ? { type } : {}),
-      ...(effectiveAssigneeId === "UNASSIGNED"
-        ? { assigneeId: null }
-        : effectiveAssigneeId
-        ? { assigneeId: effectiveAssigneeId }
-        : {}),
-      ...(customerId ? { customerId } : {}),
-      ...(equipmentId ? { equipmentId } : {}),
-      ...(q
-        ? {
-            OR: [
-              { code: { contains: q, mode: "insensitive" } },
-              { description: { contains: q, mode: "insensitive" } },
-              { customer: { name: { contains: q, mode: "insensitive" } } },
-              { equipment: { serialNumber: { contains: q, mode: "insensitive" } } },
-              { equipment: { model: { contains: q, mode: "insensitive" } } },
-            ],
-          }
-        : {}),
-    },
-    include: {
-      customer: {
-        select: {
-          id: true,
-          name: true,
-          phone: true,
-          address: true,
-          latitude: true,
-          longitude: true,
-        },
+  const prismaTypeFilter: TicketType | undefined = type
+    ? isSystemTicketType(type)
+      ? type
+      : "OTHER"
+    : undefined;
+
+  const [tickets, customTypeMap] = await Promise.all([
+    prisma.ticket.findMany({
+      where: {
+        ...(status ? { status } : {}),
+        ...(priority ? { priority } : {}),
+        ...(prismaTypeFilter ? { type: prismaTypeFilter } : {}),
+        ...(effectiveAssigneeId === "UNASSIGNED"
+          ? { assigneeId: null }
+          : effectiveAssigneeId
+          ? { assigneeId: effectiveAssigneeId }
+          : {}),
+        ...(customerId ? { customerId } : {}),
+        ...(equipmentId ? { equipmentId } : {}),
+        ...(q
+          ? {
+              OR: [
+                { code: { contains: q, mode: "insensitive" } },
+                { description: { contains: q, mode: "insensitive" } },
+                { customer: { name: { contains: q, mode: "insensitive" } } },
+                { equipment: { serialNumber: { contains: q, mode: "insensitive" } } },
+                { equipment: { model: { contains: q, mode: "insensitive" } } },
+              ],
+            }
+          : {}),
       },
-      equipment: {
-        select: {
-          id: true,
-          serialNumber: true,
-          model: true,
-          brand: true,
-          status: true,
-          currentCounter: true,
-          locationNote: true,
-          branch: {
-            select: {
-              id: true,
-              name: true,
-              latitude: true,
-              longitude: true,
-            },
+      include: {
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            address: true,
+            latitude: true,
+            longitude: true,
           },
-          building: { select: { id: true, name: true, branch: { select: { name: true } } } },
-          department: {
-            include: {
-              building: {
-                include: { branch: true },
+        },
+        equipment: {
+          select: {
+            id: true,
+            serialNumber: true,
+            model: true,
+            brand: true,
+            status: true,
+            currentCounter: true,
+            locationNote: true,
+            branch: {
+              select: {
+                id: true,
+                name: true,
+                latitude: true,
+                longitude: true,
+              },
+            },
+            building: { select: { id: true, name: true, branch: { select: { name: true } } } },
+            department: {
+              include: {
+                building: {
+                  include: { branch: true },
+                },
               },
             },
           },
         },
+        assignee: { select: { id: true, name: true, phone: true, region: true, skills: true } },
+        creator: { select: { id: true, name: true } },
+        _count: { select: { stockIssues: true, logs: true, partsUsed: true } },
+        attachments: {
+          select: { id: true, url: true, kind: true, createdAt: true },
+          orderBy: { createdAt: "desc" },
+        },
       },
-      assignee: { select: { id: true, name: true, phone: true, region: true, skills: true } },
-      creator: { select: { id: true, name: true } },
-      _count: { select: { stockIssues: true, logs: true, partsUsed: true } },
-      attachments: {
-        select: { id: true, url: true, kind: true, createdAt: true },
-        orderBy: { createdAt: "desc" },
-      },
-    },
-    orderBy: [{ createdAt: "desc" }],
-  });
+      orderBy: [{ createdAt: "desc" }],
+    }),
+    getTicketCustomTypesMap(),
+  ]);
 
   const canViewPhone = await checkUserPermission(session.userId, session.role, "customer:view-phone");
   const sanitizeSignature = (sig?: string | null) => {
@@ -120,11 +135,14 @@ export const GET = withErrors(async (req: Request) => {
     return sig;
   };
 
-  const items = tickets.map((t) => ({
-    ...t,
-    customerSignature: sanitizeSignature(t.customerSignature),
-    customer: t.customer ? maskCustomerPhones(t.customer, canViewPhone) : t.customer,
-  }));
+  const items = tickets
+    .map((t) => ({
+      ...t,
+      type: customTypeMap[t.id] || t.type,
+      customerSignature: sanitizeSignature(t.customerSignature),
+      customer: t.customer ? maskCustomerPhones(t.customer, canViewPhone) : t.customer,
+    }))
+    .filter((t) => (type ? t.type === type : true));
 
   return NextResponse.json(items);
 });
@@ -187,7 +205,7 @@ export const POST = withErrors(async (req: Request) => {
         equipmentId: data.equipmentId || null,
         assigneeId: finalAssigneeId,
         creatorId: session.userId,
-        type: data.type as TicketType,
+        type: toPrismaTicketType(data.type),
         status: initialStatus,
         priority: data.priority as TicketPriority,
         source: data.source as TicketSource,
@@ -248,12 +266,14 @@ export const POST = withErrors(async (req: Request) => {
     return ticket;
   });
 
+  await setTicketCustomTypeForTicket(created.id, data.type);
+
   await audit(session.userId, "TICKET_CREATE", "Ticket", created.id, {
     code: created.code,
-    type: created.type,
+    type: data.type,
     priority: created.priority,
     assigneeId: created.assigneeId,
   });
 
-  return NextResponse.json(created, { status: 201 });
+  return NextResponse.json({ ...created, type: data.type }, { status: 201 });
 });

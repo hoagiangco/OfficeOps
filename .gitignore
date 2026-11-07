@@ -46,7 +46,10 @@ public/uploads/*
 !public/uploads/.gitkeep
 
 # backups
+backups/
 *.sql
 !prisma/migrations/**/*.sql
 *.tar.gz
+*.json.gz
+*.dump
 *.bak

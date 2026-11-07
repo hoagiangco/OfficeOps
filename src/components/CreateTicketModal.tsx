@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "react-toastify";
 import { ModalShell } from "@/components/ModalShell";
+import { CreateEquipmentModal, type CreatedEquipmentResult } from "@/components/CreateEquipmentModal";
 import { formatLocationPath } from "@/lib/location";
 import {
   STATUS_LABELS,
@@ -154,6 +155,10 @@ export function CreateTicketModal({
   const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>("");
   const [machineSearchQuery, setMachineSearchQuery] = useState("");
 
+  // Modal Thêm hồ sơ thiết bị mới (cùng UI với trang Thiết bị chính)
+  const [showCreateEquipModal, setShowCreateEquipModal] = useState(false);
+  const [prefillEquipModel, setPrefillEquipModel] = useState("");
+
   const selectedEquipment = useMemo(() => {
     return customerMachines.find((m) => m.id === selectedEquipmentId) || null;
   }, [customerMachines, selectedEquipmentId]);
@@ -161,6 +166,12 @@ export function CreateTicketModal({
   // Thông tin phiếu
   const [ticketDate, setTicketDate] = useState<string>(() => getTodayStr());
   const [type, setType] = useState<string>("REPAIR");
+  const [workTypes, setWorkTypes] = useState<Array<{ code: string; label: string; isSystem?: boolean }>>(() =>
+    Object.entries(TICKET_TYPE_LABELS).map(([code, label]) => ({ code, label, isSystem: true }))
+  );
+  const [workTypeMode, setWorkTypeMode] = useState<"add" | "edit" | null>(null);
+  const [workTypeInput, setWorkTypeInput] = useState<string>("");
+  const [savingWorkType, setSavingWorkType] = useState<boolean>(false);
   const [priority, setPriority] = useState<string>("NORMAL");
   const [source, setSource] = useState<string>("CUSTOMER");
   const [assigneeId, setAssigneeId] = useState<string>("");
@@ -248,16 +259,27 @@ export function CreateTicketModal({
         setAssigneeId("");
         setDescription("");
       }
+      setWorkTypeMode(null);
+      setWorkTypeInput("");
+      setShowCreateEquipModal(false);
+      setPrefillEquipModel("");
     });
 
     Promise.all([
       fetch("/api/auth/me").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/customers?pageSize=1000").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/dispatch/technicians").then((r) => (r.ok ? r.json() : null)),
+      fetch("/api/tickets/work-types").then((r) => (r.ok ? r.json() : null)),
     ])
-      .then(([me, custData, techData]) => {
+      .then(([me, custData, techData, wtData]) => {
         if (!isMounted) return;
         if (me) setCurrentUser(me);
+        if (wtData?.items && Array.isArray(wtData.items)) {
+          setWorkTypes(wtData.items);
+          for (const it of wtData.items) {
+            TICKET_TYPE_LABELS[it.code] = it.label;
+          }
+        }
         const custList: CustomerItem[] = custData
           ? Array.isArray(custData)
             ? custData
@@ -318,10 +340,53 @@ export function CreateTicketModal({
     setTicketCategory("GENERAL");
     setCustomerSearchQuery("");
     setMachineSearchQuery("");
+    setShowCreateEquipModal(false);
     setTimeout(() => {
       searchInputRef.current?.focus();
       setIsCustomerDropdownOpen(true);
     }, 50);
+  };
+
+  // 5b. Mở modal Thêm hồ sơ thiết bị mới (giống UI trang Thiết bị chính)
+  const handleOpenAddEquipmentModal = (prefillText?: string) => {
+    setPrefillEquipModel(prefillText ? prefillText.trim() : "");
+    setShowCreateEquipModal(true);
+  };
+
+  const handleEquipmentCreated = (data: CreatedEquipmentResult) => {
+    const newEq: EquipmentItem = {
+      id: data.id,
+      code: data.code,
+      serialNumber: data.serialNumber,
+      model: data.model,
+      brand: data.brand,
+      type: data.type,
+      group: data.group,
+      status: data.status || "ACTIVE",
+      currentCounter: data.currentCounter ?? 0,
+      locationNote: data.locationNote,
+      branchId: data.branchId,
+      buildingId: data.buildingId,
+      departmentId: data.departmentId,
+      branch: data.branch || null,
+      building: data.building || null,
+      department: data.department || null,
+    };
+
+    setCustomerMachines((prev) => [newEq, ...prev]);
+    setTicketCategory("EQUIPMENT");
+    setSelectedEquipmentId(newEq.id);
+    setMachineSearchQuery("");
+
+    if (selectedCustomer) {
+      setCustomers((prev) =>
+        prev.map((c) =>
+          c.id === selectedCustomer.id
+            ? { ...c, equipmentCount: (c.equipmentCount ?? customerMachines.length) + 1 }
+            : c
+        )
+      );
+    }
   };
 
   // 6. Lọc khách hàng theo từ khóa tìm kiếm (Tên, Mã KH, SĐT, Địa chỉ)
@@ -380,6 +445,62 @@ export function CreateTicketModal({
       if (prev.includes(tagText)) return prev;
       return `${prev.trim()}, ${tagText}`;
     });
+  };
+
+  // 8b. Thêm / Sửa Loại công việc (Không cho phép xóa)
+  const handleStartAddWorkType = () => {
+    setWorkTypeMode("add");
+    setWorkTypeInput("");
+  };
+
+  const handleStartEditWorkType = () => {
+    const current = workTypes.find((w) => w.code === type);
+    setWorkTypeMode("edit");
+    setWorkTypeInput(current ? current.label : TICKET_TYPE_LABELS[type] || type);
+  };
+
+  const handleSaveWorkType = async () => {
+    const trimmed = workTypeInput.trim();
+    if (trimmed.length < 2) {
+      toast.warning("Tên loại công việc phải từ 2 ký tự trở lên");
+      return;
+    }
+
+    setSavingWorkType(true);
+    try {
+      const isAdd = workTypeMode === "add";
+      const res = await fetch("/api/tickets/work-types", {
+        method: isAdd ? "POST" : "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isAdd ? { label: trimmed } : { code: type, label: trimmed }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "Không thể lưu loại công việc");
+      }
+
+      if (Array.isArray(data.items)) {
+        setWorkTypes(data.items);
+        for (const it of data.items) {
+          TICKET_TYPE_LABELS[it.code] = it.label;
+        }
+      }
+      if (data.item?.code) {
+        setType(data.item.code);
+      }
+
+      toast.success(
+        isAdd
+          ? `Đã thêm loại công việc "${trimmed}"`
+          : `Đã cập nhật tên loại công việc thành "${trimmed}"`
+      );
+      setWorkTypeMode(null);
+      setWorkTypeInput("");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Lỗi lưu loại công việc");
+    } finally {
+      setSavingWorkType(false);
+    }
   };
 
   // 9. Submit tạo phiếu
@@ -745,7 +866,7 @@ export function CreateTicketModal({
           {/* ================= KHỐI 2: CHỌN LOẠI PHIẾU (PHIẾU DỊCH VỤ / PHIẾU MÁY) ================= */}
           {selectedCustomer && (
             <div className="col-12">
-              <div className="d-flex align-items-center justify-content-between p-1.5 px-2.5 rounded-2 bg-light border">
+              <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 p-1.5 px-2.5 rounded-2 bg-light border">
                 <div className="d-flex align-items-center gap-2">
                   <span className="small fw-bold text-dark d-flex align-items-center gap-1">
                     <i className="fas fa-layer-group text-primary"></i>
@@ -785,19 +906,32 @@ export function CreateTicketModal({
                   </div>
                 </div>
 
-                {/* Ô tìm kiếm nhanh đặt ngay bên phải thanh Loại phiếu */}
-                {ticketCategory === "EQUIPMENT" && customerMachines.length > 3 && (
-                  <div style={{ width: "210px" }}>
-                    <input
-                      type="text"
-                      className="form-control form-control-sm py-0.5 px-2"
-                      style={{ fontSize: "11px" }}
-                      placeholder="🔍 Lọc Model, SN..."
-                      value={machineSearchQuery}
-                      onChange={(e) => setMachineSearchQuery(e.target.value)}
-                    />
-                  </div>
-                )}
+                {/* Cụm bên phải: Tìm kiếm nhanh máy + Nút Thêm thiết bị mới */}
+                <div className="d-flex align-items-center gap-2 ms-auto">
+                  {ticketCategory === "EQUIPMENT" && customerMachines.length > 3 && (
+                    <div style={{ width: "195px" }}>
+                      <input
+                        type="text"
+                        className="form-control form-control-sm py-0.5 px-2"
+                        style={{ fontSize: "11px" }}
+                        placeholder="🔍 Lọc Model, SN..."
+                        value={machineSearchQuery}
+                        onChange={(e) => setMachineSearchQuery(e.target.value)}
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-primary bg-white py-0.5 px-2.5 fw-semibold d-inline-flex align-items-center gap-1 shadow-2xs"
+                    style={{ fontSize: "11.5px" }}
+                    onClick={() => handleOpenAddEquipmentModal()}
+                    title="Thêm hồ sơ thiết bị mới cho khách hàng này"
+                  >
+                    <i className="fas fa-plus-circle"></i>
+                    <span>+ Thêm thiết bị mới</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -811,8 +945,19 @@ export function CreateTicketModal({
                   <span className="small text-muted">Đang tải thiết bị...</span>
                 </div>
               ) : customerMachines.length === 0 ? (
-                <div className="text-muted small py-2 px-3 bg-light rounded-2 border text-center">
-                  Khách hàng này chưa có máy nào trong hệ thống.
+                <div className="text-muted small py-2.5 px-3 bg-light rounded-2 border d-flex align-items-center justify-content-between flex-wrap gap-2">
+                  <span>
+                    <i className="fas fa-info-circle text-secondary me-1.5"></i>
+                    Khách hàng này chưa có máy nào trong hệ thống.
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary py-0.5 px-2.5 fw-semibold"
+                    style={{ fontSize: "11.5px" }}
+                    onClick={() => handleOpenAddEquipmentModal()}
+                  >
+                    <i className="fas fa-plus me-1"></i>Thêm thiết bị đầu tiên
+                  </button>
                 </div>
               ) : (
                 <div className="border rounded-2 bg-white shadow-2xs overflow-hidden">
@@ -832,7 +977,15 @@ export function CreateTicketModal({
                         {filteredMachines.length === 0 ? (
                           <tr>
                             <td colSpan={6} className="text-center py-2 text-muted small">
-                              Không tìm thấy máy phù hợp
+                              <span className="me-2">Không tìm thấy máy phù hợp.</span>
+                              <button
+                                type="button"
+                                className="btn btn-link btn-sm p-0 text-decoration-none fw-semibold"
+                                style={{ fontSize: "11.5px" }}
+                                onClick={() => handleOpenAddEquipmentModal(machineSearchQuery)}
+                              >
+                                + Thêm máy mới {machineSearchQuery ? `"${machineSearchQuery}"` : ""}
+                              </button>
                             </td>
                           </tr>
                         ) : (
@@ -917,20 +1070,101 @@ export function CreateTicketModal({
           </div>
 
           <div className={canAssign ? "col-lg col-sm-6 col-12" : "col-md-3 col-sm-6 col-12"}>
-            <label className="form-label small fw-bold mb-1">
-              <i className="fas fa-tools text-primary me-1"></i>Loại công việc
-            </label>
-            <select
-              className="form-select form-select-sm"
-              value={type}
-              onChange={(e) => setType(e.target.value)}
-            >
-              {Object.entries(TICKET_TYPE_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
+            <div className="d-flex justify-content-between align-items-center mb-1">
+              <label className="form-label small fw-bold mb-0">
+                <i className="fas fa-tools text-primary me-1"></i>Loại công việc
+              </label>
+              {!workTypeMode && (
+                <div className="d-flex align-items-center gap-1.5">
+                  <button
+                    type="button"
+                    className="btn btn-link p-0 text-decoration-none text-primary fw-semibold"
+                    style={{ fontSize: "11px" }}
+                    onClick={handleStartAddWorkType}
+                    title="Thêm loại công việc mới"
+                  >
+                    <i className="fas fa-plus me-0.5"></i>Thêm
+                  </button>
+                  <span className="text-muted opacity-50" style={{ fontSize: "10px" }}>|</span>
+                  <button
+                    type="button"
+                    className="btn btn-link p-0 text-decoration-none text-secondary fw-semibold"
+                    style={{ fontSize: "11px" }}
+                    onClick={handleStartEditWorkType}
+                    title="Sửa tên loại công việc đang chọn (Không cho phép xóa)"
+                  >
+                    <i className="fas fa-pen me-0.5" style={{ fontSize: "9.5px" }}></i>Sửa
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {workTypeMode ? (
+              <div className="input-group input-group-sm">
+                <input
+                  type="text"
+                  className="form-control form-control-sm"
+                  placeholder={
+                    workTypeMode === "add"
+                      ? "Nhập loại công việc mới..."
+                      : "Sửa tên loại công việc..."
+                  }
+                  value={workTypeInput}
+                  onChange={(e) => setWorkTypeInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSaveWorkType();
+                    } else if (e.key === "Escape") {
+                      e.stopPropagation();
+                      setWorkTypeMode(null);
+                      setWorkTypeInput("");
+                    }
+                  }}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="btn btn-primary fw-bold px-2"
+                  disabled={savingWorkType || workTypeInput.trim().length < 2}
+                  onClick={handleSaveWorkType}
+                  title="Lưu loại công việc"
+                >
+                  {savingWorkType ? (
+                    <span className="spinner-border spinner-border-sm" role="status"></span>
+                  ) : (
+                    <i className="fas fa-check"></i>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary px-2"
+                  disabled={savingWorkType}
+                  onClick={() => {
+                    setWorkTypeMode(null);
+                    setWorkTypeInput("");
+                  }}
+                  title="Hủy"
+                >
+                  <i className="fas fa-times"></i>
+                </button>
+              </div>
+            ) : (
+              <select
+                className="form-select form-select-sm"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+              >
+                {workTypes.map((wt) => (
+                  <option key={wt.code} value={wt.code}>
+                    {wt.label}
+                  </option>
+                ))}
+                {!workTypes.some((wt) => wt.code === type) && type && (
+                  <option value={type}>{TICKET_TYPE_LABELS[type] || type}</option>
+                )}
+              </select>
+            )}
           </div>
 
           <div className={canAssign ? "col-lg col-sm-6 col-12" : "col-md-3 col-sm-6 col-12"}>
@@ -1044,6 +1278,17 @@ export function CreateTicketModal({
           </div>
         </div>
       </form>
+
+      {/* Modal Thêm hồ sơ thiết bị mới (đồng bộ 100% UI với trang Thiết bị chính) */}
+      <CreateEquipmentModal
+        open={showCreateEquipModal}
+        onClose={() => setShowCreateEquipModal(false)}
+        onSuccess={handleEquipmentCreated}
+        initialCustomerId={selectedCustomer?.id}
+        initialCustomerGroup={selectedCustomer?.group}
+        initialModel={prefillEquipModel}
+        customersList={customers.map((c) => ({ id: c.id, name: c.name }))}
+      />
     </ModalShell>
   );
 }

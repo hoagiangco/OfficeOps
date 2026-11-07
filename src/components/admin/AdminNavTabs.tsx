@@ -5,7 +5,7 @@ import Link from "next/link";
 import { MailTestModal } from "@/components/MailTestModal";
 import { ZaloTestModal } from "@/components/admin/ZaloTestModal";
 
-export type AdminTabKey = "users" | "permissions" | "company" | "sla" | "audit";
+export type AdminTabKey = "users" | "permissions" | "company" | "sla" | "backup" | "audit";
 
 interface AdminNavTabsProps {
   activeTab: AdminTabKey;
@@ -42,6 +42,12 @@ const ADMIN_TABS: AdminTabItem[] = [
     href: "/admin/sla",
     label: "Cấu hình cam kết SLA",
     icon: "fas fa-stopwatch",
+  },
+  {
+    key: "backup",
+    href: "/admin/backup",
+    label: "Sao lưu & Phục hồi",
+    icon: "fas fa-database",
   },
   {
     key: "audit",

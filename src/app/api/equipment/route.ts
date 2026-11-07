@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { EquipmentStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requirePermission } from "@/lib/auth";
+import { getSession, requirePermission } from "@/lib/auth";
 import { checkUserPermission } from "@/lib/rbacService";
 import { maskCustomerPhones } from "@/lib/maskUtils";
 import { getCategoryDescendantIds, validateContractOwner } from "@/lib/equipment";
@@ -262,13 +262,21 @@ export const GET = withErrors(async (req: Request) => {
 });
 
 export const POST = withErrors(async (req: Request) => {
-  const s = await requirePermission("equipment:import-stock");
-  if (s instanceof NextResponse) return s;
+  const s = await getSession();
+  if (!s) return NextResponse.json({ error: "Chưa đăng nhập" }, { status: 401 });
 
   const r = await parseBody(req, equipmentSchema);
   if (r.error) return r.error;
 
   const { specs, code: inputCode, ...rest } = r.data;
+
+  const canImportStock = await checkUserPermission(s.userId, s.role, "equipment:import-stock");
+  const canCreateTicket = rest.customerId
+    ? await checkUserPermission(s.userId, s.role, "ticket:create")
+    : false;
+  if (!canImportStock && !canCreateTicket) {
+    return NextResponse.json({ error: "Không có quyền thêm thiết bị" }, { status: 403 });
+  }
   const err = await validateContractOwner(rest.customerId, rest.contractId);
   if (err) return NextResponse.json({ error: err }, { status: 400 });
 
@@ -327,6 +335,17 @@ export const POST = withErrors(async (req: Request) => {
       installedAt: rest.installedAt ?? (rest.customerId ? new Date() : null),
       warrantyUntil: rest.warrantyUntil ?? null,
       ...(specs ? { specs: specs as object } : {}),
+    },
+    include: {
+      branch: { select: { id: true, name: true, address: true } },
+      building: { select: { id: true, name: true, branch: { select: { name: true } } } },
+      department: {
+        select: {
+          id: true,
+          name: true,
+          building: { select: { name: true, branch: { select: { name: true } } } },
+        },
+      },
     },
   });
 

@@ -1,11 +1,10 @@
 // Service Worker for OfficeOps Mobile PWA
 // Scope: /
 
-const CACHE_NAME = "officeops-shell-v2";
+const CACHE_NAME = "officeops-shell-v3";
 const OFFLINE_FALLBACK_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
-  "/tech",
   "/login",
   "/offline.html",
   "/manifest.json",
@@ -13,14 +12,26 @@ const PRECACHE_ASSETS = [
   "/icons/icon-512.png",
   "/icons/icon-192.svg",
   "/icons/icon-512.svg",
+  "/apple-touch-icon.png",
 ];
 
-// Install Event: Cache App Shell & Assets
+// Install Event: Cache App Shell & Assets (Safe for iOS WebKit redirects)
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(CACHE_NAME).then(async (cache) => {
       console.log("[ServiceWorker] Pre-caching offline shell and assets");
-      return cache.addAll(PRECACHE_ASSETS);
+      await Promise.allSettled(
+        PRECACHE_ASSETS.map(async (url) => {
+          try {
+            const res = await fetch(url);
+            if (res.ok) {
+              await cache.put(url, res);
+            }
+          } catch (e) {
+            console.warn("[ServiceWorker] Pre-cache skipped for:", url, e);
+          }
+        })
+      );
     }).then(() => {
       return self.skipWaiting();
     })

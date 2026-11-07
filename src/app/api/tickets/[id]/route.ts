@@ -7,14 +7,19 @@ import { maskCustomerPhones } from "@/lib/maskUtils";
 import { parseBody, withErrors, HttpError } from "@/lib/http";
 import { sendMail } from "@/lib/mailer";
 import { getTicketAssignedEmailHtml, getTicketCompletionEmailHtml } from "@/lib/mail-templates";
-import type { TicketPriority, TicketStatus, TicketType, TicketSource, MeterSource } from "@prisma/client";
+import {
+  getTicketCustomTypesMap,
+  setTicketCustomTypeForTicket,
+  toPrismaTicketType,
+} from "@/lib/ticketWorkTypes";
+import type { TicketPriority, TicketStatus, TicketSource, MeterSource } from "@prisma/client";
 
 const patchSchema = z.object({
-  action: z.enum(["ASSIGN", "CHECK_IN", "UPDATE", "COMPLETE", "CANCEL"]),
+  action: z.enum(["ASSIGN", "CHECK_IN", "UPDATE", "COMPLETE", "CANCEL", "REOPEN"]),
   customerId: z.string().optional(),
   equipmentId: z.string().optional().nullable(),
   assigneeId: z.string().optional().nullable(),
-  type: z.enum(["INSTALLATION", "INSPECTION", "REPAIR", "MAINTENANCE", "OTHER"]).optional(),
+  type: z.string().trim().min(1).optional(),
   priority: z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]).optional(),
   source: z.enum(["CUSTOMER", "SCHEDULED", "INTERNAL"]).optional(),
   description: z.string().min(3, "Mô tả sự cố/yêu cầu tối thiểu 3 ký tự").optional(),
@@ -101,7 +106,10 @@ export const GET = withErrors(async (_req: Request, ctx: { params: Promise<{ id:
     throw new HttpError(403, "Bạn chỉ có quyền xem phiếu kỹ thuật được phân công cho mình");
   }
 
-  const canViewPhone = await checkUserPermission(session.userId, session.role, "customer:view-phone");
+  const [canViewPhone, customTypeMap] = await Promise.all([
+    checkUserPermission(session.userId, session.role, "customer:view-phone"),
+    getTicketCustomTypesMap(),
+  ]);
   const sanitizeSignature = (sig?: string | null) => {
     if (!sig) return null;
     if (sig.includes("[DEMO_SIGNATURE]") || sig.includes("...")) return null;
@@ -109,6 +117,7 @@ export const GET = withErrors(async (_req: Request, ctx: { params: Promise<{ id:
   };
   const data = {
     ...ticket,
+    type: customTypeMap[ticket.id] || ticket.type,
     customerSignature: sanitizeSignature(ticket.customerSignature),
     customer: ticket.customer ? maskCustomerPhones(ticket.customer, canViewPhone) : ticket.customer,
   };
@@ -147,11 +156,123 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
     );
   }
 
+  // Kiểm tra quyền mở lại phiếu đã hoàn thành
+  const canReopenTicket =
+    session.role === "SUPER_ADMIN" ||
+    session.role === "ADMIN" ||
+    session.role === "DISPATCHER" ||
+    (await checkUserPermission(session.userId, session.role, "ticket:assign")) ||
+    (await checkUserPermission(session.userId, session.role, "ticket:cancel"));
+
+  // Xử lý hành động MỞ LẠI PHIẾU (REOPEN: COMPLETED -> IN_PROGRESS)
+  if (data.action === "REOPEN") {
+    if (existing.status !== "COMPLETED") {
+      throw new HttpError(400, "Chỉ có thể mở lại phiếu kỹ thuật đang ở trạng thái Hoàn thành.");
+    }
+    if (!canReopenTicket) {
+      throw new HttpError(
+        403,
+        "Bạn không có quyền mở lại phiếu đã hoàn thành (Chỉ Giám đốc, Quản lý hoặc Điều phối viên mới được phép mở lại)."
+      );
+    }
+
+    const reopenReason = (data.note || "").trim();
+    if (!reopenReason || reopenReason.length < 3) {
+      throw new HttpError(400, "Vui lòng nhập lý do mở lại phiếu kỹ thuật (tối thiểu 3 ký tự).");
+    }
+
+    const targetStatus: TicketStatus =
+      data.status && ["IN_PROGRESS", "ASSIGNED", "WAITING_PARTS", "PENDING"].includes(data.status)
+        ? (data.status as TicketStatus)
+        : "IN_PROGRESS";
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const t = await tx.ticket.update({
+        where: { id },
+        data: {
+          status: targetStatus,
+          resolvedAt: null,
+        },
+        include: {
+          customer: true,
+          equipment: {
+            include: {
+              branch: { select: { id: true, name: true } },
+              building: { select: { id: true, name: true, branch: { select: { name: true } } } },
+              department: {
+                include: {
+                  building: {
+                    include: { branch: true },
+                  },
+                },
+              },
+            },
+          },
+          attachments: true,
+        },
+      });
+
+      await tx.ticketLog.create({
+        data: {
+          ticketId: id,
+          userId: session.userId,
+          fromStatus: "COMPLETED",
+          toStatus: targetStatus,
+          note: `🔄 Mở lại phiếu (Chuyển về Đang xử lý): ${reopenReason}`,
+        },
+      });
+
+      // Nếu là phiếu sửa chữa có gắn máy đang ACTIVE thì chuyển trạng thái máy về FAULTY
+      if (
+        existing.equipment &&
+        existing.equipmentId &&
+        existing.type === "REPAIR" &&
+        existing.equipment.status === "ACTIVE"
+      ) {
+        await tx.equipment.update({
+          where: { id: existing.equipmentId },
+          data: { status: "FAULTY" },
+        });
+        await tx.equipmentStatusHistory.create({
+          data: {
+            equipmentId: existing.equipmentId,
+            fromStatus: "ACTIVE",
+            toStatus: "FAULTY",
+            note: `Mở lại phiếu sửa chữa ${existing.code}: ${reopenReason}`,
+          },
+        });
+      }
+
+      // Thông báo cho KTV phụ trách nếu có
+      if (existing.assigneeId && existing.assigneeId !== session.userId) {
+        await tx.notification.create({
+          data: {
+            userId: existing.assigneeId,
+            channel: "IN_APP",
+            title: `Phiếu ${existing.code} đã được mở lại`,
+            body: `Lý do mở lại: ${reopenReason} (${existing.customer.name})`,
+            sentAt: new Date(),
+          },
+        });
+      }
+
+      return t;
+    });
+
+    await audit(session.userId, "TICKET_REOPEN", "Ticket", id, {
+      code: existing.code,
+      reason: reopenReason,
+      toStatus: targetStatus,
+    });
+
+    return NextResponse.json(updated);
+  }
+
   // Phiếu đã hoàn thành rồi thì không được sửa nội dung trừ superadmin (giám đốc)
   if (existing.status === "COMPLETED" && session.role !== "SUPER_ADMIN") {
     throw new HttpError(
       403,
-      "Phiếu kỹ thuật đã hoàn thành, chỉ Giám đốc (Super Admin) mới có quyền chỉnh sửa nội dung"
+      "Phiếu kỹ thuật đã hoàn thành. Vui lòng sử dụng chức năng 'Mở lại phiếu' để chuyển về trạng thái Đang xử lý trước khi cập nhật."
     );
   }
 
@@ -639,7 +760,7 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
         ...(data.customerId ? { customerId: data.customerId } : {}),
         ...(isChangingEquipment ? { equipmentId: targetEquipmentId } : {}),
         ...(updatedAssigneeId !== undefined ? { assigneeId: updatedAssigneeId } : {}),
-        ...(data.type ? { type: data.type as TicketType } : {}),
+        ...(data.type ? { type: toPrismaTicketType(data.type) } : {}),
         ...(data.priority ? { priority: data.priority as TicketPriority } : {}),
         ...(data.source ? { source: data.source as TicketSource } : {}),
         ...(data.description !== undefined ? { description: data.description } : {}),
@@ -822,12 +943,21 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
     return t;
   });
 
+  if (data.type) {
+    await setTicketCustomTypeForTicket(id, data.type);
+  }
+  const latestCustomMap = await getTicketCustomTypesMap();
+
   await audit(session.userId, "TICKET_UPDATE", "Ticket", id, {
     code: existing.code,
     status: nextStatus,
+    ...(data.type ? { type: data.type } : {}),
   });
 
-  return NextResponse.json(updated);
+  return NextResponse.json({
+    ...updated,
+    type: latestCustomMap[id] || updated.type,
+  });
 });
 
 export const DELETE = withErrors(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {

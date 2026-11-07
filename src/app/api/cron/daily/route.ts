@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { withErrors, HttpError } from "@/lib/http";
+import { runAutoBackupIfNeeded } from "@/lib/backupService";
 
 interface CronDailyResult {
   timestamp: string;
@@ -9,6 +10,11 @@ interface CronDailyResult {
   lowStockAlerts: number;
   expiringContractsAlerts: number;
   slaBreachAlerts: number;
+  autoBackup?: {
+    executed: boolean;
+    status: string;
+    message: string;
+  } | null;
   details: {
     tickets: string[];
     lowStockParts: string[];
@@ -288,6 +294,16 @@ async function executeDailyCron(invokedByUserId: string | null): Promise<CronDai
     slaBreachList.push(`${t.code} - ${t.equipment ? t.equipment.model : "Phiếu dịch vụ"} (${t.customer.name})`);
   }
 
+  // =========================================================================
+  // TÁC VỤ 5: TỰ ĐỘNG SAO LƯU DỮ LIỆU ĐỊNH KỲ (BACKUP)
+  // =========================================================================
+  let autoBackupResult: CronDailyResult["autoBackup"] = null;
+  try {
+    autoBackupResult = await runAutoBackupIfNeeded();
+  } catch (err) {
+    console.warn("Lỗi chạy auto backup trong daily cron:", err);
+  }
+
   // Ghi AuditLog
   await prisma.auditLog.create({
     data: {
@@ -299,6 +315,7 @@ async function executeDailyCron(invokedByUserId: string | null): Promise<CronDai
         lowStockCount: lowStockParts.length,
         expiringContractsCount: expiringList.length,
         slaBreachedCount: slaBreachList.length,
+        autoBackup: autoBackupResult,
       },
     },
   });
@@ -309,6 +326,7 @@ async function executeDailyCron(invokedByUserId: string | null): Promise<CronDai
     lowStockAlerts: lowStockParts.length,
     expiringContractsAlerts: expiringList.length,
     slaBreachAlerts: slaBreachList.length,
+    autoBackup: autoBackupResult,
     details: {
       tickets: createdTickets,
       lowStockParts,

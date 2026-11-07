@@ -7,6 +7,7 @@ import { Loading } from "@/components/Loading";
 import { METER_SOURCE_LABELS } from "@/lib/labels";
 import { exportToCsv } from "@/lib/csv";
 import { MeterOcrModal } from "@/components/ocr/MeterOcrModal";
+import SearchableSelect, { SelectOption } from "@/components/ui/SearchableSelect";
 
 interface MeterLogItem {
   id: string;
@@ -82,12 +83,20 @@ export default function MeterManagementPage() {
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
   const [showOcrModal, setShowOcrModal] = useState(false);
 
+  // Modal 3: Từ chối duyệt counter
+  const [rejectItem, setRejectItem] = useState<MeterLogItem | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [selectedReasonPreset, setSelectedReasonPreset] = useState("");
+
+  // Modal 4: Phê duyệt điều chỉnh counter
+  const [approveItem, setApproveItem] = useState<MeterLogItem | null>(null);
+
   const fetchData = async () => {
     setLoading(true);
     try {
       const [metersRes, eqRes] = await Promise.all([
         fetch("/api/meters"),
-        fetch("/api/equipment?pageSize=100"),
+        fetch("/api/equipment?pageSize=1000"),
       ]);
 
       if (metersRes.ok) {
@@ -106,8 +115,104 @@ export default function MeterManagementPage() {
   };
 
   useEffect(() => {
-    fetchData();
+    let ignore = false;
+    (async () => {
+      try {
+        const [metersRes, eqRes] = await Promise.all([
+          fetch("/api/meters"),
+          fetch("/api/equipment?pageSize=1000"),
+        ]);
+        if (!ignore) {
+          if (metersRes.ok) {
+            const d = await metersRes.json();
+            setLogs(Array.isArray(d) ? d : []);
+          }
+          if (eqRes.ok) {
+            const d = await eqRes.json();
+            setEquipments(d.items || []);
+          }
+        }
+      } catch {
+        if (!ignore) toast.error("Lỗi khi nạp dữ liệu chỉ số counter");
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
   }, []);
+
+  // Danh sách thiết bị dạng options cho SearchableSelect (hỗ trợ tìm nhanh model, serial, khách hàng)
+  const equipmentSelectOptions: SelectOption[] = useMemo(() => {
+    return equipments.map((eq) => ({
+      value: eq.id,
+      label: `${eq.model}${eq.serialNumber ? ` (SN: ${eq.serialNumber})` : ""}`,
+      sublabel: `Khách hàng: ${eq.customer?.name || "Trong kho"}${eq.brand ? ` • Hãng: ${eq.brand}` : ""}`,
+      badge: `Counter: ${eq.currentCounter.toLocaleString("vi-VN")}`,
+      icon: "fas fa-print",
+    }));
+  }, [equipments]);
+
+  // Danh sách nguồn ghi nhận
+  const sourceSelectOptions: SelectOption[] = useMemo(() => [
+    { value: "MANUAL", label: "Thủ công (Khai báo)", icon: "fas fa-keyboard", sublabel: "Nhập trực tiếp tại văn phòng" },
+    { value: "OCR", label: "AI Quét ảnh (OCR)", icon: "fas fa-magic", sublabel: "Nhận diện từ ảnh đồng hồ" },
+    { value: "TECH", label: "Kỹ thuật viên (Bảo trì)", icon: "fas fa-tools", sublabel: "Ghi nhận qua phiếu kỹ thuật" },
+    { value: "CUSTOMER", label: "Khách hàng báo", icon: "fas fa-user-check", sublabel: "Khách tự chụp / báo số" },
+  ], []);
+
+  // Filter nguồn ghi nhận
+  const filterSourceOptions: SelectOption[] = useMemo(() => [
+    { value: "ALL", label: "Mọi nguồn", icon: "fas fa-layer-group" },
+    ...sourceSelectOptions,
+  ], [sourceSelectOptions]);
+
+  // Các mẫu lý do từ chối thường gặp
+  const rejectReasonPresets: SelectOption[] = useMemo(() => [
+    {
+      value: "Chỉ số không trùng khớp với đồng hồ thực tế / Thiếu bằng chứng",
+      label: "Chỉ số không trùng khớp với đồng hồ thực tế",
+      sublabel: "Ảnh minh chứng hoặc chỉ số không khớp với thực tế kiểm tra",
+      icon: "fas fa-times-circle",
+    },
+    {
+      value: "Ảnh chụp màn hình quá mờ, không xác thực được số counter",
+      label: "Ảnh chụp màn hình mờ / không xem được",
+      sublabel: "Yêu cầu chụp lại rõ nét cả góc máy và đồng hồ",
+      icon: "fas fa-camera",
+    },
+    {
+      value: "Chỉ số khai báo nhỏ hơn chỉ số chốt kỳ trước bất hợp lý mà không có biên bản",
+      label: "Giảm counter bất hợp lý / Thiếu biên bản",
+      sublabel: "Chỉ số giảm phải có biên bản kỹ thuật ký xác nhận",
+      icon: "fas fa-file-invoice",
+    },
+    {
+      value: "Kỹ thuật viên chọn nhầm máy hoặc nhầm số serial thiết bị",
+      label: "Chọn nhầm máy hoặc số serial",
+      sublabel: "Máy khai báo không tương ứng với phiếu kỹ thuật",
+      icon: "fas fa-random",
+    },
+    {
+      value: "Cần bổ sung biên bản bàn giao linh kiện / thay cụm sấy / thay bo mạch chính",
+      label: "Thiếu biên bản thay linh kiện / bo mạch",
+      sublabel: "Yêu cầu bổ sung tài liệu trước khi duyệt reset counter",
+      icon: "fas fa-microchip",
+    },
+    {
+      value: "Đồng hồ không có dấu hiệu reset, yêu cầu KTV xác minh lại tại hiện trường",
+      label: "Yêu cầu KTV xác minh lại hiện trường",
+      sublabel: "Cần kiểm tra kỹ cơ chế counter của máy",
+      icon: "fas fa-search-location",
+    },
+    {
+      value: "OTHER",
+      label: "Lý do khác (Tự nhập chi tiết)",
+      sublabel: "Tự viết nội dung lý do từ chối vào ô bên dưới",
+      icon: "fas fa-pen",
+    },
+  ], []);
 
   const selectedEquipment = useMemo(() => {
     return equipments.find((e) => e.id === form.equipmentId);
@@ -142,19 +247,16 @@ export default function MeterManagementPage() {
     });
   }, [logs, statusTab, sourceFilter, q]);
 
-  // Phê duyệt điều chỉnh counter
-  const handleApprove = async (item: MeterLogItem) => {
-    const isLower = item.counterValue < item.equipment.currentCounter;
-    const confirmMsg = isLower
-      ? `Xác nhận DUYỆT điều chỉnh giảm chỉ số máy ${item.equipment.model}${
-          item.equipment.serialNumber ? ` (SN: ${item.equipment.serialNumber})` : ""
-        } từ ${item.equipment.currentCounter.toLocaleString("vi-VN")} xuống ${item.counterValue.toLocaleString("vi-VN")} bản?\n\nLý do KTV khai báo: ${item.adjustmentReason || "Không có"}`
-      : `Xác nhận duyệt chỉ số counter ${item.counterValue.toLocaleString("vi-VN")} cho thiết bị ${item.equipment.model}?`;
+  // Phê duyệt điều chỉnh counter - Mở modal xác nhận
+  const handleApprove = (item: MeterLogItem) => {
+    setApproveItem(item);
+  };
 
-    if (!confirm(confirmMsg)) return;
-
+  const handleConfirmApprove = async () => {
+    if (!approveItem) return;
+    setSubmitting(true);
     try {
-      const res = await fetch(`/api/meters/${item.id}`, {
+      const res = await fetch(`/api/meters/${approveItem.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "APPROVE" }),
@@ -163,43 +265,63 @@ export default function MeterManagementPage() {
       if (!res.ok) throw new Error(data.error || "Không thể phê duyệt");
 
       toast.success(
-        `Đã phê duyệt và cập nhật counter máy thành ${item.counterValue.toLocaleString("vi-VN")}!`
+        `Đã phê duyệt và cập nhật counter máy thành ${approveItem.counterValue.toLocaleString("vi-VN")}!`
       );
+      setApproveItem(null);
       fetchData();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Lỗi phê duyệt counter");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  // Từ chối yêu cầu điều chỉnh
-  const handleReject = async (item: MeterLogItem) => {
-    const reason = prompt(
-      `Nhập lý do TỪ CHỐI điều chỉnh counter cho máy ${item.equipment.model}:`,
-      "Chỉ số không trùng khớp với đồng hồ thực tế / Thiếu bằng chứng"
-    );
-    if (!reason || !reason.trim()) return;
+  // Từ chối yêu cầu điều chỉnh - Mở modal có dropdown chọn nhanh lý do
+  const handleReject = (item: MeterLogItem) => {
+    setRejectItem(item);
+    const defaultReason = "Chỉ số không trùng khớp với đồng hồ thực tế / Thiếu bằng chứng";
+    setRejectReason(defaultReason);
+    setSelectedReasonPreset(defaultReason);
+  };
 
+  const handleConfirmReject = async () => {
+    if (!rejectItem) return;
+    if (!rejectReason.trim()) {
+      toast.warning("Vui lòng nhập lý do từ chối yêu cầu điều chỉnh counter");
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      const res = await fetch(`/api/meters/${item.id}`, {
+      const res = await fetch(`/api/meters/${rejectItem.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "REJECT", reason: reason.trim() }),
+        body: JSON.stringify({ action: "REJECT", reason: rejectReason.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Không thể từ chối");
 
       toast.warning("Đã từ chối yêu cầu điều chỉnh counter!");
+      setRejectItem(null);
+      setRejectReason("");
+      setSelectedReasonPreset("");
       fetchData();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Lỗi từ chối counter");
+    } finally {
+      setSubmitting(false);
     }
   };
 
   // Ghi nhận counter từ form
   const handleSaveMeter = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.equipmentId || form.counterValue === "") {
-      toast.warning("Vui lòng chọn thiết bị và nhập chỉ số counter");
+    if (!form.equipmentId) {
+      toast.warning("Vui lòng chọn thiết bị cần ghi nhận counter");
+      return;
+    }
+    if (form.counterValue === "") {
+      toast.warning("Vui lòng nhập chỉ số counter");
       return;
     }
 
@@ -394,21 +516,17 @@ export default function MeterManagementPage() {
             </button>
           </div>
 
-          <div className="d-flex gap-2 flex-grow-1 justify-content-end" style={{ maxWidth: "450px" }}>
-            <select
-              className="form-select form-select-sm"
-              style={{ maxWidth: "160px" }}
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-            >
-              <option value="ALL">Mọi nguồn</option>
-              {Object.entries(METER_SOURCE_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
-            <div className="input-group input-group-sm">
+          <div className="d-flex gap-2 flex-grow-1 justify-content-end align-items-center" style={{ maxWidth: "520px" }}>
+            <div style={{ width: "175px" }} className="flex-shrink-0">
+              <SearchableSelect
+                value={sourceFilter}
+                onChange={setSourceFilter}
+                options={filterSourceOptions}
+                placeholder="Lọc theo nguồn..."
+                searchPlaceholder="Tìm nguồn..."
+              />
+            </div>
+            <div className="input-group input-group-sm flex-grow-1">
               <span className="input-group-text bg-white">
                 <i className="fas fa-search text-muted"></i>
               </span>
@@ -419,6 +537,16 @@ export default function MeterManagementPage() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
+              {q && (
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary"
+                  onClick={() => setQ("")}
+                  title="Xóa tìm kiếm"
+                >
+                  <i className="fas fa-times"></i>
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -620,26 +748,22 @@ export default function MeterManagementPage() {
             <label className="form-label small fw-bold">
               Chọn Thiết bị <span className="text-danger">*</span>
             </label>
-            <select
-              className="form-select form-select-sm"
-              required
+            <SearchableSelect
               value={form.equipmentId}
-              onChange={(e) => {
-                const eq = equipments.find((x) => x.id === e.target.value);
+              onChange={(val) => {
+                const eq = equipments.find((x) => x.id === val);
                 setForm({
                   ...form,
-                  equipmentId: e.target.value,
+                  equipmentId: val,
                   counterValue: eq ? String(eq.currentCounter + 1000) : "",
                 });
               }}
-            >
-              <option value="">-- Chọn máy --</option>
-              {equipments.map((eq) => (
-                <option key={eq.id} value={eq.id}>
-                  {eq.model}{eq.serialNumber ? ` (SN: ${eq.serialNumber})` : ""} — Khách: {eq.customer?.name || "Trong kho"} [Counter: {eq.currentCounter.toLocaleString("vi-VN")}]
-                </option>
-              ))}
-            </select>
+              options={equipmentSelectOptions}
+              placeholder="-- Tìm & chọn thiết bị (Model, Serial, Khách hàng) --"
+              searchPlaceholder="Tìm theo Model, Serial, Khách hàng..."
+              allowClear
+              menuMinWidth={450}
+            />
           </div>
 
           {selectedEquipment && (
@@ -679,18 +803,14 @@ export default function MeterManagementPage() {
               />
             </div>
             <div className="col-md-6">
-              <label className="form-label small fw-bold">Nguồn ghi nhận</label>
-              <select
-                className="form-select form-select-sm"
+              <label className="form-label small fw-bold mb-1">Nguồn ghi nhận</label>
+              <SearchableSelect
                 value={form.source}
-                onChange={(e) => setForm({ ...form, source: e.target.value as any })}
-              >
-                {Object.entries(METER_SOURCE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setForm({ ...form, source: val as "MANUAL" | "OCR" | "TECH" | "CUSTOMER" })}
+                options={sourceSelectOptions}
+                placeholder="-- Chọn nguồn ghi nhận --"
+                searchPlaceholder="Tìm nguồn..."
+              />
             </div>
           </div>
 
@@ -819,6 +939,211 @@ export default function MeterManagementPage() {
           );
         }}
       />
+
+      {/* Modal 3: Từ chối yêu cầu điều chỉnh Counter (Hỗ trợ dropdown chọn nhanh lý do) */}
+      <ModalShell
+        open={Boolean(rejectItem)}
+        onClose={() => !submitting && setRejectItem(null)}
+        title="Từ chối yêu cầu điều chỉnh Counter"
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              onClick={() => setRejectItem(null)}
+              disabled={submitting}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-danger fw-semibold"
+              disabled={submitting || !rejectReason.trim()}
+              onClick={handleConfirmReject}
+            >
+              {submitting ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                  Đang xử lý...
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-times me-1"></i> Xác nhận Từ chối
+                </>
+              )}
+            </button>
+          </>
+        }
+      >
+        {rejectItem && (
+          <div>
+            <div className="alert alert-warning py-2.5 px-3 small mb-3">
+              <div className="fw-bold mb-1 d-flex align-items-center gap-1.5">
+                <i className="fas fa-exclamation-triangle text-danger"></i>
+                <span>Từ chối yêu cầu điều chỉnh chỉ số counter</span>
+              </div>
+              <div className="text-secondary mb-1">
+                Thiết bị: <strong className="text-dark">{rejectItem.equipment.model}</strong>
+                {rejectItem.equipment.serialNumber && (
+                  <span className="font-monospace ms-1">(SN: {rejectItem.equipment.serialNumber})</span>
+                )}
+                {" — "}Khách hàng: <strong>{rejectItem.equipment.customer?.name || "Trong kho"}</strong>
+              </div>
+              <div className="d-flex justify-content-between align-items-center pt-1 border-top border-warning-subtle text-muted">
+                <span>Chỉ số máy: <strong className="font-monospace text-dark">{rejectItem.equipment.currentCounter.toLocaleString("vi-VN")}</strong></span>
+                <span>&rarr;</span>
+                <span>Chỉ số đề xuất: <strong className="font-monospace text-danger">{rejectItem.counterValue.toLocaleString("vi-VN")}</strong></span>
+              </div>
+              {rejectItem.adjustmentReason && (
+                <div className="mt-1.5 pt-1 border-top border-warning-subtle small text-danger-emphasis">
+                  Lý do KTV khai: <em>&ldquo;{rejectItem.adjustmentReason}&rdquo;</em>
+                </div>
+              )}
+            </div>
+
+            <div className="mb-3">
+              <label className="form-label small fw-bold">
+                Chọn lý do từ chối mẫu <span className="text-muted fw-normal">(Tìm kiếm & chọn nhanh khi sổ ra)</span>
+              </label>
+              <SearchableSelect
+                value={selectedReasonPreset}
+                onChange={(val) => {
+                  setSelectedReasonPreset(val);
+                  if (val && val !== "OTHER") {
+                    setRejectReason(val);
+                  }
+                }}
+                options={rejectReasonPresets}
+                placeholder="-- Gõ hoặc chọn lý do mẫu phù hợp --"
+                searchPlaceholder="Tìm kiếm lý do từ chối..."
+              />
+            </div>
+
+            <div className="mb-2">
+              <label className="form-label small fw-bold">
+                Nội dung lý do từ chối gửi KTV <span className="text-danger">*</span>
+              </label>
+              <textarea
+                className="form-control form-control-sm"
+                rows={3}
+                required
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Nhập lý do từ chối cụ thể để thông báo cho người khai báo..."
+              />
+              <div className="form-text text-muted" style={{ fontSize: "11px" }}>
+                Nội dung này sẽ được lưu vào lịch sử đối soát và gửi phản hồi đến Kỹ thuật viên/Khách hàng.
+              </div>
+            </div>
+          </div>
+        )}
+      </ModalShell>
+
+      {/* Modal 4: Xác nhận Phê duyệt Counter */}
+      <ModalShell
+        open={Boolean(approveItem)}
+        onClose={() => !submitting && setApproveItem(null)}
+        title="Xác nhận Phê duyệt Chỉ số Counter"
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              onClick={() => setApproveItem(null)}
+              disabled={submitting}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-success fw-bold"
+              disabled={submitting}
+              onClick={handleConfirmApprove}
+            >
+              {submitting ? (
+                <>
+                  <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                  Đang phê duyệt...
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-check me-1"></i> Xác nhận Phê duyệt
+                </>
+              )}
+            </button>
+          </>
+        }
+      >
+        {approveItem && (
+          <div>
+            <div className="p-3 bg-light rounded-3 border mb-3">
+              <div className="row g-2 align-items-center mb-2">
+                <div className="col-sm-6">
+                  <div className="small text-muted">Thiết bị:</div>
+                  <div className="fw-bold text-primary fs-6">{approveItem.equipment.model}</div>
+                  {approveItem.equipment.serialNumber && (
+                    <div className="small font-monospace text-muted">SN: {approveItem.equipment.serialNumber}</div>
+                  )}
+                </div>
+                <div className="col-sm-6">
+                  <div className="small text-muted">Khách hàng:</div>
+                  <div className="fw-semibold text-dark">{approveItem.equipment.customer?.name || "Trong kho"}</div>
+                  {approveItem.equipment.contract && (
+                    <span className="badge bg-light text-secondary border font-monospace mt-0.5" style={{ fontSize: "10px" }}>
+                      HĐ: {approveItem.equipment.contract.code}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-2.5 bg-white rounded border d-flex justify-content-between align-items-center">
+                <div>
+                  <div className="small text-muted">Chỉ số hiện tại</div>
+                  <div className="fs-5 fw-bold font-monospace text-secondary">
+                    {approveItem.equipment.currentCounter.toLocaleString("vi-VN")}
+                  </div>
+                </div>
+                <div className="text-center px-2">
+                  <i className="fas fa-arrow-right text-muted fa-lg"></i>
+                  {approveItem.counterValue < approveItem.equipment.currentCounter ? (
+                    <div className="badge bg-danger d-block mt-1">Giảm {(approveItem.counterValue - approveItem.equipment.currentCounter).toLocaleString("vi-VN")}</div>
+                  ) : (
+                    <div className="badge bg-success d-block mt-1">Tăng +{(approveItem.counterValue - approveItem.equipment.currentCounter).toLocaleString("vi-VN")}</div>
+                  )}
+                </div>
+                <div className="text-end">
+                  <div className="small text-muted">Chỉ số sau duyệt</div>
+                  <div className="fs-5 fw-bold font-monospace text-success">
+                    {approveItem.counterValue.toLocaleString("vi-VN")}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {approveItem.adjustmentReason && (
+              <div className="alert alert-warning py-2 px-3 small mb-3">
+                <strong>Lý do điều chỉnh của KTV:</strong> {approveItem.adjustmentReason}
+              </div>
+            )}
+
+            {approveItem.photoUrl && (
+              <div className="text-center p-2 bg-light rounded border mb-2">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-primary"
+                  onClick={() => setPreviewPhoto(approveItem.photoUrl)}
+                >
+                  <i className="fas fa-image me-1"></i> Xem ảnh minh chứng đồng hồ
+                </button>
+              </div>
+            )}
+
+            <div className="small text-muted">
+              Ghi chú: Sau khi phê duyệt, chỉ số counter mới sẽ được cập nhật chính thức vào hệ thống quản lý thiết bị và sẵn sàng đối soát hóa đơn cước.
+            </div>
+          </div>
+        )}
+      </ModalShell>
     </div>
   );
 }

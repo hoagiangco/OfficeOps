@@ -181,14 +181,29 @@ export default function TicketsPage() {
     (currentUser?.permissions
       ? !!currentUser.permissions["ticket:cancel"]
       : currentUser?.role === "ADMIN" || currentUser?.role === "DISPATCHER");
+  const canReopenTicket =
+    isSuperAdmin ||
+    currentUser?.role === "ADMIN" ||
+    currentUser?.role === "DISPATCHER" ||
+    (currentUser?.permissions
+      ? Boolean(currentUser.permissions["ticket:assign"] || currentUser.permissions["ticket:cancel"])
+      : false);
 
-  // Modal Hủy & Xóa phiếu
+  // Modal Hủy, Mở lại & Xóa phiếu
   const [cancelTargetTicket, setCancelTargetTicket] = useState<{ id: string; code: string; customerName?: string } | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
 
+  const [reopenTargetTicket, setReopenTargetTicket] = useState<{ id: string; code: string; customerName?: string } | null>(null);
+  const [reopenReason, setReopenReason] = useState("");
+  const [reopening, setReopening] = useState(false);
+
   const [deleteTargetTicket, setDeleteTargetTicket] = useState<{ id: string; code: string; status?: string; customerName?: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  const [workTypesList, setWorkTypesList] = useState<Array<{ code: string; label: string }>>(() =>
+    Object.entries(TICKET_TYPE_LABELS).map(([code, label]) => ({ code, label }))
+  );
 
   const isSelectedCompleted = selectedTicket?.status === "COMPLETED";
   const isSelectedCancelled = selectedTicket?.status === "CANCELLED";
@@ -197,14 +212,24 @@ export default function TicketsPage() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [meRes, tkRes, custRes, eqRes, techRes, partRes] = await Promise.all([
+      const [meRes, tkRes, custRes, eqRes, techRes, partRes, wtRes] = await Promise.all([
         fetch("/api/auth/me"),
         fetch("/api/tickets"),
         fetch("/api/customers?pageSize=100"),
         fetch("/api/equipment?pageSize=100"),
         fetch("/api/dispatch/technicians"),
         fetch("/api/parts?pageSize=100"),
+        fetch("/api/tickets/work-types"),
       ]);
+      if (wtRes.ok) {
+        const wtData = await wtRes.json();
+        if (Array.isArray(wtData.items) && wtData.items.length > 0) {
+          for (const it of wtData.items) {
+            TICKET_TYPE_LABELS[it.code] = it.label;
+          }
+          setWorkTypesList(wtData.items.map((it: { code: string; label: string }) => ({ code: it.code, label: it.label })));
+        }
+      }
       if (meRes.ok) {
         const me = await meRes.json();
         setCurrentUser(me);
@@ -626,6 +651,51 @@ export default function TicketsPage() {
     }
   };
 
+  const handleOpenReopenModal = (ticket: { id: string; code: string; customer?: { name: string } }) => {
+    setReopenTargetTicket({
+      id: ticket.id,
+      code: ticket.code,
+      customerName: ticket.customer?.name,
+    });
+    setReopenReason("");
+  };
+
+  const handleConfirmReopenTicket = async () => {
+    if (!reopenTargetTicket) return;
+    const trimmed = reopenReason.trim();
+    if (!trimmed || trimmed.length < 3) {
+      toast.warning("Vui lòng nhập lý do mở lại phiếu (tối thiểu 3 ký tự)");
+      return;
+    }
+    setReopening(true);
+    try {
+      const res = await fetch(`/api/tickets/${reopenTargetTicket.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "REOPEN",
+          note: trimmed,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Không thể mở lại phiếu kỹ thuật");
+      }
+      const targetId = reopenTargetTicket.id;
+      toast.success(`Đã mở lại phiếu kỹ thuật ${reopenTargetTicket.code} sang Đang xử lý!`);
+      setReopenTargetTicket(null);
+      setReopenReason("");
+      if (selectedTicket && selectedTicket.id === targetId) {
+        await openDetailModal(targetId);
+      }
+      await fetchAll();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Lỗi khi mở lại phiếu");
+    } finally {
+      setReopening(false);
+    }
+  };
+
   const handleOpenDeleteModal = (ticket: { id: string; code: string; status?: string; customer?: { name: string } }) => {
     setDeleteTargetTicket({
       id: ticket.id,
@@ -1043,9 +1113,9 @@ export default function TicketsPage() {
               onChange={(e) => setTypeFilter(e.target.value)}
             >
               <option value="">-- Mọi loại phiếu --</option>
-              {Object.entries(TICKET_TYPE_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
+              {workTypesList.map((wt) => (
+                <option key={wt.code} value={wt.code}>
+                  {wt.label}
                 </option>
               ))}
             </select>
@@ -1288,6 +1358,18 @@ export default function TicketsPage() {
                             </button>
                           )}
 
+                          {t.status === "COMPLETED" && canReopenTicket && (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-info text-primary py-1 px-1.5 shadow-2xs"
+                              style={{ fontSize: "11px", height: "28px", width: "28px" }}
+                              onClick={() => handleOpenReopenModal(t)}
+                              title="Mở lại phiếu về trạng thái Đang xử lý"
+                            >
+                              <i className="fas fa-undo-alt"></i>
+                            </button>
+                          )}
+
                           {canDeleteTicket && (
                             <button
                               type="button"
@@ -1431,6 +1513,17 @@ export default function TicketsPage() {
                         title="Hủy phiếu kỹ thuật"
                       >
                         <i className="fas fa-ban text-warning"></i>
+                      </button>
+                    )}
+                    {t.status === "COMPLETED" && canReopenTicket && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-info text-primary px-2.5"
+                        style={{ height: "31px" }}
+                        onClick={() => handleOpenReopenModal(t)}
+                        title="Mở lại phiếu về trạng thái Đang xử lý"
+                      >
+                        <i className="fas fa-undo-alt"></i>
                       </button>
                     )}
                     {canDeleteTicket && (
@@ -1619,26 +1712,43 @@ export default function TicketsPage() {
               <div
                 className={`alert ${
                   isSuperAdmin ? "alert-info border-info" : "alert-secondary border-secondary"
-                } d-flex align-items-center mb-3 py-2 px-3 small`}
+                } d-flex align-items-center justify-content-between gap-2 mb-3 py-2 px-3 small flex-wrap`}
               >
-                <i
-                  className={`fas ${
-                    isSuperAdmin ? "fa-shield-alt text-primary" : "fa-lock text-danger"
-                  } fa-lg me-2`}
-                ></i>
-                <div>
-                  {isSuperAdmin ? (
-                    <span>
-                      <strong>Phiếu kỹ thuật đã hoàn thành</strong> — Bạn đang đăng nhập quyền{" "}
-                      <strong className="text-primary">Giám đốc (Super Admin)</strong> nên có thể điều chỉnh lại nội dung khi cần thiết.
-                    </span>
-                  ) : (
-                    <span>
-                      <strong>Phiếu kỹ thuật đã hoàn thành (Khóa nội dung)</strong> — Phiếu đã nghiệm thu đóng nên không thể chỉnh sửa thông tin hoặc đính kèm thêm dữ liệu. Chỉ{" "}
-                      <strong>Giám đốc (Super Admin)</strong> mới có quyền điều chỉnh phiếu đã hoàn thành.
-                    </span>
-                  )}
+                <div className="d-flex align-items-center">
+                  <i
+                    className={`fas ${
+                      isSuperAdmin ? "fa-shield-alt text-primary" : "fa-lock text-danger"
+                    } fa-lg me-2`}
+                  ></i>
+                  <div>
+                    {isSuperAdmin ? (
+                      <span>
+                        <strong>Phiếu kỹ thuật đã hoàn thành</strong> — Bạn đang đăng nhập quyền{" "}
+                        <strong className="text-primary">Giám đốc (Super Admin)</strong> nên có thể điều chỉnh lại nội dung hoặc mở lại phiếu.
+                      </span>
+                    ) : canReopenTicket ? (
+                      <span>
+                        <strong>Phiếu kỹ thuật đã hoàn thành (Đã khóa)</strong> — Bấm{" "}
+                        <strong>&quot;Mở lại phiếu&quot;</strong> để chuyển phiếu về trạng thái{" "}
+                        <strong>Đang xử lý</strong> khi cần xử lý tiếp hoặc điều chỉnh.
+                      </span>
+                    ) : (
+                      <span>
+                        <strong>Phiếu kỹ thuật đã hoàn thành (Khóa nội dung)</strong> — Phiếu đã nghiệm thu đóng nên không thể chỉnh sửa thông tin.
+                      </span>
+                    )}
+                  </div>
                 </div>
+                {canReopenTicket && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-warning text-dark fw-bold d-inline-flex align-items-center gap-1.5 shadow-2xs flex-shrink-0"
+                    onClick={() => handleOpenReopenModal(selectedTicket)}
+                  >
+                    <i className="fas fa-undo-alt"></i>
+                    <span>Mở lại phiếu (Đang xử lý)</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -1705,6 +1815,19 @@ export default function TicketsPage() {
                   <i className="fas fa-print text-primary"></i>
                   <span>In Biên bản (A4)</span>
                 </a>
+
+                {selectedTicket.status === "COMPLETED" && canReopenTicket && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-info text-primary fw-semibold d-inline-flex align-items-center gap-1 shadow-2xs px-2.5"
+                    style={{ height: "30px", fontSize: "12px" }}
+                    onClick={() => handleOpenReopenModal(selectedTicket)}
+                    title="Mở lại phiếu kỹ thuật này sang trạng thái Đang xử lý"
+                  >
+                    <i className="fas fa-undo-alt"></i>
+                    <span>Mở lại phiếu</span>
+                  </button>
+                )}
 
                 {selectedTicket.status !== "COMPLETED" && selectedTicket.status !== "CANCELLED" && (
                   <button
@@ -2506,6 +2629,108 @@ export default function TicketsPage() {
               />
               <div className="form-text text-muted" style={{ fontSize: "11px" }}>
                 Nhập tối thiểu 3 ký tự giải trình lý do dừng xử lý phiếu.
+              </div>
+            </div>
+          </div>
+        )}
+      </ModalShell>
+
+      {/* Modal Mở Lại Phiếu Kỹ Thuật (Reopen COMPLETED -> IN_PROGRESS) */}
+      <ModalShell
+        open={Boolean(reopenTargetTicket)}
+        onClose={() => !reopening && setReopenTargetTicket(null)}
+        title={
+          <div className="d-flex align-items-center gap-2 text-primary">
+            <i className="fas fa-undo-alt fs-5"></i>
+            <span className="fw-bold">
+              Mở lại phiếu kỹ thuật {reopenTargetTicket?.code}
+            </span>
+          </div>
+        }
+        size="md"
+        footer={
+          <div className="d-flex justify-content-end gap-2 w-100">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary px-3"
+              disabled={reopening}
+              onClick={() => setReopenTargetTicket(null)}
+            >
+              Đóng
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-primary fw-bold px-3 d-inline-flex align-items-center gap-1.5"
+              disabled={reopening || reopenReason.trim().length < 3}
+              onClick={handleConfirmReopenTicket}
+            >
+              {reopening ? (
+                <>
+                  <span className="spinner-border spinner-border-sm" role="status"></span>
+                  <span>Đang mở lại...</span>
+                </>
+              ) : (
+                <>
+                  <i className="fas fa-undo-alt"></i>
+                  <span>Xác nhận Mở lại (Đang xử lý)</span>
+                </>
+              )}
+            </button>
+          </div>
+        }
+      >
+        {reopenTargetTicket && (
+          <div>
+            <div className="alert alert-info py-2.5 px-3 small border-info mb-3">
+              <div className="fw-bold mb-1">
+                <i className="fas fa-info-circle me-1"></i>Khi Mở lại phiếu kỹ thuật:
+              </div>
+              <ul className="mb-0 ps-3">
+                <li>
+                  Phiếu <strong>{reopenTargetTicket.code}</strong> sẽ được chuyển từ{" "}
+                  <strong>Hoàn thành</strong> về trạng thái <strong>Đang xử lý (IN_PROGRESS)</strong>.
+                </li>
+                <li>
+                  Kỹ thuật viên và Điều phối viên có thể tiếp tục cập nhật chẩn đoán, bổ sung linh kiện hoặc chốt lại nghiệm thu.
+                </li>
+                <li>
+                  Lý do mở lại sẽ được lưu vết đầy đủ trong <strong>Nhật ký tiến độ</strong> và <strong>Audit Log</strong>.
+                </li>
+              </ul>
+            </div>
+
+            <div className="mb-2">
+              <label className="form-label small fw-bold text-dark mb-1">
+                Lý do mở lại phiếu <span className="text-danger">*</span>
+              </label>
+              <div className="d-flex flex-wrap gap-1.5 mb-2">
+                {[
+                  "KTV bấm nhầm hoàn thành phiếu",
+                  "Khách báo máy vẫn còn lỗi cũ cần kiểm tra lại",
+                  "Cần bổ sung linh kiện / vật tư thay thế",
+                  "Cần cập nhật lại chỉ số Counter / chữ ký",
+                ].map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    className="btn btn-xs btn-outline-secondary py-0.5 px-2 rounded-pill"
+                    style={{ fontSize: "11px" }}
+                    onClick={() => setReopenReason(tag)}
+                  >
+                    + {tag}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                className="form-control form-control-sm"
+                rows={3}
+                placeholder="Nhập lý do mở lại phiếu kỹ thuật..."
+                value={reopenReason}
+                onChange={(e) => setReopenReason(e.target.value)}
+                autoFocus
+              />
+              <div className="form-text text-muted" style={{ fontSize: "11px" }}>
+                Nhập tối thiểu 3 ký tự giải trình lý do mở lại phiếu.
               </div>
             </div>
           </div>

@@ -2,6 +2,17 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 
+function removeVietnameseTones(str: string): string {
+  if (!str) return '';
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .trim();
+}
+
 export interface SelectOption {
   value: string;
   label: string;
@@ -48,6 +59,7 @@ export function SearchableSelect({
   const [search, setSearch] = useState('');
   const [openUpwards, setOpenUpwards] = useState(false);
   const [menuMaxHeight, setMenuMaxHeight] = useState<number>(240);
+  const [highlightedIndex, setHighlightedIndex] = useState<number>(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const dropdownMenuRef = useRef<HTMLDivElement>(null);
@@ -68,17 +80,42 @@ export function SearchableSelect({
     return normalizedOptions.find((opt) => opt.value === value);
   }, [normalizedOptions, value]);
 
-  // Filtered options based on search query
+  // Filtered options based on search query (hỗ trợ cả tiếng Việt có dấu và không dấu)
   const filteredOptions = useMemo(() => {
     if (!search.trim()) return normalizedOptions;
-    const query = search.toLowerCase().trim();
+    const rawQuery = search.toLowerCase().trim();
+    const cleanQuery = removeVietnameseTones(search);
+
     return normalizedOptions.filter((opt) => {
-      const matchLabel = opt.label.toLowerCase().includes(query);
-      const matchSublabel = opt.sublabel?.toLowerCase().includes(query);
-      const matchBadge = opt.badge?.toLowerCase().includes(query);
-      return matchLabel || matchSublabel || matchBadge;
+      const label = opt.label.toLowerCase();
+      const sublabel = (opt.sublabel || '').toLowerCase();
+      const badge = (opt.badge || '').toLowerCase();
+
+      if (label.includes(rawQuery) || sublabel.includes(rawQuery) || badge.includes(rawQuery)) {
+        return true;
+      }
+
+      const cleanLabel = removeVietnameseTones(opt.label);
+      const cleanSublabel = removeVietnameseTones(opt.sublabel || '');
+      const cleanBadge = removeVietnameseTones(opt.badge || '');
+
+      return (
+        cleanLabel.includes(cleanQuery) ||
+        cleanSublabel.includes(cleanQuery) ||
+        cleanBadge.includes(cleanQuery)
+      );
     });
   }, [normalizedOptions, search]);
+
+  // Tự động cuộn đến item được highlight bằng phím mũi tên
+  useEffect(() => {
+    if (optionsListRef.current && highlightedIndex >= 0) {
+      const activeEl = optionsListRef.current.children[highlightedIndex] as HTMLElement;
+      if (activeEl && typeof activeEl.scrollIntoView === 'function') {
+        activeEl.scrollIntoView({ block: 'nearest' });
+      }
+    }
+  }, [highlightedIndex]);
 
   // Handle click outside to close
   useEffect(() => {
@@ -98,7 +135,6 @@ export function SearchableSelect({
   // Auto-focus search input & calculate placement when opened
   useEffect(() => {
     if (isOpen) {
-      setSearch('');
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
         const viewportHeight = window.innerHeight;
@@ -180,7 +216,15 @@ export function SearchableSelect({
         <button
           type="button"
           disabled={disabled}
-          onClick={() => !disabled && setIsOpen(!isOpen)}
+          onClick={() => {
+            if (disabled) return;
+            const next = !isOpen;
+            setIsOpen(next);
+            if (next) {
+              setSearch('');
+              setHighlightedIndex(0);
+            }
+          }}
           className={`form-select form-select-sm text-start d-flex align-items-center justify-content-between bg-white ${
             prefixIcon ? 'flex-grow-1' : 'w-100'
           }`}
@@ -279,13 +323,25 @@ export function SearchableSelect({
                 style={{ height: '32px', fontSize: '13px' }}
                 placeholder={searchPlaceholder}
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setHighlightedIndex(0);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Escape') {
                     setIsOpen(false);
-                  } else if (e.key === 'Enter' && filteredOptions.length > 0) {
+                  } else if (e.key === 'ArrowDown') {
                     e.preventDefault();
-                    handleSelect(filteredOptions[0].value);
+                    setHighlightedIndex((prev) => (prev < filteredOptions.length - 1 ? prev + 1 : 0));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : filteredOptions.length - 1));
+                  } else if (e.key === 'Enter') {
+                    if (filteredOptions.length > 0) {
+                      e.preventDefault();
+                      const target = filteredOptions[highlightedIndex] || filteredOptions[0];
+                      if (target) handleSelect(target.value);
+                    }
                   }
                 }}
               />
@@ -331,8 +387,9 @@ export function SearchableSelect({
                 Không tìm thấy kết quả
               </div>
             ) : (
-              filteredOptions.map((opt) => {
+              filteredOptions.map((opt, idx) => {
                 const isSelected = opt.value === value;
+                const isHighlighted = highlightedIndex === idx && !isSelected;
                 const level = opt.level || 0;
                 const paddingLeft = level > 0 ? `${14 + level * 22}px` : '14px';
 
@@ -342,19 +399,17 @@ export function SearchableSelect({
                     className={`d-flex align-items-center justify-content-between px-3 py-2 transition-colors ${
                       isSelected
                         ? 'bg-primary text-white'
+                        : isHighlighted
+                        ? 'bg-light text-dark'
                         : 'text-dark'
                     }`}
                     style={{
                       cursor: 'pointer',
                       fontSize: '13px',
                       paddingLeft,
-                      backgroundColor: isSelected ? '#0d6efd' : undefined,
+                      backgroundColor: isSelected ? '#0d6efd' : isHighlighted ? '#f1f5f9' : undefined,
                     }}
-                    onMouseEnter={(e) => {
-                      if (!isSelected) {
-                        e.currentTarget.style.backgroundColor = '#f1f5f9';
-                      }
-                    }}
+                    onMouseEnter={() => setHighlightedIndex(idx)}
                     onMouseLeave={(e) => {
                       if (!isSelected) {
                         e.currentTarget.style.backgroundColor = '';

@@ -90,6 +90,10 @@ export const PERMISSIONS = {
   "user:manage": ["SUPER_ADMIN"],
   "user:permission-manage": ["SUPER_ADMIN"],
   "audit:view": ["SUPER_ADMIN"],
+  "backup:view": ["SUPER_ADMIN", "ADMIN"],
+  "backup:create": ["SUPER_ADMIN", "ADMIN"],
+  "backup:restore": ["SUPER_ADMIN"],
+  "backup:manage": ["SUPER_ADMIN"],
 
   // 10. Quản lý Thư viện Media
   "media:view": ALL,

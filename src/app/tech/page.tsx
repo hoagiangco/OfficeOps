@@ -280,6 +280,20 @@ export default function TechMobilePage() {
   const isSuperAdmin = profile?.role === "SUPER_ADMIN";
   const isSelectedLocked = isSelectedCompleted && !isSuperAdmin;
 
+  // Mở lại phiếu đã hoàn thành
+  const [showReopenBox, setShowReopenBox] = useState(false);
+  const [reopenReason, setReopenReason] = useState("");
+  const [reopening, setReopening] = useState(false);
+
+  const canReopenTicket = useMemo(() => {
+    if (!profile) return false;
+    if (["SUPER_ADMIN", "ADMIN", "DISPATCHER"].includes(profile.role)) return true;
+    if (profile.permissions) {
+      return Boolean(profile.permissions["ticket:assign"] || profile.permissions["ticket:cancel"]);
+    }
+    return false;
+  }, [profile]);
+
   const hasEquipmentHistoryPerm = useMemo(() => {
     if (!profile) return false;
     if (profile.role === "SUPER_ADMIN") return true;
@@ -346,11 +360,20 @@ export default function TechMobilePage() {
     let ignore = false;
     async function initData() {
       try {
-        const [ticketsRes, partsRes] = await Promise.all([
+        const [ticketsRes, partsRes, wtRes] = await Promise.all([
           fetch("/api/tickets?pageSize=100"),
           fetch("/api/parts?pageSize=100"),
+          fetch("/api/tickets/work-types"),
         ]);
         if (!ignore) {
+          if (wtRes.ok) {
+            const wtData = await wtRes.json();
+            if (Array.isArray(wtData.items)) {
+              for (const it of wtData.items) {
+                TICKET_TYPE_LABELS[it.code] = it.label;
+              }
+            }
+          }
           if (ticketsRes.ok) {
             const data = await ticketsRes.json();
             setTickets(Array.isArray(data) ? data : (data.items || []));
@@ -443,7 +466,41 @@ export default function TechMobilePage() {
     );
     setClosingNote("");
     setAdjustmentReason("");
+    setShowReopenBox(false);
+    setReopenReason("");
     setActionStep("detail");
+  };
+
+  // Mở lại phiếu đã hoàn thành về Đang xử lý
+  const handleReopenTicket = async () => {
+    if (!selectedTicket) return;
+    const trimmed = reopenReason.trim();
+    if (!trimmed || trimmed.length < 3) {
+      toast.warning("Vui lòng nhập lý do mở lại phiếu (tối thiểu 3 ký tự)");
+      return;
+    }
+    setReopening(true);
+    try {
+      const res = await fetch(`/api/tickets/${selectedTicket.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "REOPEN",
+          note: trimmed,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Không thể mở lại phiếu");
+      toast.success(`Đã mở lại phiếu ${selectedTicket.code} về trạng thái Đang xử lý!`);
+      setShowReopenBox(false);
+      setReopenReason("");
+      setSelectedTicket((prev) => (prev ? { ...prev, ...data, status: "IN_PROGRESS", resolvedAt: null } : data));
+      loadTickets();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Lỗi khi mở lại phiếu");
+    } finally {
+      setReopening(false);
+    }
   };
 
   // Check-in GPS
@@ -1745,31 +1802,114 @@ export default function TechMobilePage() {
                 paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))",
               }}
             >
-              {/* Cảnh báo trạng thái phiếu đã hoàn thành */}
+              {/* Cảnh báo trạng thái phiếu đã hoàn thành & Chức năng Mở lại phiếu */}
               {isSelectedCompleted && (
-                <div
-                  className={`p-2.5 rounded-3 mb-3 small d-flex align-items-center gap-2 ${
-                    isSuperAdmin
-                      ? "bg-info-subtle text-info-emphasis border border-info"
-                      : "bg-secondary-subtle text-secondary border"
-                  }`}
-                >
-                  <i
-                    className={`fas ${
-                      isSuperAdmin ? "fa-shield-alt text-primary" : "fa-lock text-secondary"
-                    } fa-lg`}
-                  ></i>
-                  <div>
-                    {isSuperAdmin ? (
-                      <span>
-                        <strong>Phiếu đã hoàn thành</strong> — Bạn có quyền Giám đốc (Super Admin), có thể điều chỉnh lại kết quả.
-                      </span>
-                    ) : (
-                      <span>
-                        <strong>Phiếu đã hoàn thành (Đã khóa)</strong> — Không thể sửa đổi nội dung. Chỉ Giám đốc mới có quyền chỉnh sửa.
-                      </span>
+                <div className="mb-3">
+                  <div
+                    className={`p-2.5 rounded-3 small d-flex align-items-center justify-content-between gap-2 ${
+                      isSuperAdmin
+                        ? "bg-info-subtle text-info-emphasis border border-info"
+                        : "bg-secondary-subtle text-secondary border"
+                    }`}
+                  >
+                    <div className="d-flex align-items-center gap-2">
+                      <i
+                        className={`fas ${
+                          isSuperAdmin ? "fa-shield-alt text-primary" : "fa-lock text-secondary"
+                        } fa-lg`}
+                      ></i>
+                      <div>
+                        {isSuperAdmin ? (
+                          <span>
+                            <strong>Phiếu đã hoàn thành</strong> — Bạn có quyền Giám đốc, có thể điều chỉnh hoặc mở lại phiếu.
+                          </span>
+                        ) : canReopenTicket ? (
+                          <span>
+                            <strong>Phiếu đã hoàn thành (Đã khóa)</strong> — Bấm{" "}
+                            <strong>&quot;Mở lại phiếu&quot;</strong> để chuyển về trạng thái Đang xử lý.
+                          </span>
+                        ) : (
+                          <span>
+                            <strong>Phiếu đã hoàn thành (Đã khóa)</strong> — Vui lòng liên hệ Điều phối viên hoặc Quản lý nếu cần mở lại phiếu.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {canReopenTicket && !showReopenBox && (
+                      <button
+                        type="button"
+                        className="btn btn-warning btn-sm text-dark fw-bold text-nowrap flex-shrink-0 shadow-2xs"
+                        style={{ fontSize: "11.5px" }}
+                        onClick={() => {
+                          setReopenReason("");
+                          setShowReopenBox(true);
+                        }}
+                      >
+                        <i className="fas fa-undo-alt me-1"></i> Mở lại phiếu
+                      </button>
                     )}
                   </div>
+
+                  {canReopenTicket && showReopenBox && (
+                    <div className="p-3 rounded-3 border border-primary bg-primary-subtle bg-opacity-10 mt-2">
+                      <div className="fw-bold small text-primary mb-1.5 d-flex align-items-center justify-content-between">
+                        <span>
+                          <i className="fas fa-undo-alt me-1"></i> Mở lại phiếu về trạng thái Đang xử lý
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-close"
+                          style={{ fontSize: "10px" }}
+                          onClick={() => setShowReopenBox(false)}
+                        ></button>
+                      </div>
+                      <div className="d-flex flex-wrap gap-1 mb-2">
+                        {[
+                          "KTV bấm nhầm đóng phiếu",
+                          "Máy vẫn còn lỗi cần kiểm tra lại",
+                          "Cần bổ sung linh kiện thay thế",
+                        ].map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            className="btn btn-xs btn-outline-secondary py-0.5 px-2 rounded-pill bg-white"
+                            style={{ fontSize: "10.5px" }}
+                            onClick={() => setReopenReason(tag)}
+                          >
+                            + {tag}
+                          </button>
+                        ))}
+                      </div>
+                      <textarea
+                        rows={2}
+                        className="form-control form-control-sm mb-2"
+                        placeholder="Nhập lý do mở lại phiếu (* tối thiểu 3 ký tự)..."
+                        value={reopenReason}
+                        onChange={(e) => setReopenReason(e.target.value)}
+                      />
+                      <div className="d-flex gap-2 justify-content-end">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary py-1 px-2.5"
+                          style={{ fontSize: "11.5px" }}
+                          disabled={reopening}
+                          onClick={() => setShowReopenBox(false)}
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary fw-bold py-1 px-3"
+                          style={{ fontSize: "11.5px" }}
+                          disabled={reopening || reopenReason.trim().length < 3}
+                          onClick={handleReopenTicket}
+                        >
+                          <i className="fas fa-undo-alt me-1"></i>
+                          {reopening ? "Đang mở lại..." : "Xác nhận Mở lại"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

@@ -6,6 +6,7 @@ import { ModalShell } from "@/components/ModalShell";
 import { Loading } from "@/components/Loading";
 import { INVOICE_STATUS_LABELS, METER_SOURCE_LABELS } from "@/lib/labels";
 import { exportToCsv } from "@/lib/csv";
+import SearchableSelect, { SelectOption } from "@/components/ui/SearchableSelect";
 
 interface InvoiceItemRow {
   id: string;
@@ -159,8 +160,8 @@ export default function FinanceInvoicesPage() {
       const [invRes, meterRes, contractRes, eqRes] = await Promise.all([
         fetch("/api/invoices"),
         fetch("/api/meters"),
-        fetch("/api/contracts?pageSize=100"),
-        fetch("/api/equipment?pageSize=100"),
+        fetch("/api/contracts?pageSize=1000"),
+        fetch("/api/equipment?pageSize=1000"),
       ]);
       if (invRes.ok) {
         const d = await invRes.json();
@@ -186,8 +187,78 @@ export default function FinanceInvoicesPage() {
   };
 
   useEffect(() => {
-    fetchAll();
+    let ignore = false;
+    (async () => {
+      try {
+        const [invRes, meterRes, contractRes, eqRes] = await Promise.all([
+          fetch("/api/invoices"),
+          fetch("/api/meters"),
+          fetch("/api/contracts?pageSize=1000"),
+          fetch("/api/equipment?pageSize=1000"),
+        ]);
+        if (!ignore) {
+          if (invRes.ok) {
+            const d = await invRes.json();
+            setInvoices(Array.isArray(d) ? d : d.items || []);
+          }
+          if (meterRes.ok) {
+            const d = await meterRes.json();
+            setMeterLogs(Array.isArray(d) ? d : d.items || []);
+          }
+          if (contractRes.ok) {
+            const d = await contractRes.json();
+            setContracts(Array.isArray(d) ? d : d.items || []);
+          }
+          if (eqRes.ok) {
+            const d = await eqRes.json();
+            setEquipmentList(Array.isArray(d) ? d : d.items || []);
+          }
+        }
+      } catch {
+        if (!ignore) toast.error("Lỗi tải dữ liệu tài chính & counter");
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
   }, []);
+
+  const equipmentSelectOptions: SelectOption[] = useMemo(() => {
+    return equipmentList.map((eq) => ({
+      value: eq.id,
+      label: `${eq.model}${eq.serialNumber ? ` - SN: ${eq.serialNumber}` : ""}`,
+      sublabel: `Khách: ${eq.customer?.name || "Trong kho"} (Hiện tại: ${eq.currentCounter.toLocaleString("vi-VN")})`,
+      badge: `Counter: ${eq.currentCounter.toLocaleString("vi-VN")}`,
+      icon: "fas fa-print",
+    }));
+  }, [equipmentList]);
+
+  const contractSelectOptions: SelectOption[] = useMemo(() => {
+    return contracts.map((c) => ({
+      value: c.id,
+      label: `[${c.code}] ${c.customer.name}`,
+      sublabel: `Giá thuê: ${Number(c.basePrice).toLocaleString("vi-VN")} đ/tháng (${c.equipment.length} máy)`,
+      badge: `${c.equipment.length} máy`,
+      icon: "fas fa-file-contract",
+    }));
+  }, [contracts]);
+
+  const meterSourceOptions: SelectOption[] = useMemo(() => [
+    { value: "MANUAL", label: "Thủ công (Khai báo)", icon: "fas fa-keyboard" },
+    { value: "OCR", label: "AI Quét ảnh (OCR)", icon: "fas fa-magic" },
+    { value: "TECH", label: "Kỹ thuật viên (Bảo trì)", icon: "fas fa-tools" },
+    { value: "CUSTOMER", label: "Khách hàng báo", icon: "fas fa-user-check" },
+  ], []);
+
+  const invoiceStatusOptions: SelectOption[] = useMemo(() => [
+    { value: "", label: "Tất cả trạng thái", icon: "fas fa-layer-group" },
+    ...Object.entries(INVOICE_STATUS_LABELS).map(([k, v]) => ({
+      value: k,
+      label: v,
+    })),
+  ], []);
 
   const selectedEquipmentForMeter = useMemo(
     () => equipmentList.find((e) => e.id === meterForm.equipmentId) || null,
@@ -485,19 +556,15 @@ export default function FinanceInvoicesPage() {
             />
           </div>
           {activeTab === "invoices" && (
-            <select
-              className="form-select form-select-sm"
-              style={{ maxWidth: "180px" }}
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="">-- Mọi trạng thái --</option>
-              {Object.entries(INVOICE_STATUS_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </select>
+            <div style={{ width: "190px" }} className="flex-shrink-0">
+              <SearchableSelect
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={invoiceStatusOptions}
+                placeholder="-- Mọi trạng thái --"
+                searchPlaceholder="Tìm trạng thái..."
+              />
+            </div>
           )}
         </div>
       </div>
@@ -768,28 +835,22 @@ export default function FinanceInvoicesPage() {
             <label className="form-label small fw-bold">
               Chọn Thiết bị cần chốt Counter <span className="text-danger">*</span>
             </label>
-            <select
-              className="form-select form-select-sm"
-              required
+            <SearchableSelect
               value={meterForm.equipmentId}
-              onChange={(e) => {
-                const eq = equipmentList.find((x) => x.id === e.target.value);
+              onChange={(val) => {
+                const eq = equipmentList.find((x) => x.id === val);
                 setMeterForm({
                   ...meterForm,
-                  equipmentId: e.target.value,
+                  equipmentId: val,
                   counterValue: eq ? String(eq.currentCounter + 1200) : "",
                 });
               }}
-            >
-              <option value="">-- Chọn máy --</option>
-              {equipmentList.map((eq) => (
-                <option key={eq.id} value={eq.id}>
-                  {eq.model}{eq.serialNumber ? ` - SN: ${eq.serialNumber}` : ""} | Khách:{" "}
-                  {eq.customer?.name || "Kho"} (Hiện tại:{" "}
-                  {eq.currentCounter.toLocaleString("vi-VN")})
-                </option>
-              ))}
-            </select>
+              options={equipmentSelectOptions}
+              placeholder="-- Chọn thiết bị (gõ tìm Model, Serial, Khách hàng) --"
+              searchPlaceholder="Tìm nhanh Model, Serial, Khách hàng..."
+              allowClear
+              menuMinWidth={420}
+            />
           </div>
 
           {selectedEquipmentForMeter && (
@@ -854,18 +915,14 @@ export default function FinanceInvoicesPage() {
             </div>
 
             <div className="col-md-6">
-              <label className="form-label small fw-bold">Nguồn thu thập</label>
-              <select
-                className="form-select form-select-sm"
+              <label className="form-label small fw-bold mb-1">Nguồn thu thập</label>
+              <SearchableSelect
                 value={meterForm.source}
-                onChange={(e) => setMeterForm({ ...meterForm, source: e.target.value })}
-              >
-                {Object.entries(METER_SOURCE_LABELS).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setMeterForm({ ...meterForm, source: val })}
+                options={meterSourceOptions}
+                placeholder="-- Chọn nguồn thu thập --"
+                searchPlaceholder="Tìm nguồn..."
+              />
             </div>
 
             <div className="col-12">
@@ -913,24 +970,18 @@ export default function FinanceInvoicesPage() {
         <form id="generate-invoice-form" onSubmit={handleGenerateInvoice}>
           <div className="row g-3">
             <div className="col-md-12">
-              <label className="form-label small fw-bold">
+              <label className="form-label small fw-bold mb-1">
                 Chọn Hợp đồng thuê máy <span className="text-danger">*</span>
               </label>
-              <select
-                className="form-select form-select-sm"
-                required
+              <SearchableSelect
                 value={genForm.contractId}
-                onChange={(e) => setGenForm({ ...genForm, contractId: e.target.value })}
-              >
-                <option value="">-- Chọn hợp đồng đang hiệu lực --</option>
-                {contracts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    [{c.code}] {c.customer.name} | Giá thuê gốc:{" "}
-                    {Number(c.basePrice).toLocaleString("vi-VN")} đ/tháng ({c.equipment.length}{" "}
-                    máy)
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setGenForm({ ...genForm, contractId: val })}
+                options={contractSelectOptions}
+                placeholder="-- Chọn hợp đồng đang hiệu lực (gõ để tìm nhanh) --"
+                searchPlaceholder="Tìm mã hợp đồng, tên khách hàng..."
+                allowClear
+                menuMinWidth={480}
+              />
             </div>
 
             {selectedContractForGen && (
