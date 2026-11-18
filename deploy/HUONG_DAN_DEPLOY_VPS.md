@@ -7,7 +7,7 @@
   ```bash
   npm install -g pm2
   ```
-- **Nginx** (Tùy chọn): Làm Reverse Proxy trỏ domain về cổng 5000 và cài SSL (Certbot).
+- **Nginx** (Tùy chọn): Làm Reverse Proxy trỏ domain về cổng 3003 và cài SSL (Certbot).
 
 ---
 
@@ -63,7 +63,7 @@ chmod +x start.sh
 
 ---
 
-## 4. Mẫu cấu hình Nginx Reverse Proxy (Cổng 80/443 -> Cổng 5000)
+## 4. Mẫu cấu hình Nginx Reverse Proxy (Cổng 80/443 -> Cổng 3003)
 
 File cấu hình `/etc/nginx/sites-available/officeops`:
 ```nginx
@@ -71,7 +71,7 @@ server {
     server_name officeops.yourcompany.vn;
 
     location / {
-        proxy_pass http://127.0.0.1:5000;
+        proxy_pass http://127.0.0.1:3003;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';

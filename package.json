@@ -5,7 +5,7 @@
     "scripts": {
         "dev": "next dev -H 0.0.0.0 -p 5000",
         "build": "next build --webpack",
-        "start": "next start -H 0.0.0.0 -p 5001",
+        "start": "next start -H 0.0.0.0 -p 3003",
         "lint": "eslint",
         "deploy:build": "node scripts/build-deploy.js"
     },
