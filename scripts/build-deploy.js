@@ -8,6 +8,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
+const { ensureLinuxSharp } = require("./prepare-linux-sharp");
 
 const ROOT_DIR = path.resolve(__dirname, "..");
 const DEPLOY_DIR = path.join(ROOT_DIR, "deploy");
@@ -70,6 +71,10 @@ async function main() {
   // 4. Sao chép các tệp từ .next/standalone sang staging
   console.log("\n>> [2/5] Đang tập hợp các tệp lõi standalone vào staging...");
   fs.cpSync(standaloneDir, STAGING_DIR, { recursive: true });
+
+  // 4.1 Bổ sung Sharp Native Binaries cho Linux VPS (x64)
+  const stagingNodeModules = path.join(STAGING_DIR, "node_modules");
+  ensureLinuxSharp(stagingNodeModules);
 
   // 5. Sao chép tài nguyên tĩnh (.next/static và public)
   console.log("\n>> [3/5] Đang bổ sung static assets (.next/static) và thư mục public...");

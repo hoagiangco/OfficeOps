@@ -39,6 +39,7 @@ yarn-error.log*
 deploy/*.zip
 deploy/staging/
 !deploy/.gitkeep
+scripts/cache/
 
 # vercel
 .vercel

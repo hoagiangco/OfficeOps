@@ -47,6 +47,10 @@ if (-not (Test-Path $StandaloneDir)) {
 Write-Host "`n>> [2/5] Dang tap hop cac tep standalone vao staging..." -ForegroundColor Yellow
 Copy-Item -Path "$StandaloneDir\*" -Destination $StagingDir -Recurse -Force
 
+# 4.1 Bo sung Sharp Native Binaries cho Linux VPS
+$StagingModules = Join-Path $StagingDir "node_modules"
+node -e "require('./scripts/prepare-linux-sharp').ensureLinuxSharp('$($StagingModules.Replace('\', '/'))')"
+
 # 5. Bo sung static va public
 Write-Host "`n>> [3/5] Dang bo sung static assets (.next/static) va public..." -ForegroundColor Yellow
 $StaticSrc = Join-Path $RootDir ".next\static"
