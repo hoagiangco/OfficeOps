@@ -8,6 +8,12 @@ import { maskCustomerPhones } from "@/lib/maskUtils";
 import { parseBody, withErrors } from "@/lib/http";
 import { validateContractOwner } from "@/lib/equipment";
 import { resolveLocationIds } from "@/lib/location";
+import {
+  findMappedTicketIdsForEquipment,
+  getTicketEquipmentTasksMap,
+  getTicketEquipmentsMap,
+} from "@/lib/ticketEquipments";
+import { getTicketCustomTypesMap } from "@/lib/ticketWorkTypes";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -85,10 +91,58 @@ export const GET = withErrors(async (_req: Request, { params }: Ctx) => {
     },
   });
   if (!equipment) return NextResponse.json({ error: "Không tìm thấy thiết bị" }, { status: 404 });
+
+  // Gộp thêm các phiếu nhiều máy mà máy này được chọn cùng (ngoài trường hợp máy là equipmentId chính)
+  const [equipMap, customTypeMap, tasksMap] = await Promise.all([
+    getTicketEquipmentsMap(),
+    getTicketCustomTypesMap(),
+    getTicketEquipmentTasksMap(),
+  ]);
+  const mappedTicketIds = findMappedTicketIdsForEquipment(id, equipMap);
+  const existingTicketIds = new Set(equipment.tickets.map((t) => t.id));
+  const extraTicketIds = mappedTicketIds.filter((tid) => !existingTicketIds.has(tid));
+
+  let allTickets = [...equipment.tickets];
+  if (extraTicketIds.length > 0) {
+    const extraTickets = await prisma.ticket.findMany({
+      where: { id: { in: extraTicketIds } },
+      include: {
+        assignee: { select: { id: true, name: true, phone: true } },
+        partsUsed: {
+          where: { equipmentId: id },
+          include: {
+            part: { select: { id: true, name: true, partCode: true, unit: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    allTickets = [...allTickets, ...extraTickets].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+
+  allTickets = allTickets.slice(0, 25).map((t) => {
+    const perEquipTask = tasksMap[t.id]?.[id];
+    const effectiveType = perEquipTask?.workType || customTypeMap[t.id] || t.type;
+    const effectiveDesc = perEquipTask?.note
+      ? perEquipTask.counter && !perEquipTask.note.includes(String(perEquipTask.counter))
+        ? `${perEquipTask.note} (Counter: ${perEquipTask.counter.toLocaleString("vi-VN")})`
+        : perEquipTask.note
+      : t.description;
+    return {
+      ...t,
+      type: effectiveType as typeof t.type,
+      description: effectiveDesc,
+      counterAtClose: perEquipTask?.counter ?? t.counterAtClose,
+    };
+  });
+
   const isWh = !equipment.customerId || equipment.status === "IN_STOCK" || equipment.status === "RECALLED";
   const canViewPhone = await checkUserPermission(s.userId, s.role, "customer:view-phone");
   const formatted = {
     ...equipment,
+    tickets: allTickets,
     customer: equipment.customer ? maskCustomerPhones(equipment.customer, canViewPhone) : equipment.customer,
     relationType: isWh ? "Sẵn hàng" : equipment.relationType,
   };

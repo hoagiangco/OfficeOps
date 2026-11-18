@@ -363,6 +363,7 @@ export default function EquipmentPage() {
     type: "REPAIR",
     priority: "NORMAL",
     description: "",
+    equipmentStatus: "KEEP",
   });
 
   const [destinationMode, setDestinationMode] = useState<"WAREHOUSE" | "CUSTOMER">("WAREHOUSE");
@@ -1355,6 +1356,7 @@ export default function EquipmentPage() {
           priority: ticketForm.priority,
           description: ticketForm.description,
           source: "INTERNAL",
+          equipmentStatus: ticketForm.equipmentStatus === "KEEP" ? null : ticketForm.equipmentStatus || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -2526,6 +2528,7 @@ export default function EquipmentPage() {
                                               description: `Yêu cầu kỹ thuật (${eq.relationType}) cho máy ${eq.brand || ""} ${eq.model}${
                                                 eq.serialNumber ? ` (SN: ${eq.serialNumber})` : ""
                                               }`,
+                                              equipmentStatus: "KEEP",
                                             });
                                           }}
                                         >
@@ -4947,6 +4950,30 @@ export default function EquipmentPage() {
                 <option value="HIGH">Cao</option>
                 <option value="URGENT">Khẩn cấp</option>
               </select>
+            </div>
+            <div className="col-12">
+              <label className="form-label small fw-bold text-muted mb-1 d-flex justify-content-between align-items-center">
+                <span>TRẠNG THÁI MÁY KHI TẠO PHIẾU</span>
+                <span className="text-secondary fw-normal" style={{ fontSize: "11px" }}>Không tự động áp đặt</span>
+              </label>
+              <select
+                className="form-select form-select-sm"
+                value={ticketForm.equipmentStatus || "KEEP"}
+                onChange={(e) => setTicketForm({ ...ticketForm, equipmentStatus: e.target.value })}
+              >
+                <option value="KEEP">
+                  🟢 Giữ nguyên trạng thái ({ticketTarget ? STATUS_LABELS[ticketTarget.status] || ticketTarget.status : "Hiện tại"} - Mặc định)
+                </option>
+                <option value="FAULTY">🔴 Chuyển sang: Lỗi / Cần bảo trì (FAULTY)</option>
+                <option value="WAITING_PARTS">🟠 Chuyển sang: Chờ linh kiện (WAITING_PARTS)</option>
+                <option value="ACTIVE">🟢 Chuyển sang: Đang hoạt động (ACTIVE)</option>
+              </select>
+              {ticketForm.type === "REPAIR" && (ticketForm.equipmentStatus || "KEEP") === "KEEP" && (
+                <div className="small text-muted mt-1" style={{ fontSize: "11px" }}>
+                  <i className="fas fa-lightbulb text-warning me-1"></i>
+                  <em>Gợi ý: Mặc định giữ nguyên trạng thái máy. Nếu máy hỏng ngừng hoạt động, hãy chọn "Lỗi / Cần bảo trì".</em>
+                </div>
+              )}
             </div>
             <div className="col-12">
               <label className="form-label small fw-bold text-muted mb-1">

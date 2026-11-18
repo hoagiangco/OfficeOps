@@ -12,12 +12,38 @@ import {
   setTicketCustomTypeForTicket,
   toPrismaTicketType,
 } from "@/lib/ticketWorkTypes";
-import type { TicketPriority, TicketStatus, TicketSource, MeterSource } from "@prisma/client";
+import {
+  countOtherOpenTicketsForEquipment,
+  enrichTicketsWithEquipmentList,
+  getEffectiveEquipmentIds,
+  getTicketEquipmentsMap,
+  removeTicketEquipmentIds,
+  setTicketEquipmentIds,
+  setTicketEquipmentTasks,
+  type TicketEquipmentTask,
+} from "@/lib/ticketEquipments";
+import type { EquipmentStatus, TicketPriority, TicketStatus, TicketSource, MeterSource } from "@prisma/client";
 
 const patchSchema = z.object({
   action: z.enum(["ASSIGN", "CHECK_IN", "UPDATE", "COMPLETE", "CANCEL", "REOPEN"]),
   customerId: z.string().optional(),
   equipmentId: z.string().optional().nullable(),
+  equipmentIds: z.array(z.string().trim()).optional(),
+  equipmentTasks: z
+    .array(
+      z.object({
+        equipmentId: z.string().trim().min(1),
+        workType: z.string().trim().optional(),
+        note: z.string().optional(),
+        counter: z.number().int().min(0).optional().nullable(),
+      })
+    )
+    .optional(),
+  equipmentCounters: z.record(z.string(), z.number().int().min(0)).optional(),
+  equipmentStatus: z
+    .enum(["ACTIVE", "FAULTY", "WAITING_PARTS", "RECALLED", "IN_STOCK", "SCRAPPED", "KEEP"])
+    .optional()
+    .nullable(),
   assigneeId: z.string().optional().nullable(),
   type: z.string().trim().min(1).optional(),
   priority: z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]).optional(),
@@ -106,23 +132,25 @@ export const GET = withErrors(async (_req: Request, ctx: { params: Promise<{ id:
     throw new HttpError(403, "Bạn chỉ có quyền xem phiếu kỹ thuật được phân công cho mình");
   }
 
-  const [canViewPhone, customTypeMap] = await Promise.all([
+  const [canViewPhone, customTypeMap, equipMap] = await Promise.all([
     checkUserPermission(session.userId, session.role, "customer:view-phone"),
     getTicketCustomTypesMap(),
+    getTicketEquipmentsMap(),
   ]);
   const sanitizeSignature = (sig?: string | null) => {
     if (!sig) return null;
     if (sig.includes("[DEMO_SIGNATURE]") || sig.includes("...")) return null;
     return sig;
   };
-  const data = {
+  const baseData = {
     ...ticket,
     type: customTypeMap[ticket.id] || ticket.type,
     customerSignature: sanitizeSignature(ticket.customerSignature),
     customer: ticket.customer ? maskCustomerPhones(ticket.customer, canViewPhone) : ticket.customer,
   };
+  const [enriched] = await enrichTicketsWithEquipmentList([baseData], equipMap);
 
-  return NextResponse.json(data);
+  return NextResponse.json(enriched || baseData);
 });
 
 export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
@@ -142,11 +170,20 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
     data.customerSignature = null;
   }
 
-  const existing = await prisma.ticket.findUnique({
-    where: { id },
-    include: { equipment: true, customer: true, attachments: true },
-  });
+  const [existing, equipMap] = await Promise.all([
+    prisma.ticket.findUnique({
+      where: { id },
+      include: { equipment: true, customer: true, attachments: true },
+    }),
+    getTicketEquipmentsMap(),
+  ]);
   if (!existing) throw new HttpError(404, "Không tìm thấy phiếu kỹ thuật");
+
+  const currentEquipmentIds = getEffectiveEquipmentIds(existing, equipMap);
+  const currentEquipments =
+    currentEquipmentIds.length > 0
+      ? await prisma.equipment.findMany({ where: { id: { in: currentEquipmentIds } } })
+      : [];
 
   // Phiếu đã hủy thì không được thực hiện bất kỳ thao tác nào
   if (existing.status === "CANCELLED") {
@@ -222,25 +259,24 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
         },
       });
 
-      // Nếu là phiếu sửa chữa có gắn máy đang ACTIVE thì chuyển trạng thái máy về FAULTY
-      if (
-        existing.equipment &&
-        existing.equipmentId &&
-        existing.type === "REPAIR" &&
-        existing.equipment.status === "ACTIVE"
-      ) {
-        await tx.equipment.update({
-          where: { id: existing.equipmentId },
-          data: { status: "FAULTY" },
-        });
-        await tx.equipmentStatusHistory.create({
-          data: {
-            equipmentId: existing.equipmentId,
-            fromStatus: "ACTIVE",
-            toStatus: "FAULTY",
-            note: `Mở lại phiếu sửa chữa ${existing.code}: ${reopenReason}`,
-          },
-        });
+      // Cập nhật trạng thái máy nếu người dùng chủ động lựa chọn khi mở lại phiếu (không tự động áp đặt)
+      if (data.equipmentStatus && data.equipmentStatus !== "KEEP" && currentEquipments.length > 0) {
+        for (const eq of currentEquipments) {
+          if (eq.status !== data.equipmentStatus) {
+            await tx.equipment.update({
+              where: { id: eq.id },
+              data: { status: data.equipmentStatus as EquipmentStatus },
+            });
+            await tx.equipmentStatusHistory.create({
+              data: {
+                equipmentId: eq.id,
+                fromStatus: eq.status,
+                toStatus: data.equipmentStatus as EquipmentStatus,
+                note: `Cập nhật trạng thái khi mở lại phiếu ${existing.code}: ${reopenReason}`,
+              },
+            });
+          }
+        }
       }
 
       // Thông báo cho KTV phụ trách nếu có
@@ -265,7 +301,8 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
       toStatus: targetStatus,
     });
 
-    return NextResponse.json(updated);
+    const [enrichedReopen] = await enrichTicketsWithEquipmentList([updated], equipMap);
+    return NextResponse.json(enrichedReopen || updated);
   }
 
   // Phiếu đã hoàn thành rồi thì không được sửa nội dung trừ superadmin (giám đốc)
@@ -496,12 +533,38 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
         },
       });
 
-      if (existing.equipmentId && data.counterAtClose !== undefined && data.counterAtClose !== null) {
-        const counterPhotoUrl =
-          data.photoUrl ||
-          existing.attachments.find((a) => a.kind === "COUNTER_PHOTO")?.url ||
-          null;
+      const counterPhotoUrl =
+        data.photoUrl ||
+        existing.attachments.find((a) => a.kind === "COUNTER_PHOTO")?.url ||
+        null;
 
+      // Hỗ trợ chốt counter cho nhiều máy (equipmentCounters) hoặc máy chính (counterAtClose)
+      if (data.equipmentCounters && Object.keys(data.equipmentCounters).length > 0) {
+        for (const [eqId, counterVal] of Object.entries(data.equipmentCounters)) {
+          if (typeof counterVal === "number" && counterVal >= 0) {
+            const eqObj = currentEquipments.find((m) => m.id === eqId);
+            const eqIsLower = Boolean(eqObj && counterVal < eqObj.currentCounter);
+            await tx.meterLog.create({
+              data: {
+                equipmentId: eqId,
+                ticketId: existing.id,
+                recordedById: session.userId,
+                counterValue: counterVal,
+                source: data.meterSource || "TECH",
+                photoUrl: counterPhotoUrl,
+                status: eqIsLower ? "PENDING_APPROVAL" : "APPROVED",
+                adjustmentReason: eqIsLower ? data.adjustmentReason?.trim() || "Điều chỉnh khi đóng phiếu nhiều máy" : null,
+              },
+            });
+            if (!eqIsLower) {
+              await tx.equipment.update({
+                where: { id: eqId },
+                data: { currentCounter: counterVal },
+              });
+            }
+          }
+        }
+      } else if (existing.equipmentId && data.counterAtClose !== undefined && data.counterAtClose !== null) {
         await tx.meterLog.create({
           data: {
             equipmentId: existing.equipmentId,
@@ -524,23 +587,29 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
         }
       }
 
-      if (
-        existing.equipment &&
-        (existing.equipment.status === "FAULTY" ||
-        existing.equipment.status === "WAITING_PARTS")
-      ) {
-        await tx.equipment.update({
-          where: { id: existing.equipment.id },
-          data: { status: "ACTIVE" },
-        });
-        await tx.equipmentStatusHistory.create({
-          data: {
-            equipmentId: existing.equipment.id,
-            fromStatus: existing.equipment.status,
-            toStatus: "ACTIVE",
-            note: `Khôi phục hoạt động sau khi hoàn thành phiếu ${existing.code}`,
-          },
-        });
+      // Cập nhật trạng thái cho các máy gắn trên phiếu này
+      if (data.equipmentStatus !== "KEEP") {
+        const targetEqStatus = (data.equipmentStatus || "ACTIVE") as EquipmentStatus;
+        for (const eq of currentEquipments) {
+          if (eq.status !== targetEqStatus) {
+            // Nếu không truyền rõ và máy đang không hỏng (ví dụ ACTIVE/IN_STOCK), không cần đổi
+            if (data.equipmentStatus === undefined && eq.status !== "FAULTY" && eq.status !== "WAITING_PARTS") {
+              continue;
+            }
+            await tx.equipment.update({
+              where: { id: eq.id },
+              data: { status: targetEqStatus },
+            });
+            await tx.equipmentStatusHistory.create({
+              data: {
+                equipmentId: eq.id,
+                fromStatus: eq.status,
+                toStatus: targetEqStatus,
+                note: `Cập nhật trạng thái sau khi hoàn thành phiếu ${existing.code}`,
+              },
+            });
+          }
+        }
       }
 
       return t;
@@ -559,10 +628,16 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
         const emailHtml = getTicketCompletionEmailHtml({
           customerName: existing.customer.name,
           ticketCode: existing.code,
-          equipmentModel: existing.equipment
-            ? `${existing.equipment.brand || ""} ${existing.equipment.model}`
-            : "Phiếu dịch vụ",
-          serialNumber: existing.equipment?.serialNumber || "N/A",
+          equipmentModel:
+            currentEquipments.length > 1
+              ? `${currentEquipments.length} thiết bị (${currentEquipments.map((m) => m.model).join(", ")})`
+              : existing.equipment
+              ? `${existing.equipment.brand || ""} ${existing.equipment.model}`
+              : "Phiếu dịch vụ",
+          serialNumber:
+            currentEquipments.length > 1
+              ? currentEquipments.map((m) => m.serialNumber || "N/A").join(", ")
+              : existing.equipment?.serialNumber || "N/A",
           completedAt: new Date(),
           counterAtClose: data.counterAtClose ?? existing.counterAtClose,
           technicianName: session.name,
@@ -575,7 +650,13 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
 
         const mailRes = await sendMail({
           to: existing.customer.email,
-          subject: `[OfficeOps] Biên bản nghiệm thu kỹ thuật ${existing.code} - ${existing.equipment ? `Thiết bị ${existing.equipment.model}` : "Phiếu dịch vụ"}`,
+          subject: `[OfficeOps] Biên bản nghiệm thu kỹ thuật ${existing.code} - ${
+            currentEquipments.length > 1
+              ? `${currentEquipments.length} thiết bị`
+              : existing.equipment
+              ? `Thiết bị ${existing.equipment.model}`
+              : "Phiếu dịch vụ"
+          }`,
           html: emailHtml,
           text: `Phiếu kỹ thuật ${existing.code} đã hoàn tất bàn giao. ${existing.equipment ? `Thiết bị: ${existing.equipment.model}.` : ""} Chỉ số counter chốt: ${data.counterAtClose ?? existing.counterAtClose ?? "N/A"}.`,
           userId: session.userId,
@@ -591,7 +672,8 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
       counterAtClose: data.counterAtClose,
       emailSentToCustomer,
     });
-    return NextResponse.json({ ...updated, emailSentToCustomer });
+    const [enrichedComplete] = await enrichTicketsWithEquipmentList([updated], equipMap);
+    return NextResponse.json({ ...(enrichedComplete || updated), emailSentToCustomer });
   }
 
   if (data.action === "CANCEL") {
@@ -644,32 +726,24 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
         },
       });
 
-      // Nếu thiết bị đang FAULTY hoặc WAITING_PARTS, tự động phục hồi về ACTIVE nếu không còn phiếu hỏng nào khác
-      if (
-        existing.equipment &&
-        existing.equipmentId &&
-        (existing.equipment.status === "FAULTY" || existing.equipment.status === "WAITING_PARTS")
-      ) {
-        const otherOpenTickets = await tx.ticket.count({
-          where: {
-            equipmentId: existing.equipmentId,
-            id: { not: id },
-            status: { in: ["PENDING", "ASSIGNED", "IN_PROGRESS", "WAITING_PARTS"] },
-          },
-        });
-        if (otherOpenTickets === 0) {
-          await tx.equipment.update({
-            where: { id: existing.equipmentId },
-            data: { status: "ACTIVE" },
-          });
-          await tx.equipmentStatusHistory.create({
-            data: {
-              equipmentId: existing.equipmentId,
-              fromStatus: existing.equipment.status,
-              toStatus: "ACTIVE",
-              note: `Khôi phục trạng thái hoạt động do hủy phiếu ${existing.code}: ${cancelReason}`,
-            },
-          });
+      // Nếu thiết bị trên phiếu đang FAULTY hoặc WAITING_PARTS, tự động phục hồi về ACTIVE nếu không còn phiếu hỏng nào khác
+      for (const eq of currentEquipments) {
+        if (eq.status === "FAULTY" || eq.status === "WAITING_PARTS") {
+          const otherOpenTickets = await countOtherOpenTicketsForEquipment(eq.id, id, equipMap);
+          if (otherOpenTickets === 0) {
+            await tx.equipment.update({
+              where: { id: eq.id },
+              data: { status: "ACTIVE" },
+            });
+            await tx.equipmentStatusHistory.create({
+              data: {
+                equipmentId: eq.id,
+                fromStatus: eq.status,
+                toStatus: "ACTIVE",
+                note: `Khôi phục trạng thái hoạt động do hủy phiếu ${existing.code}: ${cancelReason}`,
+              },
+            });
+          }
         }
       }
 
@@ -680,7 +754,8 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
       code: existing.code,
       reason: cancelReason,
     });
-    return NextResponse.json(updated);
+    const [enrichedCancel] = await enrichTicketsWithEquipmentList([updated], equipMap);
+    return NextResponse.json(enrichedCancel || updated);
   }
 
   // action === "UPDATE"
@@ -722,35 +797,65 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
     }
   }
 
-  // Kiểm tra nếu có thay đổi thiết bị (equipmentId)
-  const isChangingEquipment =
-    data.equipmentId !== undefined && (data.equipmentId || null) !== (existing.equipmentId || null);
-  const targetEquipmentId =
-    data.equipmentId !== undefined ? (data.equipmentId?.trim() || null) : existing.equipmentId;
+  // Kiểm tra nếu có thay đổi danh sách thiết bị (equipmentIds hoặc equipmentId)
+  const hasExplicitEquipmentInput = data.equipmentIds !== undefined || data.equipmentId !== undefined;
+  const requestedEquipIds: string[] = hasExplicitEquipmentInput
+    ? Array.isArray(data.equipmentIds)
+      ? Array.from(
+          new Set(
+            data.equipmentIds
+              .filter((s) => typeof s === "string" && s.trim().length > 0)
+              .map((s) => s.trim())
+          )
+        )
+      : data.equipmentId?.trim()
+      ? [data.equipmentId.trim()]
+      : []
+    : currentEquipmentIds;
 
-  let newEquip = null;
-  if (isChangingEquipment && targetEquipmentId) {
-    newEquip = await prisma.equipment.findUnique({ where: { id: targetEquipmentId } });
-    if (!newEquip) {
-      throw new HttpError(404, "Không tìm thấy thiết bị được chọn");
-    }
-    if (newEquip.customerId !== targetCustomerId) {
-      throw new HttpError(400, "Thiết bị được chọn không thuộc khách hàng của phiếu này");
+  const isChangingEquipmentList =
+    hasExplicitEquipmentInput &&
+    (requestedEquipIds.length !== currentEquipmentIds.length ||
+      requestedEquipIds.some((eid, idx) => eid !== currentEquipmentIds[idx]));
+
+  const targetEquipmentId = hasExplicitEquipmentInput
+    ? requestedEquipIds[0] || null
+    : existing.equipmentId;
+  const isChangingPrimaryEquipment = (targetEquipmentId || null) !== (existing.equipmentId || null);
+
+  let nextEquipments = currentEquipments;
+  if (isChangingEquipmentList) {
+    if (requestedEquipIds.length > 0) {
+      nextEquipments = await prisma.equipment.findMany({
+        where: { id: { in: requestedEquipIds } },
+      });
+      if (nextEquipments.length === 0) {
+        throw new HttpError(404, "Không tìm thấy thiết bị được chọn");
+      }
+      const wrongCustomerEquip = nextEquipments.find((eq) => eq.customerId !== targetCustomerId);
+      if (wrongCustomerEquip) {
+        throw new HttpError(
+          400,
+          `Thiết bị ${wrongCustomerEquip.model} không thuộc khách hàng của phiếu này`
+        );
+      }
+    } else {
+      nextEquipments = [];
+      const [partsCount, metersCount] = await Promise.all([
+        prisma.partReplacement.count({ where: { ticketId: id } }),
+        prisma.meterLog.count({ where: { ticketId: id } }),
+      ]);
+      if (partsCount > 0 || metersCount > 0) {
+        throw new HttpError(
+          400,
+          "Không thể bỏ chọn máy (chuyển sang Phiếu dịch vụ) vì phiếu đã ghi nhận linh kiện thay thế hoặc chỉ số Counter. Vui lòng chọn sang máy đúng."
+        );
+      }
     }
   }
 
-  if (isChangingEquipment && !targetEquipmentId) {
-    const [partsCount, metersCount] = await Promise.all([
-      prisma.partReplacement.count({ where: { ticketId: id } }),
-      prisma.meterLog.count({ where: { ticketId: id } }),
-    ]);
-    if (partsCount > 0 || metersCount > 0) {
-      throw new HttpError(
-        400,
-        "Không thể bỏ chọn máy (chuyển sang Phiếu dịch vụ) vì phiếu đã ghi nhận linh kiện thay thế hoặc chỉ số Counter. Vui lòng chọn sang máy đúng."
-      );
-    }
-  }
+  const newEquip =
+    nextEquipments.find((eq) => eq.id === targetEquipmentId) || nextEquipments[0] || null;
 
   const updated = await prisma.$transaction(async (tx) => {
     const t = await tx.ticket.update({
@@ -758,7 +863,7 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
       data: {
         status: nextStatus,
         ...(data.customerId ? { customerId: data.customerId } : {}),
-        ...(isChangingEquipment ? { equipmentId: targetEquipmentId } : {}),
+        ...(isChangingPrimaryEquipment ? { equipmentId: targetEquipmentId } : {}),
         ...(updatedAssigneeId !== undefined ? { assigneeId: updatedAssigneeId } : {}),
         ...(data.type ? { type: toPrismaTicketType(data.type) } : {}),
         ...(data.priority ? { priority: data.priority as TicketPriority } : {}),
@@ -796,9 +901,9 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
       },
     });
 
-    if (isChangingEquipment) {
-      // Nếu đổi sang máy khác, đồng bộ lại equipmentId trên bản ghi linh kiện & counter đã gắn với phiếu (nếu có)
-      if (targetEquipmentId) {
+    if (isChangingEquipmentList) {
+      // Nếu chỉ có 1 máy và đổi sang máy khác, đồng bộ lại equipmentId trên bản ghi linh kiện & counter đã gắn với phiếu (nếu có)
+      if (isChangingPrimaryEquipment && targetEquipmentId && currentEquipmentIds.length <= 1 && requestedEquipIds.length === 1) {
         await tx.partReplacement.updateMany({
           where: { ticketId: id },
           data: { equipmentId: targetEquipmentId },
@@ -809,79 +914,69 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
         });
       }
 
-      // Khôi phục trạng thái máy cũ nếu máy cũ đang FAULTY / WAITING_PARTS do phiếu này
-      if (
-        existing.equipment &&
-        existing.equipmentId &&
-        (existing.equipment.status === "FAULTY" || existing.equipment.status === "WAITING_PARTS")
-      ) {
-        const otherOpenTickets = await tx.ticket.count({
-          where: {
-            equipmentId: existing.equipmentId,
-            id: { not: id },
-            status: { in: ["PENDING", "ASSIGNED", "IN_PROGRESS", "WAITING_PARTS"] },
-          },
-        });
-        if (otherOpenTickets === 0) {
-          await tx.equipment.update({
-            where: { id: existing.equipmentId },
-            data: { status: "ACTIVE" },
-          });
-          await tx.equipmentStatusHistory.create({
-            data: {
-              equipmentId: existing.equipmentId,
-              fromStatus: existing.equipment.status,
-              toStatus: "ACTIVE",
-              note: `Khôi phục trạng thái hoạt động do đổi thiết bị trên phiếu ${existing.code}`,
-            },
-          });
+      // Khôi phục trạng thái các máy bị gỡ khỏi phiếu nếu đang FAULTY / WAITING_PARTS do phiếu này
+      const removedEquips = currentEquipments.filter((eq) => !requestedEquipIds.includes(eq.id));
+      for (const oldEq of removedEquips) {
+        if (oldEq.status === "FAULTY" || oldEq.status === "WAITING_PARTS") {
+          const otherOpenTickets = await countOtherOpenTicketsForEquipment(oldEq.id, id, equipMap);
+          if (otherOpenTickets === 0) {
+            await tx.equipment.update({
+              where: { id: oldEq.id },
+              data: { status: "ACTIVE" },
+            });
+            await tx.equipmentStatusHistory.create({
+              data: {
+                equipmentId: oldEq.id,
+                fromStatus: oldEq.status,
+                toStatus: "ACTIVE",
+                note: `Khôi phục trạng thái hoạt động do gỡ thiết bị khỏi phiếu ${existing.code}`,
+              },
+            });
+          }
         }
       }
 
-      // Cập nhật trạng thái máy mới nếu phiếu đang mở
+      // Cập nhật trạng thái các máy mới được thêm vào phiếu nếu người dùng chủ động lựa chọn
+      const addedEquips = nextEquipments.filter((eq) => !currentEquipmentIds.includes(eq.id));
       if (
-        newEquip &&
+        data.equipmentStatus &&
+        data.equipmentStatus !== "KEEP" &&
         ["PENDING", "ASSIGNED", "IN_PROGRESS", "WAITING_PARTS"].includes(nextStatus)
       ) {
-        if (nextStatus === "WAITING_PARTS" && newEquip.status !== "WAITING_PARTS") {
-          await tx.equipment.update({
-            where: { id: newEquip.id },
-            data: { status: "WAITING_PARTS" },
-          });
-          await tx.equipmentStatusHistory.create({
-            data: {
-              equipmentId: newEquip.id,
-              fromStatus: newEquip.status,
-              toStatus: "WAITING_PARTS",
-              note: `Chuyển trạng thái chờ linh kiện khi đổi thiết bị vào phiếu ${existing.code}`,
-            },
-          });
-        } else if (existing.type === "REPAIR" && newEquip.status === "ACTIVE") {
-          await tx.equipment.update({
-            where: { id: newEquip.id },
-            data: { status: "FAULTY" },
-          });
-          await tx.equipmentStatusHistory.create({
-            data: {
-              equipmentId: newEquip.id,
-              fromStatus: newEquip.status,
-              toStatus: "FAULTY",
-              note: `Tự động chuyển trạng thái khi đổi sang thiết bị này trên phiếu sửa chữa ${existing.code}`,
-            },
-          });
+        for (const addedEq of addedEquips) {
+          if (addedEq.status !== data.equipmentStatus) {
+            await tx.equipment.update({
+              where: { id: addedEq.id },
+              data: { status: data.equipmentStatus as EquipmentStatus },
+            });
+            await tx.equipmentStatusHistory.create({
+              data: {
+                equipmentId: addedEq.id,
+                fromStatus: addedEq.status,
+                toStatus: data.equipmentStatus as EquipmentStatus,
+                note: `Cập nhật trạng thái khi thêm thiết bị vào phiếu ${existing.code}`,
+              },
+            });
+          }
         }
       }
     }
 
-    const oldEquipLabel = existing.equipment
-      ? `${existing.equipment.model}${existing.equipment.serialNumber ? ` (SN: ${existing.equipment.serialNumber})` : ""}`
-      : "Phiếu dịch vụ";
-    const newEquipLabel = newEquip
-      ? `${newEquip.model}${newEquip.serialNumber ? ` (SN: ${newEquip.serialNumber})` : ""}`
-      : "Phiếu dịch vụ";
+    const oldEquipLabel =
+      currentEquipments.length > 0
+        ? currentEquipments
+            .map((m) => `${m.model}${m.serialNumber ? ` (${m.serialNumber})` : ""}`)
+            .join(", ")
+        : "Phiếu dịch vụ";
+    const newEquipLabel =
+      nextEquipments.length > 0
+        ? nextEquipments
+            .map((m) => `${m.model}${m.serialNumber ? ` (${m.serialNumber})` : ""}`)
+            .join(", ")
+        : "Phiếu dịch vụ";
 
     if (
-      isChangingEquipment ||
+      isChangingEquipmentList ||
       nextStatus !== existing.status ||
       data.note ||
       data.diagnosis !== undefined ||
@@ -893,8 +988,8 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
           userId: session.userId,
           fromStatus: existing.status,
           toStatus: nextStatus,
-          note: isChangingEquipment
-            ? `Đổi thiết bị: từ [${oldEquipLabel}] sang [${newEquipLabel}]${data.note ? ` (${data.note})` : ""}`
+          note: isChangingEquipmentList
+            ? `Cập nhật thiết bị: từ [${oldEquipLabel}] sang [${newEquipLabel}]${data.note ? ` (${data.note})` : ""}`
             : data.note ||
               (data.diagnosis
                 ? `Cập nhật chẩn đoán: ${data.diagnosis}`
@@ -920,24 +1015,52 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
       });
     }
 
-    if (
-      !isChangingEquipment &&
-      existing.equipment &&
-      nextStatus === "WAITING_PARTS" &&
-      existing.equipment.status !== "WAITING_PARTS"
-    ) {
-      await tx.equipment.update({
-        where: { id: existing.equipment.id },
-        data: { status: "WAITING_PARTS" },
-      });
-      await tx.equipmentStatusHistory.create({
-        data: {
-          equipmentId: existing.equipment.id,
-          fromStatus: existing.equipment.status,
-          toStatus: "WAITING_PARTS",
-          note: `Chờ linh kiện theo phiếu ${existing.code}`,
-        },
-      });
+    // Ghi nhận Counter riêng cho từng máy nếu có trong equipmentTasks khi cập nhật phiếu
+    if (Array.isArray(data.equipmentTasks) && data.equipmentTasks.length > 0) {
+      for (const taskItem of data.equipmentTasks) {
+        if (typeof taskItem.counter === "number" && taskItem.counter > 0) {
+          const eqObj = nextEquipments.find((e) => e.id === taskItem.equipmentId);
+          if (eqObj && taskItem.counter !== eqObj.currentCounter) {
+            const isLower = taskItem.counter < eqObj.currentCounter;
+            await tx.meterLog.create({
+              data: {
+                equipmentId: eqObj.id,
+                ticketId: existing.id,
+                recordedById: session.userId,
+                counterValue: taskItem.counter,
+                source: "MANUAL",
+                status: isLower ? "PENDING_APPROVAL" : "APPROVED",
+                adjustmentReason: isLower ? `Cập nhật từ phiếu ${existing.code}` : null,
+              },
+            });
+            if (!isLower) {
+              await tx.equipment.update({
+                where: { id: eqObj.id },
+                data: { currentCounter: taskItem.counter },
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (!isChangingEquipmentList && data.equipmentStatus === "WAITING_PARTS") {
+      for (const eq of currentEquipments) {
+        if (eq.status !== "WAITING_PARTS") {
+          await tx.equipment.update({
+            where: { id: eq.id },
+            data: { status: "WAITING_PARTS" },
+          });
+          await tx.equipmentStatusHistory.create({
+            data: {
+              equipmentId: eq.id,
+              fromStatus: eq.status,
+              toStatus: "WAITING_PARTS",
+              note: `Chờ linh kiện theo phiếu ${existing.code}`,
+            },
+          });
+        }
+      }
     }
 
     return t;
@@ -946,18 +1069,55 @@ export const PATCH = withErrors(async (req: Request, ctx: { params: Promise<{ id
   if (data.type) {
     await setTicketCustomTypeForTicket(id, data.type);
   }
-  const latestCustomMap = await getTicketCustomTypesMap();
+  if (hasExplicitEquipmentInput) {
+    await setTicketEquipmentIds(id, requestedEquipIds);
+  }
+  if (Array.isArray(data.equipmentTasks)) {
+    const normalizedTasks: TicketEquipmentTask[] = data.equipmentTasks.map((item) => ({
+      equipmentId: item.equipmentId.trim(),
+      workType: item.workType?.trim() || data.type || existing.type || "REPAIR",
+      ...(item.note?.trim() ? { note: item.note.trim() } : {}),
+      ...(typeof item.counter === "number" && item.counter >= 0
+        ? { counter: Math.round(item.counter) }
+        : {}),
+    }));
+    await setTicketEquipmentTasks(
+      id,
+      normalizedTasks,
+      hasExplicitEquipmentInput ? requestedEquipIds : currentEquipmentIds
+    );
+  } else if (hasExplicitEquipmentInput && requestedEquipIds.length === 0) {
+    await setTicketEquipmentTasks(id, [], []);
+  }
+
+  const [latestCustomMap, latestEquipMap] = await Promise.all([
+    getTicketCustomTypesMap(),
+    getTicketEquipmentsMap(),
+  ]);
 
   await audit(session.userId, "TICKET_UPDATE", "Ticket", id, {
     code: existing.code,
     status: nextStatus,
     ...(data.type ? { type: data.type } : {}),
+    ...(hasExplicitEquipmentInput ? { equipmentCount: requestedEquipIds.length } : {}),
   });
 
-  return NextResponse.json({
-    ...updated,
-    type: latestCustomMap[id] || updated.type,
-  });
+  const [enrichedUpdated] = await enrichTicketsWithEquipmentList(
+    [
+      {
+        ...updated,
+        type: latestCustomMap[id] || updated.type,
+      },
+    ],
+    latestEquipMap
+  );
+
+  return NextResponse.json(
+    enrichedUpdated || {
+      ...updated,
+      type: latestCustomMap[id] || updated.type,
+    }
+  );
 });
 
 export const DELETE = withErrors(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
@@ -974,18 +1134,27 @@ export const DELETE = withErrors(async (_req: Request, ctx: { params: Promise<{ 
   }
 
   const { id } = await ctx.params;
-  const ticket = await prisma.ticket.findUnique({
-    where: { id },
-    include: {
-      stockIssues: true,
-      partsUsed: true,
-      meterLogs: true,
-      attachments: true,
-      equipment: true,
-    },
-  });
+  const [ticket, equipMap] = await Promise.all([
+    prisma.ticket.findUnique({
+      where: { id },
+      include: {
+        stockIssues: true,
+        partsUsed: true,
+        meterLogs: true,
+        attachments: true,
+        equipment: true,
+      },
+    }),
+    getTicketEquipmentsMap(),
+  ]);
 
   if (!ticket) throw new HttpError(404, "Không tìm thấy phiếu kỹ thuật để xóa");
+
+  const ticketEquipmentIds = getEffectiveEquipmentIds(ticket, equipMap);
+  const ticketEquipments =
+    ticketEquipmentIds.length > 0
+      ? await prisma.equipment.findMany({ where: { id: { in: ticketEquipmentIds } } })
+      : [];
 
   // RÀNG BUỘC TOÀN VẸN HỆ THỐNG:
   // 1. Không cho xóa nếu đã hoàn thành
@@ -1033,29 +1202,23 @@ export const DELETE = withErrors(async (_req: Request, ctx: { params: Promise<{ 
     await tx.ticketAttachment.deleteMany({ where: { ticketId: id } });
     await tx.ticketLog.deleteMany({ where: { ticketId: id } });
 
-    // Khôi phục trạng thái máy nếu máy đang báo hỏng do phiếu này
-    if (
-      ticket.equipment &&
-      ticket.equipmentId &&
-      (ticket.equipment.status === "FAULTY" || ticket.equipment.status === "WAITING_PARTS")
-    ) {
-      const otherFaultyTickets = await tx.ticket.count({
-        where: {
-          equipmentId: ticket.equipmentId,
-          id: { not: id },
-          status: { in: ["PENDING", "ASSIGNED", "IN_PROGRESS", "WAITING_PARTS"] },
-        },
-      });
-      if (otherFaultyTickets === 0) {
-        await tx.equipment.update({
-          where: { id: ticket.equipmentId },
-          data: { status: "ACTIVE" },
-        });
+    // Khôi phục trạng thái các máy gắn trên phiếu nếu máy đang báo hỏng do phiếu này
+    for (const eq of ticketEquipments) {
+      if (eq.status === "FAULTY" || eq.status === "WAITING_PARTS") {
+        const otherFaultyTickets = await countOtherOpenTicketsForEquipment(eq.id, id, equipMap);
+        if (otherFaultyTickets === 0) {
+          await tx.equipment.update({
+            where: { id: eq.id },
+            data: { status: "ACTIVE" },
+          });
+        }
       }
     }
 
     await tx.ticket.delete({ where: { id } });
   });
+
+  await removeTicketEquipmentIds(id);
 
   await audit(session.userId, "TICKET_DELETE", "Ticket", id, {
     code: ticket.code,

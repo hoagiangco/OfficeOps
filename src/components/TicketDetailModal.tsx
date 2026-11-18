@@ -23,6 +23,15 @@ export interface TicketAttachmentItem {
   createdAt: string;
 }
 
+const EQUIPMENT_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Đang hoạt động",
+  FAULTY: "Lỗi / Cần bảo trì",
+  WAITING_PARTS: "Chờ linh kiện",
+  RECALLED: "Đã thu hồi",
+  IN_STOCK: "Trong kho",
+  SCRAPPED: "Thanh lý",
+};
+
 export interface TicketDetailData {
   id: string;
   code: string;
@@ -128,6 +137,8 @@ export function TicketDetailModal({
   const [noteInput, setNoteInput] = useState("");
   const [counterAtCloseInput, setCounterAtCloseInput] = useState<string>("");
   const [signatureInput, setSignatureInput] = useState("");
+  const [completeEquipmentStatus, setCompleteEquipmentStatus] = useState<string>("ACTIVE");
+  const [reopenEquipmentStatus, setReopenEquipmentStatus] = useState<string>("KEEP");
 
   // Submitting states
   const [submitting, setSubmitting] = useState(false);
@@ -320,7 +331,11 @@ export function TicketDetailModal({
       const res = await fetch(`/api/tickets/${ticket.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "REOPEN", note: trimmed }),
+        body: JSON.stringify({
+          action: "REOPEN",
+          note: trimmed,
+          equipmentStatus: reopenEquipmentStatus === "KEEP" ? null : reopenEquipmentStatus,
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -1141,24 +1156,45 @@ export function TicketDetailModal({
                               </button>
                             )
                           ) : (
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-success w-100 py-2 fw-bold"
-                              disabled={submitting}
-                              onClick={() =>
-                                handleTicketAction(
-                                  {
-                                    action: "COMPLETE",
-                                    diagnosis: diagnosisInput || "Đã khắc phục triệt để và bàn giao máy",
-                                    counterAtClose: counterAtCloseInput ? Number(counterAtCloseInput) : null,
-                                    customerSignature: signatureInput,
-                                  },
-                                  "Đã hoàn thành phiếu, lưu chữ ký & Counter, khôi phục trạng thái máy!"
-                                )
-                              }
-                            >
-                              <i className="fas fa-check-circle me-1"></i> Hoàn thành & Đóng phiếu
-                            </button>
+                            <>
+                              {ticket.equipment && (
+                                <div className="mb-2 text-start">
+                                  <label className="form-label small fw-bold text-muted mb-1 d-flex justify-content-between align-items-center">
+                                    <span>Trạng thái máy sau nghiệm thu</span>
+                                    <span className="text-secondary fw-normal" style={{ fontSize: "10.5px" }}>Gợi ý</span>
+                                  </label>
+                                  <select
+                                    className="form-select form-select-sm"
+                                    value={completeEquipmentStatus}
+                                    onChange={(e) => setCompleteEquipmentStatus(e.target.value)}
+                                    style={{ fontSize: "12px" }}
+                                  >
+                                    <option value="ACTIVE">🟢 Đang hoạt động (Khuyến nghị sau sửa xong)</option>
+                                    <option value="KEEP">⚪ Giữ nguyên trạng thái ({EQUIPMENT_STATUS_LABELS[ticket.equipment.status] || ticket.equipment.status})</option>
+                                    <option value="WAITING_PARTS">🟠 Chờ thêm linh kiện</option>
+                                  </select>
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-success w-100 py-2 fw-bold"
+                                disabled={submitting}
+                                onClick={() =>
+                                  handleTicketAction(
+                                    {
+                                      action: "COMPLETE",
+                                      diagnosis: diagnosisInput || "Đã khắc phục triệt để và bàn giao máy",
+                                      counterAtClose: counterAtCloseInput ? Number(counterAtCloseInput) : null,
+                                      customerSignature: signatureInput,
+                                      equipmentStatus: completeEquipmentStatus,
+                                    },
+                                    "Đã hoàn thành phiếu, lưu chữ ký & Counter!"
+                                  )
+                                }
+                              >
+                                <i className="fas fa-check-circle me-1"></i> Hoàn thành & Đóng phiếu
+                              </button>
+                            </>
                           )}
                         </div>
                       </div>
@@ -1723,6 +1759,32 @@ export function TicketDetailModal({
                 Nhập tối thiểu 3 ký tự giải trình lý do mở lại phiếu.
               </div>
             </div>
+
+            {ticket.equipment && (
+              <div className="mb-2">
+                <label className="form-label small fw-bold text-dark mb-1 d-flex justify-content-between align-items-center">
+                  <span>Trạng thái máy khi mở lại phiếu</span>
+                  <span className="text-secondary fw-normal" style={{ fontSize: "11px" }}>Không tự động áp đặt</span>
+                </label>
+                <select
+                  className="form-select form-select-sm"
+                  value={reopenEquipmentStatus}
+                  onChange={(e) => setReopenEquipmentStatus(e.target.value)}
+                  style={{ fontSize: "12px" }}
+                >
+                  <option value="KEEP">
+                    🟢 Giữ nguyên trạng thái ({EQUIPMENT_STATUS_LABELS[ticket.equipment.status] || ticket.equipment.status} - Mặc định)
+                  </option>
+                  <option value="FAULTY">🔴 Chuyển sang: Lỗi / Cần bảo trì (FAULTY)</option>
+                  <option value="WAITING_PARTS">🟠 Chuyển sang: Chờ linh kiện (WAITING_PARTS)</option>
+                  <option value="ACTIVE">🟢 Chuyển sang: Đang hoạt động (ACTIVE)</option>
+                </select>
+                <div className="small text-muted mt-1" style={{ fontSize: "11px" }}>
+                  <i className="fas fa-info-circle text-primary me-1"></i>
+                  Mặc định giữ nguyên trạng thái máy. Chỉ chọn &quot;Lỗi / Cần bảo trì&quot; nếu máy thực sự đang ngưng hoạt động.
+                </div>
+              </div>
+            )}
           </div>
         )}
       </ModalShell>

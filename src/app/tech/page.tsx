@@ -70,6 +70,26 @@ interface TechTicket {
       };
     } | null;
   } | null;
+  equipmentIds?: string[];
+  equipmentList?: Array<{
+    id: string;
+    serialNumber?: string | null;
+    model: string;
+    brand: string | null;
+    status: string;
+    currentCounter: number;
+    locationNote: string | null;
+    taskWorkType?: string;
+    taskNote?: string;
+    taskCounter?: number | null;
+    department?: {
+      name: string;
+      building?: {
+        name: string;
+        branch?: { name: string };
+      };
+    } | null;
+  }>;
   attachments?: TechTicketAttachment[];
 }
 
@@ -1303,9 +1323,30 @@ export default function TechMobilePage() {
                           </div>
                         </div>
 
-                        {/* 2. Cụm Phân loại phiếu / Thiết bị: Hiển thị rõ Phiếu dịch vụ hoặc Phiếu máy */}
+                        {/* 2. Cụm Phân loại phiếu / Thiết bị: Hiển thị rõ Phiếu dịch vụ hoặc Phiếu máy (1 hoặc nhiều máy) */}
                         <div className="mb-2">
-                          {t.equipment ? (
+                          {t.equipmentList && t.equipmentList.length > 1 ? (
+                            <div className="d-flex flex-column gap-1">
+                              <div className="d-flex justify-content-between align-items-center gap-2">
+                                <div className="fw-bold text-dark fs-6 d-flex align-items-center gap-1.5">
+                                  <i className="fas fa-print text-primary" style={{ fontSize: "13px" }}></i>
+                                  <span>Phiếu máy ({t.equipmentList.length} thiết bị)</span>
+                                </div>
+                              </div>
+                              <div className="d-flex flex-wrap gap-1 mt-0.5">
+                                {t.equipmentList.map((eq) => (
+                                  <span
+                                    key={eq.id}
+                                    className="badge bg-light text-dark border fw-semibold"
+                                    style={{ fontSize: "11px" }}
+                                  >
+                                    {eq.model}
+                                    {eq.serialNumber ? ` (${eq.serialNumber})` : ""}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : t.equipment ? (
                             <>
                               <div className="d-flex justify-content-between align-items-baseline gap-2 mb-0.5">
                                 <div className="fw-bold text-dark fs-6 text-truncate">
@@ -1973,7 +2014,66 @@ export default function TechMobilePage() {
 
                   {/* Thông tin phân loại phiếu & thiết bị */}
                   <div className="border rounded-3 p-3 bg-white">
-                    {selectedTicket.equipment ? (
+                    {selectedTicket.equipmentList && selectedTicket.equipmentList.length > 1 ? (
+                      <div className="mb-2">
+                        <div className="small text-muted mb-1.5" style={{ fontSize: "11px" }}>
+                          Danh sách thiết bị xử lý ({selectedTicket.equipmentList.length} máy):
+                        </div>
+                        <div className="d-flex flex-column gap-1.5">
+                          {selectedTicket.equipmentList.map((eq, idx) => {
+                            const eqWorkType = eq.taskWorkType || selectedTicket.type;
+                            const eqWorkLabel = TICKET_TYPE_LABELS[eqWorkType] || eqWorkType;
+                            return (
+                              <div
+                                key={eq.id}
+                                className="p-2 rounded border bg-light d-flex justify-content-between align-items-center gap-2"
+                              >
+                                <div className="min-w-0">
+                                  <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                                    <span className="fw-bold text-dark small text-truncate">
+                                      {idx + 1}. {eq.brand && !eq.model?.toLowerCase().startsWith(eq.brand.toLowerCase()) ? `${eq.brand} ${eq.model}` : eq.model}
+                                      {eq.serialNumber && (
+                                        <span className="text-primary font-monospace ms-1">
+                                          (SN: {eq.serialNumber})
+                                        </span>
+                                      )}
+                                    </span>
+                                    <span
+                                      className="badge bg-primary-subtle text-primary border border-primary-subtle"
+                                      style={{ fontSize: "10px" }}
+                                    >
+                                      {eqWorkLabel}
+                                    </span>
+                                  </div>
+                                  {eq.taskNote && (
+                                    <div className="text-dark fw-medium" style={{ fontSize: "11.5px" }}>
+                                      <i className="fas fa-tools text-secondary me-1" style={{ fontSize: "10px" }}></i>
+                                      {eq.taskNote}
+                                    </div>
+                                  )}
+                                  <div className="text-muted" style={{ fontSize: "11px" }}>
+                                    Counter:{" "}
+                                    <strong className="font-monospace text-dark">
+                                      {(eq.taskCounter ?? eq.currentCounter ?? 0).toLocaleString("vi-VN")}
+                                    </strong>
+                                    {eq.department?.name ? ` • ${eq.department.name}` : ""}
+                                    {eq.locationNote ? ` (${eq.locationNote})` : ""}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-outline-dark py-0.5 px-2 text-nowrap flex-shrink-0"
+                                  style={{ fontSize: "11px" }}
+                                  onClick={() => handleOpenHistory(eq.id)}
+                                >
+                                  <i className="fas fa-history text-primary me-1"></i>Lịch sử
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : selectedTicket.equipment ? (
                       <div className="d-flex justify-content-between align-items-start mb-2">
                         <div>
                           <div className="small text-muted" style={{ fontSize: "11px" }}>Thiết bị xử lý (Phiếu máy):</div>
@@ -2010,7 +2110,8 @@ export default function TechMobilePage() {
                       </div>
                     )}
 
-                    {selectedTicket.equipment?.department && (
+                    {(!selectedTicket.equipmentList || selectedTicket.equipmentList.length <= 1) &&
+                      selectedTicket.equipment?.department && (
                       <div className="small text-info mb-2" style={{ fontSize: "11.5px" }}>
                         <i className="fas fa-door-open me-1"></i>
                         Vị trí máy: {selectedTicket.equipment.department.name}
@@ -2018,7 +2119,8 @@ export default function TechMobilePage() {
                       </div>
                     )}
 
-                    {selectedTicket.equipment?.currentCounter != null && (
+                    {(!selectedTicket.equipmentList || selectedTicket.equipmentList.length <= 1) &&
+                      selectedTicket.equipment?.currentCounter != null && (
                       <div className="small d-flex justify-content-between align-items-center py-1.5 px-2.5 bg-light rounded border mb-2">
                         <span className="text-secondary fw-semibold" style={{ fontSize: "11.5px" }}>
                           <i className="fas fa-tachometer-alt me-1 text-primary"></i> Counter ban đầu:

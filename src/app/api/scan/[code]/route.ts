@@ -223,24 +223,7 @@ export const POST = withErrors(async (req: Request, { params }: RouteCtx) => {
       });
     }
 
-    // 4. Đổi trạng thái máy sang FAULTY nếu đang ACTIVE hoặc IN_STOCK
-    if (eq.status === "ACTIVE" || eq.status === "IN_STOCK") {
-      await tx.equipment.update({
-        where: { id: eq.id },
-        data: { status: "FAULTY" },
-      });
-
-      await tx.equipmentStatusHistory.create({
-        data: {
-          equipmentId: eq.id,
-          fromStatus: eq.status as EquipmentStatus,
-          toStatus: "FAULTY",
-          note: `Khách hàng báo sự cố qua Cổng QR: ${data.issueType}`,
-        },
-      });
-    }
-
-    // 5. Gửi Notification cho tất cả Điều phối viên và Giám đốc
+    // 4. Gửi Notification cho tất cả Điều phối viên và Giám đốc
     const dispatchersAndAdmins = await tx.user.findMany({
       where: {
         role: { in: ["DISPATCHER", "SUPER_ADMIN", "ADMIN"] },

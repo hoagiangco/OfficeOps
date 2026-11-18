@@ -35,6 +35,15 @@ interface BranchNode {
   buildings: BuildingNode[];
 }
 
+const EQUIPMENT_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Đang hoạt động",
+  FAULTY: "Lỗi / Cần bảo trì",
+  WAITING_PARTS: "Chờ linh kiện",
+  RECALLED: "Đã thu hồi",
+  IN_STOCK: "Trong kho",
+  SCRAPPED: "Thanh lý",
+};
+
 interface EquipmentItem {
   id: string;
   code?: string | null;
@@ -472,6 +481,7 @@ export default function CustomersPage() {
     type: "REPAIR",
     priority: "NORMAL",
     description: "",
+    equipmentStatus: "KEEP",
   });
 
   // Modal Quản lý cấu trúc vị trí tổ chức (Tree View 3 cấp)
@@ -1041,6 +1051,7 @@ export default function CustomersPage() {
       type: "REPAIR",
       priority: "NORMAL",
       description: `Báo sửa chữa cho máy ${eq.model}${eq.serialNumber ? ` (S/N: ${eq.serialNumber})` : ""}`,
+      equipmentStatus: "KEEP",
     });
     setShowTicketModal(true);
   };
@@ -1061,6 +1072,7 @@ export default function CustomersPage() {
           priority: ticketForm.priority,
           description: ticketForm.description,
           source: "CUSTOMER",
+          equipmentStatus: ticketForm.equipmentStatus === "KEEP" ? null : ticketForm.equipmentStatus || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -3736,6 +3748,31 @@ export default function CustomersPage() {
             </div>
 
             <div className="row g-2 mb-3">
+              <div className="col-12">
+                <label className="form-label small fw-bold text-muted mb-1 d-flex justify-content-between align-items-center">
+                  <span>Trạng thái thiết bị khi tạo phiếu</span>
+                  <span className="text-secondary fw-normal" style={{ fontSize: "11px" }}>Không tự động áp đặt</span>
+                </label>
+                <select
+                  className="form-select form-select-sm"
+                  value={ticketForm.equipmentStatus || "KEEP"}
+                  onChange={(e) => setTicketForm({ ...ticketForm, equipmentStatus: e.target.value })}
+                >
+                  <option value="KEEP">
+                    🟢 Giữ nguyên trạng thái ({ticketEquipment ? EQUIPMENT_STATUS_LABELS[ticketEquipment.status] || ticketEquipment.status : "Hiện tại"} - Mặc định)
+                  </option>
+                  <option value="FAULTY">🔴 Chuyển sang: Lỗi / Cần bảo trì (FAULTY)</option>
+                  <option value="WAITING_PARTS">🟠 Chuyển sang: Chờ linh kiện (WAITING_PARTS)</option>
+                  <option value="ACTIVE">🟢 Chuyển sang: Đang hoạt động (ACTIVE)</option>
+                </select>
+                {ticketForm.type === "REPAIR" && (ticketForm.equipmentStatus || "KEEP") === "KEEP" && (
+                  <div className="small text-muted mt-1" style={{ fontSize: "11px" }}>
+                    <i className="fas fa-lightbulb text-warning me-1"></i>
+                    <em>Gợi ý: Mặc định giữ nguyên trạng thái máy. Nếu máy hỏng ngừng hoạt động, hãy chọn "Lỗi / Cần bảo trì".</em>
+                  </div>
+                )}
+              </div>
+
               <div className="col-6">
                 <label className="form-label small fw-bold">Loại công việc</label>
                 <select

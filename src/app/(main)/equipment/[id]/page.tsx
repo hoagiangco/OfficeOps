@@ -5,6 +5,12 @@ import { getSession } from "@/lib/auth";
 import { formatLocationPath } from "@/lib/location";
 import { checkUserPermission } from "@/lib/rbacService";
 import { STATUS_LABELS, TICKET_TYPE_LABELS, TICKET_STATUS_LABELS } from "@/lib/labels";
+import {
+  findMappedTicketIdsForEquipment,
+  getTicketEquipmentTasksMap,
+  getTicketEquipmentsMap,
+} from "@/lib/ticketEquipments";
+import { getTicketCustomTypesMap, getTicketWorkTypes } from "@/lib/ticketWorkTypes";
 import EquipmentCompatiblePartsCard from "@/components/inventory/EquipmentCompatiblePartsCard";
 
 const fmt = (d: Date) => d.toLocaleString("vi-VN");
@@ -40,6 +46,49 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
     },
   });
   if (!e) notFound();
+
+  const [equipMap, customTypeMap, tasksMap, workTypes] = await Promise.all([
+    getTicketEquipmentsMap(),
+    getTicketCustomTypesMap(),
+    getTicketEquipmentTasksMap(),
+    getTicketWorkTypes(),
+  ]);
+  const workTypeLabels: Record<string, string> = { ...TICKET_TYPE_LABELS };
+  for (const wt of workTypes) {
+    workTypeLabels[wt.code] = wt.label;
+  }
+
+  const mappedTicketIds = findMappedTicketIdsForEquipment(id, equipMap);
+  const existingTicketIds = new Set(e.tickets.map((t) => t.id));
+  const extraTicketIds = mappedTicketIds.filter((tid) => !existingTicketIds.has(tid));
+
+  let allEquipmentTickets = [...e.tickets];
+  if (extraTicketIds.length > 0) {
+    const extraTickets = await prisma.ticket.findMany({
+      where: { id: { in: extraTicketIds } },
+      orderBy: { createdAt: "desc" },
+    });
+    allEquipmentTickets = [...allEquipmentTickets, ...extraTickets].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+
+  const enrichedEquipmentTickets = allEquipmentTickets.slice(0, 25).map((t) => {
+    const perEquipTask = tasksMap[t.id]?.[id];
+    const effectiveType = perEquipTask?.workType || customTypeMap[t.id] || t.type;
+    const effectiveDesc = perEquipTask?.note
+      ? perEquipTask.counter && !perEquipTask.note.includes(String(perEquipTask.counter))
+        ? `${perEquipTask.note} (Counter: ${perEquipTask.counter.toLocaleString("vi-VN")})`
+        : perEquipTask.note
+      : t.description;
+    return {
+      ...t,
+      effectiveType,
+      effectiveTypeLabel: workTypeLabels[effectiveType] || effectiveType,
+      effectiveDesc,
+      isMultiEquipTicket: (equipMap[t.id]?.length || 0) > 1,
+    };
+  });
 
   const role = session.role;
   const showContract =
@@ -266,7 +315,7 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
             <div className="card shadow-sm border-0 rounded-3 border h-100">
               <div className="card-header bg-dark text-white py-2 px-3">
                 <strong className="small text-uppercase">
-                  <i className="fas fa-tools me-1"></i> Lịch sử sửa chữa &amp; Bảo trì ({e.tickets.length})
+                  <i className="fas fa-tools me-1"></i> Lịch sử sửa chữa &amp; Bảo trì ({enrichedEquipmentTickets.length})
                 </strong>
               </div>
               <div className="card-body p-0">
@@ -274,30 +323,43 @@ export default async function EquipmentDetail({ params }: { params: Promise<{ id
                   <thead className="table-light">
                     <tr>
                       <th className="px-3">Mã phiếu</th>
-                      <th>Loại</th>
+                      <th>Loại công việc</th>
                       <th>Trạng thái</th>
-                      <th>Mô tả</th>
+                      <th>Nội dung công việc của máy</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {e.tickets.length === 0 ? (
+                    {enrichedEquipmentTickets.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="text-center py-4 text-muted small">
                           Chưa phát sinh phiếu kỹ thuật nào
                         </td>
                       </tr>
                     ) : (
-                      e.tickets.map((t) => (
+                      enrichedEquipmentTickets.map((t) => (
                         <tr key={t.id}>
-                          <td className="px-3 font-monospace fw-bold small">{t.code}</td>
-                          <td className="small">{TICKET_TYPE_LABELS[t.type] || t.type}</td>
+                          <td className="px-3 font-monospace fw-bold small">
+                            <Link href={`/tickets?ticketId=${t.id}`} className="text-decoration-none text-primary">
+                              {t.code}
+                            </Link>
+                            <div className="text-muted fw-normal" style={{ fontSize: "10.5px" }}>
+                              {fmtDate(t.createdAt)}
+                            </div>
+                          </td>
+                          <td className="small">
+                            <span className="badge bg-light text-dark border fw-semibold">
+                              {t.effectiveTypeLabel}
+                            </span>
+                          </td>
                           <td>
                             <span className="badge bg-secondary">
                               {TICKET_STATUS_LABELS[t.status] || t.status}
                             </span>
                           </td>
-                          <td className="small text-truncate" style={{ maxWidth: "200px" }}>
-                            {t.description}
+                          <td className="small" style={{ maxWidth: "240px" }}>
+                            <div className="text-truncate" title={t.effectiveDesc}>
+                              {t.effectiveDesc}
+                            </div>
                           </td>
                         </tr>
                       ))

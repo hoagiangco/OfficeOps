@@ -19,11 +19,39 @@ import {
   TICKET_ATTACHMENT_KIND_LABELS,
 } from "@/lib/labels";
 
+interface TicketEquipmentInfo {
+  id: string;
+  serialNumber: string | null;
+  model: string;
+  brand: string | null;
+  status: string;
+  currentCounter: number;
+  locationNote: string | null;
+  taskWorkType?: string;
+  taskNote?: string;
+  taskCounter?: number | null;
+  branch?: { name: string } | null;
+  building?: { name: string; branch?: { name: string } | null } | null;
+  department?: {
+    name: string;
+    building?: {
+      name: string;
+      branch?: { name: string };
+    };
+  } | null;
+}
+
 interface TicketItem {
   id: string;
   code: string;
   customerId: string;
   equipmentId: string;
+  equipmentIds?: string[];
+  equipmentTasks?: Record<
+    string,
+    { equipmentId: string; workType: string; note?: string; counter?: number | null }
+  >;
+  equipmentList?: TicketEquipmentInfo[];
   assigneeId: string | null;
   type: string;
   status: string;
@@ -40,24 +68,7 @@ interface TicketItem {
   createdAt: string;
   resolvedAt: string | null;
   customer: { id: string; name: string; phone: string; address: string; latitude?: number | null; longitude?: number | null };
-  equipment: {
-    id: string;
-    serialNumber: string | null;
-    model: string;
-    brand: string | null;
-    status: string;
-    currentCounter: number;
-    locationNote: string | null;
-    branch?: { name: string } | null;
-    building?: { name: string; branch?: { name: string } | null } | null;
-    department?: {
-      name: string;
-      building?: {
-        name: string;
-        branch?: { name: string };
-      };
-    } | null;
-  };
+  equipment: TicketEquipmentInfo;
   assignee?: { id: string; name: string; phone: string | null; region: string | null } | null;
   _count?: { stockIssues: number; logs: number; partsUsed: number };
 }
@@ -162,6 +173,7 @@ export default function TicketsPage() {
   const [statusInput, setStatusInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
   const [counterAtCloseInput, setCounterAtCloseInput] = useState<string>("");
+  const [equipmentCountersInput, setEquipmentCountersInput] = useState<Record<string, string>>({});
   const [signatureInput, setSignatureInput] = useState("");
 
   // Quick part request inside Ticket modal
@@ -197,6 +209,7 @@ export default function TicketsPage() {
   const [reopenTargetTicket, setReopenTargetTicket] = useState<{ id: string; code: string; customerName?: string } | null>(null);
   const [reopenReason, setReopenReason] = useState("");
   const [reopening, setReopening] = useState(false);
+  const [reopenEquipmentStatus, setReopenEquipmentStatus] = useState<string>("KEEP");
 
   const [deleteTargetTicket, setDeleteTargetTicket] = useState<{ id: string; code: string; status?: string; customerName?: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -289,6 +302,16 @@ export default function TicketsPage() {
           ? String(detail.counterAtClose)
           : String(detail.equipment?.currentCounter ?? 0)
       );
+      const countersMap: Record<string, string> = {};
+      if (Array.isArray(detail.equipmentList) && detail.equipmentList.length > 0) {
+        for (const eq of detail.equipmentList) {
+          countersMap[eq.id] = String(eq.taskCounter ?? eq.currentCounter ?? 0);
+        }
+        if (detail.equipmentId && detail.counterAtClose != null) {
+          countersMap[detail.equipmentId] = String(detail.counterAtClose);
+        }
+      }
+      setEquipmentCountersInput(countersMap);
       const sig = detail.customerSignature;
       setSignatureInput(
         sig && !sig.includes("[DEMO_SIGNATURE]") && !sig.includes("...")
@@ -330,12 +353,20 @@ export default function TicketsPage() {
         return false;
       if (q.trim()) {
         const kw = q.trim().toLowerCase();
+        const matchEquipList = Array.isArray(t.equipmentList)
+          ? t.equipmentList.some(
+              (eq) =>
+                (eq.serialNumber ? eq.serialNumber.toLowerCase().includes(kw) : false) ||
+                (eq.model ? eq.model.toLowerCase().includes(kw) : false)
+            )
+          : false;
         const match =
           t.code.toLowerCase().includes(kw) ||
           t.description.toLowerCase().includes(kw) ||
           t.customer.name.toLowerCase().includes(kw) ||
           (t.equipment?.serialNumber ? t.equipment.serialNumber.toLowerCase().includes(kw) : false) ||
-          (t.equipment?.model ? t.equipment.model.toLowerCase().includes(kw) : false);
+          (t.equipment?.model ? t.equipment.model.toLowerCase().includes(kw) : false) ||
+          matchEquipList;
         if (!match) return false;
       }
       return true;
@@ -658,6 +689,7 @@ export default function TicketsPage() {
       customerName: ticket.customer?.name,
     });
     setReopenReason("");
+    setReopenEquipmentStatus("KEEP");
   };
 
   const handleConfirmReopenTicket = async () => {
@@ -675,6 +707,7 @@ export default function TicketsPage() {
         body: JSON.stringify({
           action: "REOPEN",
           note: trimmed,
+          equipmentStatus: reopenEquipmentStatus === "KEEP" ? null : reopenEquipmentStatus,
         }),
       });
       if (!res.ok) {
@@ -1246,7 +1279,60 @@ export default function TicketsPage() {
                         )}
                       </td>
                       <td>
-                        {t.equipment ? (
+                        {t.equipmentList && t.equipmentList.length > 1 ? (
+                          <div className="d-flex flex-column gap-1">
+                            <div>
+                              <span
+                                className="badge bg-primary-subtle text-primary border border-primary-subtle"
+                                style={{ fontSize: "10.5px" }}
+                              >
+                                <i className="fas fa-print me-1"></i>
+                                Phiếu máy ({t.equipmentList.length} thiết bị)
+                              </span>
+                            </div>
+                            {t.equipmentList.map((eq, idx) => {
+                              const eqWorkType = eq.taskWorkType || t.type;
+                              const eqWorkLabel = TICKET_TYPE_LABELS[eqWorkType] || eqWorkType;
+                              return (
+                                <div
+                                  key={eq.id}
+                                  className={idx > 0 ? "border-top border-light-subtle pt-1" : ""}
+                                >
+                                  <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                                    <Link
+                                      href={`/equipment/${eq.id}`}
+                                      className="fw-semibold text-decoration-none"
+                                    >
+                                      {eq.model}
+                                    </Link>
+                                    <span
+                                      className="badge bg-light text-dark border"
+                                      style={{ fontSize: "10px" }}
+                                    >
+                                      {eqWorkLabel}
+                                    </span>
+                                  </div>
+                                  {eq.taskNote && (
+                                    <div className="small text-dark" style={{ fontSize: "11px" }}>
+                                      <i className="fas fa-angle-right text-primary me-1"></i>
+                                      {eq.taskNote}
+                                    </div>
+                                  )}
+                                  <div className="small text-muted font-monospace" style={{ fontSize: "11px" }}>
+                                    {eq.serialNumber ? `SN: ${eq.serialNumber} | ` : ""}Counter:{" "}
+                                    {(eq.taskCounter ?? eq.currentCounter ?? 0).toLocaleString("vi-VN")}
+                                  </div>
+                                  {formatLocationPath(eq) && (
+                                    <div className="small text-secondary" style={{ fontSize: "11px" }}>
+                                      <i className="fas fa-map-pin me-1"></i>
+                                      {formatLocationPath(eq)}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : t.equipment ? (
                           <>
                             <Link
                               href={`/equipment/${t.equipment.id}`}
@@ -1449,7 +1535,14 @@ export default function TicketsPage() {
                   </p>
                   <div className="bg-light p-2 rounded border mb-2 small">
                     <div>
-                      {t.equipment ? (
+                      {t.equipmentList && t.equipmentList.length > 1 ? (
+                        <>
+                          <strong>Máy ({t.equipmentList.length}):</strong>{" "}
+                          {t.equipmentList
+                            .map((eq) => `${eq.model}${eq.serialNumber ? ` (${eq.serialNumber})` : ""}`)
+                            .join(", ")}
+                        </>
+                      ) : t.equipment ? (
                         <>
                           <strong>Máy:</strong> {t.equipment.model}
                           {t.equipment.serialNumber ? ` (${t.equipment.serialNumber})` : ""}
@@ -1616,7 +1709,52 @@ export default function TicketsPage() {
                   </div>
                 </div>
                 <div className="col-md-4">
-                  {selectedTicket.equipment ? (
+                  {selectedTicket.equipmentList && selectedTicket.equipmentList.length > 1 ? (
+                    <>
+                      <div className="text-muted">
+                        Danh sách thiết bị ({selectedTicket.equipmentList.length} máy):
+                      </div>
+                      <div className="d-flex flex-column gap-1 mt-1" style={{ maxHeight: "110px", overflowY: "auto" }}>
+                        {selectedTicket.equipmentList.map((eq, idx) => {
+                          const eqWorkType = eq.taskWorkType || selectedTicket.type;
+                          const eqWorkLabel = TICKET_TYPE_LABELS[eqWorkType] || eqWorkType;
+                          return (
+                            <div
+                              key={eq.id}
+                              className={`p-1.5 rounded bg-white border ${idx > 0 ? "" : "border-primary-subtle"}`}
+                              style={{ fontSize: "11.5px" }}
+                            >
+                              <div className="d-flex align-items-center justify-content-between gap-1 flex-wrap">
+                                <div className="fw-bold text-primary">
+                                  {idx + 1}. {eq.model}
+                                  {eq.serialNumber ? ` (SN: ${eq.serialNumber})` : ""}
+                                </div>
+                                <span
+                                  className="badge bg-primary-subtle text-primary border border-primary-subtle"
+                                  style={{ fontSize: "10px" }}
+                                >
+                                  {eqWorkLabel}
+                                </span>
+                              </div>
+                              {eq.taskNote && (
+                                <div className="text-dark fw-medium mt-0.5">
+                                  <i className="fas fa-tools text-secondary me-1" style={{ fontSize: "10px" }}></i>
+                                  {eq.taskNote}
+                                </div>
+                              )}
+                              <div className="text-muted">
+                                Counter:{" "}
+                                <strong className="font-monospace text-dark">
+                                  {(eq.taskCounter ?? eq.currentCounter ?? 0).toLocaleString("vi-VN")}
+                                </strong>
+                                {formatLocationPath(eq) ? ` • ${formatLocationPath(eq)}` : ""}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : selectedTicket.equipment ? (
                     <>
                       <div className="text-muted">Thiết bị & Counter hiện tại:</div>
                       <div className="fw-bold text-primary">
@@ -2045,7 +2183,44 @@ export default function TicketsPage() {
                     <div className="card-body">
                       <div className="row g-3 align-items-end">
                         <div className="col-md-4">
-                          {selectedTicket.equipment ? (
+                          {selectedTicket.equipmentList && selectedTicket.equipmentList.length > 1 ? (
+                            <div className="mb-2">
+                              <label className="form-label small fw-bold mb-1">
+                                Chỉ số Counter khi đóng phiếu ({selectedTicket.equipmentList.length} máy)
+                              </label>
+                              <div className="d-flex flex-column gap-1.5" style={{ maxHeight: "150px", overflowY: "auto" }}>
+                                {selectedTicket.equipmentList.map((eq, idx) => (
+                                  <div key={eq.id} className="input-group input-group-sm">
+                                    <span
+                                      className="input-group-text bg-light text-truncate"
+                                      style={{ width: "55%", fontSize: "11px" }}
+                                      title={`${eq.model}${eq.serialNumber ? ` (${eq.serialNumber})` : ""} - Counter hiện tại: ${eq.currentCounter?.toLocaleString("vi-VN") ?? 0}`}
+                                    >
+                                      {idx + 1}. {eq.model}
+                                      {eq.serialNumber ? ` (${eq.serialNumber})` : ""}
+                                    </span>
+                                    <input
+                                      type="number"
+                                      className="form-control font-monospace"
+                                      min={0}
+                                      value={equipmentCountersInput[eq.id] ?? String(eq.currentCounter ?? 0)}
+                                      disabled={isSelectedLocked}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setEquipmentCountersInput((prev) => ({
+                                          ...prev,
+                                          [eq.id]: val,
+                                        }));
+                                        if (eq.id === selectedTicket.equipmentId) {
+                                          setCounterAtCloseInput(val);
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : selectedTicket.equipment ? (
                             <>
                               <label className="form-label small fw-bold">
                                 Chỉ số Counter khi đóng phiếu (&ge;{" "}
@@ -2144,7 +2319,22 @@ export default function TicketsPage() {
                               type="button"
                               className="btn btn-sm btn-success w-100 py-2 fw-bold"
                               disabled={submitting}
-                              onClick={() =>
+                              onClick={() => {
+                                const countersPayload: Record<string, number> = {};
+                                if (
+                                  selectedTicket.equipmentList &&
+                                  selectedTicket.equipmentList.length > 1
+                                ) {
+                                  for (const eq of selectedTicket.equipmentList) {
+                                    const rawVal = equipmentCountersInput[eq.id];
+                                    if (rawVal !== undefined && rawVal.trim() !== "") {
+                                      const numVal = Number(rawVal);
+                                      if (!isNaN(numVal) && numVal >= 0) {
+                                        countersPayload[eq.id] = numVal;
+                                      }
+                                    }
+                                  }
+                                }
                                 handleTicketAction(
                                   {
                                     action: "COMPLETE",
@@ -2153,11 +2343,14 @@ export default function TicketsPage() {
                                     counterAtClose: counterAtCloseInput
                                       ? Number(counterAtCloseInput)
                                       : null,
+                                    ...(Object.keys(countersPayload).length > 0
+                                      ? { equipmentCounters: countersPayload }
+                                      : {}),
                                     customerSignature: signatureInput,
                                   },
                                   "Đã hoàn thành phiếu, lưu chữ ký & Counter, khôi phục trạng thái máy!"
-                                )
-                              }
+                                );
+                              }}
                             >
                               <i className="fas fa-check-circle me-1"></i> Hoàn thành & Đóng phiếu
                             </button>
@@ -2731,6 +2924,28 @@ export default function TicketsPage() {
               />
               <div className="form-text text-muted" style={{ fontSize: "11px" }}>
                 Nhập tối thiểu 3 ký tự giải trình lý do mở lại phiếu.
+              </div>
+            </div>
+
+            <div className="mb-2">
+              <label className="form-label small fw-bold text-dark mb-1 d-flex justify-content-between align-items-center">
+                <span>Trạng thái máy khi mở lại phiếu</span>
+                <span className="text-secondary fw-normal" style={{ fontSize: "11px" }}>Không tự động áp đặt</span>
+              </label>
+              <select
+                className="form-select form-select-sm"
+                value={reopenEquipmentStatus}
+                onChange={(e) => setReopenEquipmentStatus(e.target.value)}
+                style={{ fontSize: "12px" }}
+              >
+                <option value="KEEP">🟢 Giữ nguyên trạng thái hiện tại (Mặc định)</option>
+                <option value="FAULTY">🔴 Chuyển sang: Lỗi / Cần bảo trì (FAULTY)</option>
+                <option value="WAITING_PARTS">🟠 Chuyển sang: Chờ linh kiện (WAITING_PARTS)</option>
+                <option value="ACTIVE">🟢 Chuyển sang: Đang hoạt động (ACTIVE)</option>
+              </select>
+              <div className="small text-muted mt-1" style={{ fontSize: "11px" }}>
+                <i className="fas fa-info-circle text-primary me-1"></i>
+                Mặc định giữ nguyên trạng thái máy. Chỉ chọn &quot;Lỗi / Cần bảo trì&quot; nếu máy thực sự đang ngưng hoạt động.
               </div>
             </div>
           </div>

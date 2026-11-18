@@ -49,13 +49,22 @@ export interface EquipmentItem {
   branchId?: string | null;
   buildingId?: string | null;
   departmentId?: string | null;
-  branch?: { id: string; name: string; address?: string | null } | null;
-  building?: { id: string; name: string; branch?: { name: string } | null } | null;
+  branch?: { id?: string; name: string; address?: string | null } | null;
+  building?: { id?: string; name: string; branch?: { name: string } | null } | null;
   department?: {
-    id: string;
+    id?: string;
     name: string;
     building?: { name: string; branch?: { name: string } | null } | null;
   } | null;
+  taskWorkType?: string;
+  taskNote?: string;
+  taskCounter?: number | null;
+}
+
+export interface EquipmentTaskFormItem {
+  workType: string;
+  note: string;
+  counter: string;
 }
 
 export interface TechItem {
@@ -78,6 +87,12 @@ interface CreateTicketModalProps {
     code: string;
     customerId: string;
     equipmentId?: string | null;
+    equipmentIds?: string[];
+    equipmentTasks?: Record<
+      string,
+      { equipmentId: string; workType: string; note?: string; counter?: number | null }
+    >;
+    equipmentList?: EquipmentItem[];
     assigneeId?: string | null;
     type: string;
     priority: string;
@@ -148,20 +163,30 @@ export function CreateTicketModal({
   const [customerSearchQuery, setCustomerSearchQuery] = useState("");
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
 
-  // Thiết bị của khách hàng & Loại phiếu
+  // Thiết bị của khách hàng & Loại phiếu (Hỗ trợ chọn nhiều máy trên 1 phiếu máy)
   const [ticketCategory, setTicketCategory] = useState<"GENERAL" | "EQUIPMENT">("GENERAL");
   const [customerMachines, setCustomerMachines] = useState<EquipmentItem[]>([]);
   const [loadingMachines, setLoadingMachines] = useState(false);
-  const [selectedEquipmentId, setSelectedEquipmentId] = useState<string>("");
+  const [selectedEquipmentIds, setSelectedEquipmentIds] = useState<string[]>([]);
+  const [equipmentTasksMap, setEquipmentTasksMap] = useState<Record<string, EquipmentTaskFormItem>>({});
+  const [isAutoSyncDesc, setIsAutoSyncDesc] = useState<boolean>(true);
+  const [targetEquipmentStatus, setTargetEquipmentStatus] = useState<string>("KEEP");
   const [machineSearchQuery, setMachineSearchQuery] = useState("");
 
   // Modal Thêm hồ sơ thiết bị mới (cùng UI với trang Thiết bị chính)
   const [showCreateEquipModal, setShowCreateEquipModal] = useState(false);
   const [prefillEquipModel, setPrefillEquipModel] = useState("");
 
-  const selectedEquipment = useMemo(() => {
-    return customerMachines.find((m) => m.id === selectedEquipmentId) || null;
-  }, [customerMachines, selectedEquipmentId]);
+  const selectedEquipments = useMemo(() => {
+    const idSet = new Set(selectedEquipmentIds);
+    return customerMachines.filter((m) => idSet.has(m.id));
+  }, [customerMachines, selectedEquipmentIds]);
+
+  const toggleEquipmentSelection = useCallback((equipId: string) => {
+    setSelectedEquipmentIds((prev) =>
+      prev.includes(equipId) ? prev.filter((id) => id !== equipId) : [...prev, equipId]
+    );
+  }, []);
 
   // Thông tin phiếu
   const [ticketDate, setTicketDate] = useState<string>(() => getTodayStr());
@@ -178,6 +203,77 @@ export function CreateTicketModal({
   const [description, setDescription] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Hàm dựng nội dung tổng hợp tự động từ danh sách thiết bị đã chọn & công việc riêng từng máy
+  const buildSynthesizedDescription = useCallback(
+    (
+      equipList: EquipmentItem[],
+      tasksMap: Record<string, EquipmentTaskFormItem>,
+      defaultWorkType: string
+    ): string => {
+      if (equipList.length === 0) return "";
+      const lines = equipList.map((eq) => {
+        const task = tasksMap[eq.id];
+        const wtCode = task?.workType || defaultWorkType || "REPAIR";
+        const wtLabel =
+          workTypes.find((w) => w.code === wtCode)?.label ||
+          TICKET_TYPE_LABELS[wtCode] ||
+          wtCode;
+        const noteText = task?.note?.trim() || "";
+        const counterNum =
+          task?.counter && !isNaN(Number(task.counter)) && Number(task.counter) > 0
+            ? Number(task.counter)
+            : null;
+        const locLabel =
+          eq.locationNote?.trim() ||
+          eq.department?.name ||
+          formatLocationPath(eq, selectedCustomer ? { branches: selectedCustomer.branches } : null) ||
+          "";
+        const modelDisplay =
+          eq.brand && !eq.model.toLowerCase().startsWith(eq.brand.toLowerCase())
+            ? `${eq.brand} ${eq.model}`
+            : eq.model;
+        const snPart = eq.serialNumber ? ` (${eq.serialNumber})` : "";
+        const counterPart = counterNum ? ` (Counter: ${counterNum.toLocaleString("vi-VN")})` : "";
+
+        return `${locLabel ? `[${locLabel}] ` : ""}${modelDisplay}${snPart} - ${wtLabel}${
+          noteText ? `: ${noteText}` : ""
+        }${counterPart}`;
+      });
+      return lines.join(" + ");
+    },
+    [workTypes, selectedCustomer]
+  );
+
+  const updateEquipmentTask = useCallback(
+    (equipId: string, patch: Partial<EquipmentTaskFormItem>) => {
+      setEquipmentTasksMap((prev) => {
+        const current = prev[equipId] || { workType: type || "REPAIR", note: "", counter: "" };
+        const nextItem = { ...current, ...patch };
+        const nextMap = { ...prev, [equipId]: nextItem };
+
+        // Nếu đang bật tự động tổng hợp (hoặc nội dung chung đang trống), cập nhật tự động vào ô Nội dung phiếu
+        if (isAutoSyncDesc || !description.trim()) {
+          const synthesized = buildSynthesizedDescription(selectedEquipments, nextMap, type);
+          if (synthesized) {
+            setDescription(synthesized);
+            setIsAutoSyncDesc(true);
+          }
+        }
+        return nextMap;
+      });
+    },
+    [type, isAutoSyncDesc, description, buildSynthesizedDescription, selectedEquipments]
+  );
+
+  const handleManualSyncDescription = useCallback(() => {
+    const synthesized = buildSynthesizedDescription(selectedEquipments, equipmentTasksMap, type);
+    if (synthesized) {
+      setDescription(synthesized);
+      setIsAutoSyncDesc(true);
+      toast.info("Đã tổng hợp tự động nội dung công việc từ danh sách máy đã chọn");
+    }
+  }, [selectedEquipments, equipmentTasksMap, type, buildSynthesizedDescription]);
+
   const customerDropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -189,7 +285,7 @@ export function CreateTicketModal({
       : currentUser?.role === "DISPATCHER");
 
   // 1. Tải danh sách máy của khách hàng khi chọn khách hàng
-  const loadCustomerEquipment = useCallback(async (customerId: string, targetEquipId?: string) => {
+  const loadCustomerEquipment = useCallback(async (customerId: string, targetEquipIds?: string | string[]) => {
     setLoadingMachines(true);
     try {
       const res = await fetch(`/api/equipment?customerId=${customerId}&pageSize=100`);
@@ -198,21 +294,28 @@ export function CreateTicketModal({
         const list: EquipmentItem[] = Array.isArray(data) ? data : data.items || [];
         setCustomerMachines(list);
 
-        if (targetEquipId && list.some((eq) => eq.id === targetEquipId)) {
+        const desiredIds = Array.isArray(targetEquipIds)
+          ? targetEquipIds.filter(Boolean)
+          : targetEquipIds
+          ? [targetEquipIds]
+          : [];
+        const validIds = desiredIds.filter((tid) => list.some((eq) => eq.id === tid));
+
+        if (validIds.length > 0) {
           setTicketCategory("EQUIPMENT");
-          setSelectedEquipmentId(targetEquipId);
+          setSelectedEquipmentIds(validIds);
         } else {
           setTicketCategory("GENERAL");
-          setSelectedEquipmentId("");
+          setSelectedEquipmentIds([]);
         }
       } else {
         setCustomerMachines([]);
-        setSelectedEquipmentId("");
+        setSelectedEquipmentIds([]);
         setTicketCategory("GENERAL");
       }
     } catch {
       setCustomerMachines([]);
-      setSelectedEquipmentId("");
+      setSelectedEquipmentIds([]);
       setTicketCategory("GENERAL");
     } finally {
       setLoadingMachines(false);
@@ -237,20 +340,50 @@ export function CreateTicketModal({
       if (!isMounted) return;
       setLoadingInitial(true);
       if (editingTicket) {
-        setType(editingTicket.type || "REPAIR");
+        const defaultEditType = editingTicket.type || "REPAIR";
+        setType(defaultEditType);
         setPriority(editingTicket.priority || "NORMAL");
         setSource(editingTicket.source || "CUSTOMER");
         setAssigneeId(editingTicket.assigneeId || "");
         setDescription(editingTicket.description || "");
+        setIsAutoSyncDesc(false);
         setTicketDate(formatDateStr(editingTicket.createdAt));
         if (editingTicket.customer) {
           setSelectedCustomer(editingTicket.customer);
         }
-        loadCustomerEquipment(editingTicket.customerId, editingTicket.equipmentId || undefined);
+        const editEquipIds =
+          editingTicket.equipmentIds && editingTicket.equipmentIds.length > 0
+            ? editingTicket.equipmentIds
+            : editingTicket.equipmentId
+            ? [editingTicket.equipmentId]
+            : undefined;
+        const initTasksMap: Record<string, EquipmentTaskFormItem> = {};
+        if (editingTicket.equipmentTasks) {
+          for (const [eqId, t] of Object.entries(editingTicket.equipmentTasks)) {
+            initTasksMap[eqId] = {
+              workType: t.workType || defaultEditType,
+              note: t.note || "",
+              counter: t.counter != null ? String(t.counter) : "",
+            };
+          }
+        } else if (Array.isArray(editingTicket.equipmentList)) {
+          for (const eq of editingTicket.equipmentList) {
+            initTasksMap[eq.id] = {
+              workType: eq.taskWorkType || defaultEditType,
+              note: eq.taskNote || "",
+              counter: eq.taskCounter != null ? String(eq.taskCounter) : "",
+            };
+          }
+        }
+        setEquipmentTasksMap(initTasksMap);
+        loadCustomerEquipment(editingTicket.customerId, editEquipIds);
       } else {
         setSelectedCustomer(null);
         setCustomerMachines([]);
-        setSelectedEquipmentId("");
+        setSelectedEquipmentIds([]);
+        setEquipmentTasksMap({});
+        setIsAutoSyncDesc(true);
+        setTargetEquipmentStatus("KEEP");
         setTicketCategory("GENERAL");
         setTicketDate(getTodayStr());
         setType("REPAIR");
@@ -336,7 +469,8 @@ export function CreateTicketModal({
   const handleResetCustomer = () => {
     setSelectedCustomer(null);
     setCustomerMachines([]);
-    setSelectedEquipmentId("");
+    setSelectedEquipmentIds([]);
+    setTargetEquipmentStatus("KEEP");
     setTicketCategory("GENERAL");
     setCustomerSearchQuery("");
     setMachineSearchQuery("");
@@ -375,7 +509,7 @@ export function CreateTicketModal({
 
     setCustomerMachines((prev) => [newEq, ...prev]);
     setTicketCategory("EQUIPMENT");
-    setSelectedEquipmentId(newEq.id);
+    setSelectedEquipmentIds((prev) => Array.from(new Set([...prev, newEq.id])));
     setMachineSearchQuery("");
 
     if (selectedCustomer) {
@@ -513,19 +647,41 @@ export function CreateTicketModal({
       return;
     }
 
-    if (!description.trim()) {
-      toast.warning("Vui lòng nhập mô tả hiện tượng sự cố hoặc yêu cầu kỹ thuật");
+    if (ticketCategory === "EQUIPMENT" && customerMachines.length > 0 && selectedEquipmentIds.length === 0) {
+      toast.warning("Vui lòng tích chọn ít nhất 1 máy cho phiếu máy");
       return;
     }
 
-    if (ticketCategory === "EQUIPMENT" && customerMachines.length > 0 && !selectedEquipmentId) {
-      toast.warning("Vui lòng chọn máy cho phiếu máy");
+    const finalDescription =
+      description.trim() ||
+      (ticketCategory === "EQUIPMENT"
+        ? buildSynthesizedDescription(selectedEquipments, equipmentTasksMap, type)
+        : "");
+
+    if (!finalDescription.trim()) {
+      toast.warning("Vui lòng nhập mô tả hiện tượng sự cố hoặc yêu cầu kỹ thuật");
       return;
     }
 
     setSubmitting(true);
     try {
-      const targetEquipmentId = ticketCategory === "EQUIPMENT" ? (selectedEquipmentId || null) : null;
+      const targetEquipmentIds = ticketCategory === "EQUIPMENT" ? selectedEquipmentIds : [];
+      const targetEquipmentId = targetEquipmentIds[0] || null;
+      const equipmentTasksPayload = targetEquipmentIds.map((eqId) => {
+        const task = equipmentTasksMap[eqId];
+        const parsedCounter =
+          task?.counter && task.counter.trim() !== "" && !isNaN(Number(task.counter)) && Number(task.counter) >= 0
+            ? Math.round(Number(task.counter))
+            : null;
+        return {
+          equipmentId: eqId,
+          workType: task?.workType || type || "REPAIR",
+          note: task?.note?.trim() || "",
+          counter: parsedCounter,
+        };
+      });
+      const effectivePrimaryType = equipmentTasksPayload[0]?.workType || type || "REPAIR";
+
       const res = await fetch(
         isEditMode && editingTicket ? `/api/tickets/${editingTicket.id}` : "/api/tickets",
         {
@@ -535,12 +691,15 @@ export function CreateTicketModal({
             ...(isEditMode ? { action: "UPDATE" } : {}),
             customerId: selectedCustomer.id,
             equipmentId: targetEquipmentId,
-            type,
+            equipmentIds: targetEquipmentIds,
+            equipmentTasks: equipmentTasksPayload,
+            type: effectivePrimaryType,
             priority,
             source,
             assigneeId: assigneeId || null,
-            description: description.trim(),
+            description: finalDescription.trim(),
             createdAt: ticketDate || undefined,
+            equipmentStatus: targetEquipmentStatus === "KEEP" ? null : targetEquipmentStatus,
           }),
         }
       );
@@ -557,7 +716,9 @@ export function CreateTicketModal({
       // Reset form
       setSelectedCustomer(null);
       setCustomerMachines([]);
-      setSelectedEquipmentId("");
+      setSelectedEquipmentIds([]);
+      setEquipmentTasksMap({});
+      setIsAutoSyncDesc(true);
       setTicketCategory("GENERAL");
       setTicketDate(getTodayStr());
       setDescription("");
@@ -625,19 +786,31 @@ export function CreateTicketModal({
       headerClass="bg-primary text-white py-2 px-3"
       footer={
         <div className="d-flex justify-content-between align-items-center w-100">
-          <div className="small text-muted d-none d-md-block">
-            {selectedCustomer && ticketCategory === "EQUIPMENT" && selectedEquipment ? (
-              <span className="text-success fw-medium">
-                <i className="fas fa-check-circle me-1"></i>
-                {selectedEquipment.model}
-                {selectedEquipment.serialNumber ? ` (${selectedEquipment.serialNumber})` : ""}
-                {formatLocationPath(selectedEquipment, selectedCustomer ? { branches: selectedCustomer.branches } : null) && (
-                  <span className="text-dark ms-1.5 fw-normal">
-                    &bull; <i className="fas fa-map-marker-alt text-danger me-1"></i>
-                    {formatLocationPath(selectedEquipment, selectedCustomer ? { branches: selectedCustomer.branches } : null)}
+          <div className="small text-muted d-none d-md-block text-truncate pe-2" style={{ maxWidth: "65%" }}>
+            {selectedCustomer && ticketCategory === "EQUIPMENT" && selectedEquipments.length > 0 ? (
+              selectedEquipments.length === 1 ? (
+                <span className="text-success fw-medium">
+                  <i className="fas fa-check-circle me-1"></i>
+                  {selectedEquipments[0].model}
+                  {selectedEquipments[0].serialNumber ? ` (${selectedEquipments[0].serialNumber})` : ""}
+                  {formatLocationPath(selectedEquipments[0], selectedCustomer ? { branches: selectedCustomer.branches } : null) && (
+                    <span className="text-dark ms-1.5 fw-normal">
+                      &bull; <i className="fas fa-map-marker-alt text-danger me-1"></i>
+                      {formatLocationPath(selectedEquipments[0], selectedCustomer ? { branches: selectedCustomer.branches } : null)}
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span className="text-success fw-medium" title={selectedEquipments.map((m) => `${m.model}${m.serialNumber ? ` (${m.serialNumber})` : ""}`).join(", ")}>
+                  <i className="fas fa-check-double me-1"></i>
+                  Đã chọn <strong>{selectedEquipments.length} máy</strong>:{" "}
+                  <span className="text-dark fw-normal">
+                    {selectedEquipments
+                      .map((m) => `${m.model}${m.serialNumber ? ` (${m.serialNumber})` : ""}`)
+                      .join(", ")}
                   </span>
-                )}
-              </span>
+                </span>
+              )
             ) : selectedCustomer && ticketCategory === "GENERAL" ? (
               <span className="text-primary fw-medium">
                 <i className="fas fa-file-alt me-1"></i>
@@ -867,7 +1040,7 @@ export function CreateTicketModal({
           {selectedCustomer && (
             <div className="col-12">
               <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 p-1.5 px-2.5 rounded-2 bg-light border">
-                <div className="d-flex align-items-center gap-2">
+                <div className="d-flex align-items-center gap-2 flex-wrap">
                   <span className="small fw-bold text-dark d-flex align-items-center gap-1">
                     <i className="fas fa-layer-group text-primary"></i>
                     Loại phiếu:
@@ -882,7 +1055,7 @@ export function CreateTicketModal({
                       }`}
                       onClick={() => {
                         setTicketCategory("GENERAL");
-                        setSelectedEquipmentId("");
+                        setSelectedEquipmentIds([]);
                       }}
                     >
                       📄 Phiếu dịch vụ
@@ -896,14 +1069,28 @@ export function CreateTicketModal({
                       }`}
                       onClick={() => {
                         setTicketCategory("EQUIPMENT");
-                        if (!selectedEquipmentId && customerMachines.length > 0) {
-                          setSelectedEquipmentId(customerMachines[0].id);
+                        if (selectedEquipmentIds.length === 0 && customerMachines.length > 0) {
+                          setSelectedEquipmentIds([customerMachines[0].id]);
                         }
                       }}
                     >
                       🖨️ Phiếu máy {customerMachines.length > 0 ? `(${customerMachines.length})` : ""}
                     </button>
                   </div>
+
+                  {ticketCategory === "EQUIPMENT" && customerMachines.length > 0 && (
+                    <span
+                      className={`badge rounded-pill px-2.5 py-1 ${
+                        selectedEquipmentIds.length > 0
+                          ? "bg-success-subtle text-success border border-success-subtle"
+                          : "bg-warning-subtle text-dark border border-warning-subtle"
+                      }`}
+                      style={{ fontSize: "11px" }}
+                    >
+                      <i className="fas fa-check-square me-1"></i>
+                      Đã chọn {selectedEquipmentIds.length}/{customerMachines.length} máy
+                    </span>
+                  )}
                 </div>
 
                 {/* Cụm bên phải: Tìm kiếm nhanh máy + Nút Thêm thiết bị mới */}
@@ -936,7 +1123,7 @@ export function CreateTicketModal({
             </div>
           )}
 
-          {/* ================= NẾU LÀ PHIẾU MÁY: HIỂN THỊ DANH SÁCH MÁY ================= */}
+          {/* ================= NẾU LÀ PHIẾU MÁY: HIỂN THỊ DANH SÁCH MÁY (CHO PHÉP CHỌN NHIỀU MÁY) ================= */}
           {selectedCustomer && ticketCategory === "EQUIPMENT" && (
             <div className="col-12">
               {loadingMachines ? (
@@ -965,8 +1152,41 @@ export function CreateTicketModal({
                     <table className="table table-hover table-sm align-middle mb-0" style={{ fontSize: "11.5px" }}>
                       <thead className="table-light border-bottom text-secondary" style={{ fontSize: "11px", position: "sticky", top: 0, zIndex: 1 }}>
                         <tr>
-                          <th style={{ width: "38px" }} className="text-center py-1">Chọn</th>
-                          <th className="py-1">Thiết bị</th>
+                          <th style={{ width: "42px" }} className="text-center py-1">
+                            {filteredMachines.length > 0 ? (
+                              <input
+                                type="checkbox"
+                                className="form-check-input m-0 cursor-pointer"
+                                title="Chọn tất cả / Bỏ chọn tất cả máy đang hiển thị"
+                                checked={
+                                  filteredMachines.length > 0 &&
+                                  filteredMachines.every((eq) => selectedEquipmentIds.includes(eq.id))
+                                }
+                                onChange={(e) => {
+                                  const visibleIds = filteredMachines.map((eq) => eq.id);
+                                  if (e.target.checked) {
+                                    setSelectedEquipmentIds((prev) =>
+                                      Array.from(new Set([...prev, ...visibleIds]))
+                                    );
+                                  } else {
+                                    setSelectedEquipmentIds((prev) =>
+                                      prev.filter((id) => !visibleIds.includes(id))
+                                    );
+                                  }
+                                }}
+                              />
+                            ) : (
+                              "Chọn"
+                            )}
+                          </th>
+                          <th className="py-1">
+                            Thiết bị{" "}
+                            {customerMachines.length > 1 && (
+                              <span className="text-muted fw-normal" style={{ fontSize: "10.5px" }}>
+                                (Có thể tích chọn nhiều máy trên 1 phiếu)
+                              </span>
+                            )}
+                          </th>
                           <th className="py-1">Số Seri (SN)</th>
                           <th className="py-1">Vị trí lắp đặt</th>
                           <th className="py-1 text-end" style={{ width: "95px" }}>Counter</th>
@@ -990,7 +1210,7 @@ export function CreateTicketModal({
                           </tr>
                         ) : (
                           filteredMachines.map((eq) => {
-                            const isSelected = selectedEquipmentId === eq.id;
+                            const isSelected = selectedEquipmentIds.includes(eq.id);
                             const locationPath = formatLocationPath(
                               eq,
                               selectedCustomer ? { branches: selectedCustomer.branches } : null
@@ -999,17 +1219,16 @@ export function CreateTicketModal({
                             return (
                               <tr
                                 key={eq.id}
-                                onClick={() => setSelectedEquipmentId(eq.id)}
+                                onClick={() => toggleEquipmentSelection(eq.id)}
                                 className={isSelected ? "table-primary" : ""}
                                 style={{ cursor: "pointer" }}
                               >
                                 <td className="text-center py-1">
                                   <input
-                                    type="radio"
-                                    name="selectedEquipmentRadio"
+                                    type="checkbox"
                                     className="form-check-input m-0 cursor-pointer"
                                     checked={isSelected}
-                                    onChange={() => setSelectedEquipmentId(eq.id)}
+                                    onChange={() => toggleEquipmentSelection(eq.id)}
                                     onClick={(e) => e.stopPropagation()}
                                   />
                                 </td>
@@ -1050,13 +1269,331 @@ export function CreateTicketModal({
                       </tbody>
                     </table>
                   </div>
+
+                  {/* BẢNG PHÂN CÔNG VIỆC, NỘI DUNG & COUNTER RIÊNG CHO TỪNG THIẾT BỊ ĐÃ CHỌN */}
+                  {selectedEquipments.length > 0 && (
+                    <div className="border-top bg-primary-subtle bg-opacity-10 p-2.5">
+                      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1.5">
+                        <span className="small fw-bold text-primary d-flex align-items-center gap-1.5" style={{ fontSize: "12px" }}>
+                          <i className="fas fa-tasks"></i>
+                          Chi tiết công việc &amp; Sự kiện riêng cho từng máy đã chọn ({selectedEquipments.length} máy):
+                        </span>
+                        <div className="d-flex align-items-center gap-2">
+                          <span
+                            className="badge bg-white text-secondary border fw-normal"
+                            style={{ fontSize: "10.5px" }}
+                          >
+                            <i className="fas fa-history text-success me-1"></i>
+                            Lưu chính xác vào Lịch sử &amp; Counter riêng của từng máy
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-outline-primary bg-white py-0.5 px-2 fw-semibold"
+                            style={{ fontSize: "11px" }}
+                            onClick={handleManualSyncDescription}
+                            title="Tổng hợp nội dung các máy bên dưới vào ô Nội dung phiếu chung"
+                          >
+                            <i className="fas fa-magic me-1"></i>Tổng hợp vào Nội dung phiếu
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Thanh Thêm / Sửa Loại công việc nhanh ngay tại bảng máy */}
+                      {workTypeMode && (
+                        <div className="p-2 mb-2 bg-white border border-primary rounded-2 shadow-2xs d-flex align-items-center gap-2 flex-wrap">
+                          <span className="small fw-bold text-primary d-flex align-items-center gap-1" style={{ fontSize: "11px" }}>
+                            <i className="fas fa-tools"></i>
+                            {workTypeMode === "add" ? "Thêm loại công việc mới:" : "Sửa tên loại công việc:"}
+                          </span>
+                          <div className="input-group input-group-sm" style={{ maxWidth: "340px" }}>
+                            <input
+                              type="text"
+                              className="form-control form-control-sm"
+                              placeholder={
+                                workTypeMode === "add"
+                                  ? "Nhập loại công việc mới..."
+                                  : "Sửa tên loại công việc..."
+                              }
+                              value={workTypeInput}
+                              onChange={(e) => setWorkTypeInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  handleSaveWorkType();
+                                } else if (e.key === "Escape") {
+                                  e.stopPropagation();
+                                  setWorkTypeMode(null);
+                                  setWorkTypeInput("");
+                                }
+                              }}
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-primary fw-bold px-2.5"
+                              disabled={savingWorkType || workTypeInput.trim().length < 2}
+                              onClick={handleSaveWorkType}
+                              title="Lưu loại công việc"
+                            >
+                              {savingWorkType ? (
+                                <span className="spinner-border spinner-border-sm" role="status"></span>
+                              ) : (
+                                <i className="fas fa-check"></i>
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-outline-secondary px-2"
+                              disabled={savingWorkType}
+                              onClick={() => {
+                                setWorkTypeMode(null);
+                                setWorkTypeInput("");
+                              }}
+                              title="Hủy"
+                            >
+                              <i className="fas fa-times"></i>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="table-responsive rounded-2 border bg-white">
+                        <table className="table table-sm align-middle mb-0" style={{ fontSize: "11.5px" }}>
+                          <thead className="table-light text-secondary" style={{ fontSize: "10.5px" }}>
+                            <tr>
+                              <th className="py-1 ps-2" style={{ minWidth: "180px", width: "27%" }}>
+                                Thiết bị &amp; Vị trí
+                              </th>
+                              <th className="py-1" style={{ minWidth: "165px", width: "23%" }}>
+                                <div className="d-flex align-items-center justify-content-between pe-1">
+                                  <span>Loại công việc</span>
+                                  {!workTypeMode && (
+                                    <div className="d-flex align-items-center gap-1">
+                                      <button
+                                        type="button"
+                                        className="btn btn-link p-0 text-decoration-none text-primary fw-semibold"
+                                        style={{ fontSize: "10px" }}
+                                        onClick={handleStartAddWorkType}
+                                        title="Thêm loại công việc mới vào danh mục"
+                                      >
+                                        +Thêm
+                                      </button>
+                                      <span className="text-muted opacity-50" style={{ fontSize: "9px" }}>|</span>
+                                      <button
+                                        type="button"
+                                        className="btn btn-link p-0 text-decoration-none text-secondary fw-semibold"
+                                        style={{ fontSize: "10px" }}
+                                        onClick={handleStartEditWorkType}
+                                        title="Sửa tên loại công việc đang chọn (Không cho phép xóa)"
+                                      >
+                                        Sửa
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </th>
+                              <th className="py-1" style={{ minWidth: "210px", width: "34%" }}>
+                                Nội dung / Vật tư / Yêu cầu riêng của máy
+                              </th>
+                              <th className="py-1 pe-2" style={{ minWidth: "120px", width: "16%" }}>
+                                Counter ghi nhận
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedEquipments.map((eq, idx) => {
+                              const task = equipmentTasksMap[eq.id] || {
+                                workType: type || "REPAIR",
+                                note: "",
+                                counter: "",
+                              };
+                              const locPath = formatLocationPath(
+                                eq,
+                                selectedCustomer ? { branches: selectedCustomer.branches } : null
+                              );
+                              return (
+                                <tr key={eq.id}>
+                                  <td className="py-1.5 ps-2">
+                                    <div className="d-flex align-items-center justify-content-between gap-1">
+                                      <div className="min-w-0">
+                                        <div className="fw-bold text-dark text-truncate">
+                                          <span className="text-primary me-1">{idx + 1}.</span>
+                                          {eq.brand ? `${eq.brand} ` : ""}
+                                          {eq.model}
+                                          {eq.serialNumber && (
+                                            <span
+                                              className="badge bg-dark text-white font-monospace ms-1.5"
+                                              style={{ fontSize: "10px" }}
+                                            >
+                                              {eq.serialNumber}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-muted text-truncate" style={{ fontSize: "10.5px" }}>
+                                          <i className="fas fa-map-marker-alt text-danger me-1"></i>
+                                          {locPath || "Trụ sở chính"}
+                                          {eq.locationNote && (
+                                            <strong className="text-dark ms-1">({eq.locationNote})</strong>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-1.5">
+                                    <select
+                                      className="form-select form-select-sm py-0.5 px-2 fw-semibold text-primary"
+                                      style={{ fontSize: "11.5px" }}
+                                      value={task.workType || type}
+                                      onChange={(e) => {
+                                        const newWt = e.target.value;
+                                        updateEquipmentTask(eq.id, { workType: newWt });
+                                        if (idx === 0) {
+                                          setType(newWt);
+                                        }
+                                      }}
+                                    >
+                                      {workTypes.map((wt) => (
+                                        <option key={wt.code} value={wt.code}>
+                                          {wt.label}
+                                        </option>
+                                      ))}
+                                      {!workTypes.some((wt) => wt.code === (task.workType || type)) &&
+                                        (task.workType || type) && (
+                                          <option value={task.workType || type}>
+                                            {TICKET_TYPE_LABELS[task.workType || type] || task.workType || type}
+                                          </option>
+                                        )}
+                                    </select>
+                                  </td>
+                                  <td className="py-1.5">
+                                    <input
+                                      type="text"
+                                      className="form-control form-control-sm py-0.5 px-2"
+                                      style={{ fontSize: "11.5px" }}
+                                      placeholder="VD: Nạp mực máy in, thay hộp mực 26A Kogon, thay Drum..."
+                                      value={task.note}
+                                      onChange={(e) => updateEquipmentTask(eq.id, { note: e.target.value })}
+                                    />
+                                  </td>
+                                  <td className="py-1.5 pe-2">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      className="form-control form-control-sm py-0.5 px-2 font-monospace text-end"
+                                      style={{ fontSize: "11.5px" }}
+                                      placeholder={`HT: ${(eq.currentCounter || 0).toLocaleString("vi-VN")}`}
+                                      title={`Counter hiện tại: ${(eq.currentCounter || 0).toLocaleString("vi-VN")}. Nhập nếu khách báo sẵn chỉ số counter mới.`}
+                                      value={task.counter}
+                                      onChange={(e) => updateEquipmentTask(eq.id, { counter: e.target.value })}
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Gợi ý & Cập nhật trạng thái máy khi tạo phiếu */}
+                  <div className="mt-2.5 p-2.5 rounded-3 border bg-light-subtle">
+                    <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1.5">
+                      <span className="small fw-bold text-dark d-flex align-items-center gap-1.5" style={{ fontSize: "12px" }}>
+                        <i className="fas fa-microchip text-primary"></i>
+                        Trạng thái thiết bị khi tạo phiếu:
+                      </span>
+                      <span className="badge bg-secondary-subtle text-secondary border fw-normal" style={{ fontSize: "10.5px" }}>
+                        Không tự động áp đặt • Gợi ý theo tình trạng thực tế
+                      </span>
+                    </div>
+
+                    <div className="row g-2 align-items-center">
+                      <div className="col-md-5 col-12">
+                        <select
+                          className="form-select form-select-sm fw-medium"
+                          value={targetEquipmentStatus}
+                          onChange={(e) => setTargetEquipmentStatus(e.target.value)}
+                          style={{ fontSize: "12px" }}
+                        >
+                          <option value="KEEP">
+                            🟢 Giữ nguyên trạng thái hiện tại (Mặc định - Khuyến nghị)
+                          </option>
+                          <option value="FAULTY">
+                            🔴 Chuyển sang: Lỗi / Cần bảo trì (FAULTY)
+                          </option>
+                          <option value="WAITING_PARTS">
+                            🟠 Chuyển sang: Chờ linh kiện (WAITING_PARTS)
+                          </option>
+                          <option value="ACTIVE">
+                            🟢 Chuyển sang: Đang hoạt động (ACTIVE)
+                          </option>
+                        </select>
+                      </div>
+                      <div className="col-md-7 col-12">
+                        {targetEquipmentStatus === "KEEP" ? (
+                          <div className="small text-muted d-flex align-items-center gap-1.5" style={{ fontSize: "11.5px" }}>
+                            <i className="fas fa-info-circle text-primary"></i>
+                            <span>
+                              Thiết bị giữ nguyên trạng thái hoạt động hiện tại (không chuyển sang báo lỗi).
+                            </span>
+                          </div>
+                        ) : targetEquipmentStatus === "FAULTY" ? (
+                          <div className="small text-danger d-flex align-items-center gap-1.5" style={{ fontSize: "11.5px" }}>
+                            <i className="fas fa-exclamation-triangle"></i>
+                            <span>
+                              Thiết bị sẽ chuyển sang <strong>Lỗi / Cần bảo trì</strong> (báo hỏng trên sơ đồ thiết bị).
+                            </span>
+                          </div>
+                        ) : targetEquipmentStatus === "WAITING_PARTS" ? (
+                          <div className="small text-warning-emphasis d-flex align-items-center gap-1.5" style={{ fontSize: "11.5px" }}>
+                            <i className="fas fa-clock"></i>
+                            <span>Thiết bị sẽ chuyển sang <strong>Đang chờ linh kiện</strong>.</span>
+                          </div>
+                        ) : (
+                          <div className="small text-success d-flex align-items-center gap-1.5" style={{ fontSize: "11.5px" }}>
+                            <i className="fas fa-check-circle"></i>
+                            <span>Thiết bị sẽ chuyển sang <strong>Đang hoạt động</strong> bình thường.</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {type === "REPAIR" && targetEquipmentStatus === "KEEP" && (
+                      <div className="mt-1.5 pt-1.5 border-top border-light-subtle d-flex align-items-center justify-content-between flex-wrap gap-2 text-muted" style={{ fontSize: "11px" }}>
+                        <span>
+                          <i className="fas fa-lightbulb text-warning me-1"></i>
+                          <em>Gợi ý: Nếu sự cố này làm máy dừng hoạt động hoàn toàn, bạn có thể chọn chuyển sang "Lỗi / Cần bảo trì".</em>
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-link p-0 text-danger text-decoration-none fw-semibold"
+                          style={{ fontSize: "11px" }}
+                          onClick={() => setTargetEquipmentStatus("FAULTY")}
+                        >
+                          Chuyển sang "Lỗi / Cần bảo trì" &raquo;
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
           )}
 
           {/* ================= KHỐI 3: THÔNG TIN PHIẾU KỸ THUẬT ================= */}
-          <div className={canAssign ? "col-lg col-sm-6 col-12" : "col-md-3 col-sm-6 col-12"}>
+          {/* Cột 1: Ngày lập phiếu */}
+          <div
+            className={
+              selectedEquipments.length > 0 && ticketCategory === "EQUIPMENT"
+                ? canAssign
+                  ? "col-md-3 col-sm-6 col-12"
+                  : "col-md-4 col-sm-6 col-12"
+                : canAssign
+                ? "col-lg col-sm-6 col-12"
+                : "col-md-3 col-sm-6 col-12"
+            }
+          >
             <label className="form-label small fw-bold mb-1">
               <i className="far fa-calendar-alt text-primary me-1"></i>Ngày lập phiếu
             </label>
@@ -1069,105 +1606,122 @@ export function CreateTicketModal({
             />
           </div>
 
-          <div className={canAssign ? "col-lg col-sm-6 col-12" : "col-md-3 col-sm-6 col-12"}>
-            <div className="d-flex justify-content-between align-items-center mb-1">
-              <label className="form-label small fw-bold mb-0">
-                <i className="fas fa-tools text-primary me-1"></i>Loại công việc
-              </label>
-              {!workTypeMode && (
-                <div className="d-flex align-items-center gap-1.5">
-                  <button
-                    type="button"
-                    className="btn btn-link p-0 text-decoration-none text-primary fw-semibold"
-                    style={{ fontSize: "11px" }}
-                    onClick={handleStartAddWorkType}
-                    title="Thêm loại công việc mới"
-                  >
-                    <i className="fas fa-plus me-0.5"></i>Thêm
-                  </button>
-                  <span className="text-muted opacity-50" style={{ fontSize: "10px" }}>|</span>
-                  <button
-                    type="button"
-                    className="btn btn-link p-0 text-decoration-none text-secondary fw-semibold"
-                    style={{ fontSize: "11px" }}
-                    onClick={handleStartEditWorkType}
-                    title="Sửa tên loại công việc đang chọn (Không cho phép xóa)"
-                  >
-                    <i className="fas fa-pen me-0.5" style={{ fontSize: "9.5px" }}></i>Sửa
-                  </button>
-                </div>
-              )}
-            </div>
+          {/* Cột 2: Loại công việc chung (Chỉ hiển thị khi là Phiếu dịch vụ hoặc chưa chọn máy - Đã chọn máy thì phân loại trực tiếp tại từng dòng máy ở bảng trên) */}
+          {(ticketCategory !== "EQUIPMENT" || selectedEquipments.length === 0) && (
+            <div className={canAssign ? "col-lg col-sm-6 col-12" : "col-md-3 col-sm-6 col-12"}>
+              <div className="d-flex justify-content-between align-items-center mb-1">
+                <label className="form-label small fw-bold mb-0">
+                  <i className="fas fa-tools text-primary me-1"></i>Loại công việc
+                </label>
+                {!workTypeMode && (
+                  <div className="d-flex align-items-center gap-1.5">
+                    <button
+                      type="button"
+                      className="btn btn-link p-0 text-decoration-none text-primary fw-semibold"
+                      style={{ fontSize: "11px" }}
+                      onClick={handleStartAddWorkType}
+                      title="Thêm loại công việc mới"
+                    >
+                      <i className="fas fa-plus me-0.5"></i>Thêm
+                    </button>
+                    <span className="text-muted opacity-50" style={{ fontSize: "10px" }}>|</span>
+                    <button
+                      type="button"
+                      className="btn btn-link p-0 text-decoration-none text-secondary fw-semibold"
+                      style={{ fontSize: "11px" }}
+                      onClick={handleStartEditWorkType}
+                      title="Sửa tên loại công việc đang chọn (Không cho phép xóa)"
+                    >
+                      <i className="fas fa-pen me-0.5" style={{ fontSize: "9.5px" }}></i>Sửa
+                    </button>
+                  </div>
+                )}
+              </div>
 
-            {workTypeMode ? (
-              <div className="input-group input-group-sm">
-                <input
-                  type="text"
-                  className="form-control form-control-sm"
-                  placeholder={
-                    workTypeMode === "add"
-                      ? "Nhập loại công việc mới..."
-                      : "Sửa tên loại công việc..."
-                  }
-                  value={workTypeInput}
-                  onChange={(e) => setWorkTypeInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleSaveWorkType();
-                    } else if (e.key === "Escape") {
-                      e.stopPropagation();
+              {workTypeMode ? (
+                <div className="input-group input-group-sm">
+                  <input
+                    type="text"
+                    className="form-control form-control-sm"
+                    placeholder={
+                      workTypeMode === "add"
+                        ? "Nhập loại công việc mới..."
+                        : "Sửa tên loại công việc..."
+                    }
+                    value={workTypeInput}
+                    onChange={(e) => setWorkTypeInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleSaveWorkType();
+                      } else if (e.key === "Escape") {
+                        e.stopPropagation();
+                        setWorkTypeMode(null);
+                        setWorkTypeInput("");
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary fw-bold px-2"
+                    disabled={savingWorkType || workTypeInput.trim().length < 2}
+                    onClick={handleSaveWorkType}
+                    title="Lưu loại công việc"
+                  >
+                    {savingWorkType ? (
+                      <span className="spinner-border spinner-border-sm" role="status"></span>
+                    ) : (
+                      <i className="fas fa-check"></i>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary px-2"
+                    disabled={savingWorkType}
+                    onClick={() => {
                       setWorkTypeMode(null);
                       setWorkTypeInput("");
-                    }
+                    }}
+                    title="Hủy"
+                  >
+                    <i className="fas fa-times"></i>
+                  </button>
+                </div>
+              ) : (
+                <select
+                  className="form-select form-select-sm"
+                  value={type}
+                  onChange={(e) => {
+                    const newType = e.target.value;
+                    setType(newType);
                   }}
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  className="btn btn-primary fw-bold px-2"
-                  disabled={savingWorkType || workTypeInput.trim().length < 2}
-                  onClick={handleSaveWorkType}
-                  title="Lưu loại công việc"
                 >
-                  {savingWorkType ? (
-                    <span className="spinner-border spinner-border-sm" role="status"></span>
-                  ) : (
-                    <i className="fas fa-check"></i>
+                  {workTypes.map((wt) => (
+                    <option key={wt.code} value={wt.code}>
+                      {wt.label}
+                    </option>
+                  ))}
+                  {!workTypes.some((wt) => wt.code === type) && type && (
+                    <option value={type}>{TICKET_TYPE_LABELS[type] || type}</option>
                   )}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary px-2"
-                  disabled={savingWorkType}
-                  onClick={() => {
-                    setWorkTypeMode(null);
-                    setWorkTypeInput("");
-                  }}
-                  title="Hủy"
-                >
-                  <i className="fas fa-times"></i>
-                </button>
-              </div>
-            ) : (
-              <select
-                className="form-select form-select-sm"
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-              >
-                {workTypes.map((wt) => (
-                  <option key={wt.code} value={wt.code}>
-                    {wt.label}
-                  </option>
-                ))}
-                {!workTypes.some((wt) => wt.code === type) && type && (
-                  <option value={type}>{TICKET_TYPE_LABELS[type] || type}</option>
-                )}
-              </select>
-            )}
-          </div>
+                </select>
+              )}
+            </div>
+          )}
 
-          <div className={canAssign ? "col-lg col-sm-6 col-12" : "col-md-3 col-sm-6 col-12"}>
+          {/* Cột 3: Mức độ ưu tiên (SLA) */}
+          <div
+            className={
+              selectedEquipments.length > 0 && ticketCategory === "EQUIPMENT"
+                ? canAssign
+                  ? "col-md-3 col-sm-6 col-12"
+                  : "col-md-4 col-sm-6 col-12"
+                : canAssign
+                ? "col-lg col-sm-6 col-12"
+                : "col-md-3 col-sm-6 col-12"
+            }
+          >
             <label className="form-label small fw-bold mb-1">
               <i className="fas fa-stopwatch text-warning me-1"></i>Mức độ ưu tiên (SLA)
             </label>
@@ -1190,7 +1744,18 @@ export function CreateTicketModal({
             </select>
           </div>
 
-          <div className={canAssign ? "col-lg col-sm-6 col-12" : "col-md-3 col-sm-6 col-12"}>
+          {/* Cột 4: Nguồn tiếp nhận */}
+          <div
+            className={
+              selectedEquipments.length > 0 && ticketCategory === "EQUIPMENT"
+                ? canAssign
+                  ? "col-md-3 col-sm-6 col-12"
+                  : "col-md-4 col-sm-6 col-12"
+                : canAssign
+                ? "col-lg col-sm-6 col-12"
+                : "col-md-3 col-sm-6 col-12"
+            }
+          >
             <label className="form-label small fw-bold mb-1">
               <i className="fas fa-bullhorn text-info me-1"></i>Nguồn tiếp nhận
             </label>
@@ -1207,9 +1772,15 @@ export function CreateTicketModal({
             </select>
           </div>
 
-          {/* Phân công ngay cho Kỹ thuật viên (Được đưa lên cùng hàng trên) */}
+          {/* Cột 5: Phân công ngay cho Kỹ thuật viên (Tùy chọn) */}
           {canAssign ? (
-            <div className="col-lg col-sm-12 col-12">
+            <div
+              className={
+                selectedEquipments.length > 0 && ticketCategory === "EQUIPMENT"
+                  ? "col-md-3 col-sm-6 col-12"
+                  : "col-lg col-sm-12 col-12"
+              }
+            >
               <label
                 className="form-label small fw-bold text-truncate w-100 mb-1"
                 title="Phân công ngay cho Kỹ thuật viên (Tùy chọn - để trống để Điều phối phân bổ sau)"
@@ -1241,14 +1812,34 @@ export function CreateTicketModal({
 
           {/* Mô tả chi tiết hiện tượng / yêu cầu */}
           <div className="col-12 mt-3 pt-2 border-top border-light-subtle">
-            <div className="d-flex justify-content-between align-items-center mb-1.5">
+            <div className="d-flex justify-content-between align-items-center flex-wrap gap-1 mb-1.5">
               <label className="form-label small fw-bold text-dark mb-0 d-flex align-items-center gap-1.5">
                 <i className="fas fa-comment-dots text-primary"></i>
                 Nội dung chi tiết công việc / yêu cầu <span className="text-danger">*</span>
+                {ticketCategory === "EQUIPMENT" && selectedEquipments.length > 0 && isAutoSyncDesc && (
+                  <span
+                    className="badge bg-success-subtle text-success border border-success-subtle fw-normal"
+                    style={{ fontSize: "10.5px" }}
+                  >
+                    <i className="fas fa-sync-alt me-1"></i>Tự động tổng hợp từ bảng máy
+                  </span>
+                )}
               </label>
-              <span className="text-muted" style={{ fontSize: "11.5px" }}>
-                Click gợi ý bên dưới để chèn nhanh nội dung:
-              </span>
+              <div className="d-flex align-items-center gap-2">
+                {ticketCategory === "EQUIPMENT" && selectedEquipments.length > 0 && !isAutoSyncDesc && (
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-outline-primary py-0 px-2 fw-semibold"
+                    style={{ fontSize: "11px" }}
+                    onClick={handleManualSyncDescription}
+                  >
+                    <i className="fas fa-magic me-1"></i>Đồng bộ lại từ bảng máy
+                  </button>
+                )}
+                <span className="text-muted" style={{ fontSize: "11.5px" }}>
+                  Click gợi ý bên dưới để chèn nhanh nội dung:
+                </span>
+              </div>
             </div>
 
             {/* Các tags gợi ý điền nhanh thoáng đãng, dễ nhìn */}
@@ -1259,7 +1850,10 @@ export function CreateTicketModal({
                   type="button"
                   className="btn btn-sm btn-outline-secondary py-1 px-2.5 rounded-pill shadow-2xs"
                   style={{ fontSize: "11.5px" }}
-                  onClick={() => handleAppendIssueTag(tag)}
+                  onClick={() => {
+                    setIsAutoSyncDesc(false);
+                    handleAppendIssueTag(tag);
+                  }}
                 >
                   + {tag}
                 </button>
@@ -1268,11 +1862,18 @@ export function CreateTicketModal({
 
             <textarea
               className="form-control"
-              rows={4}
-              required
-              placeholder="Nhập chi tiết hiện tượng lỗi, vị trí cụ thể, tình trạng máy hiện tại hoặc yêu cầu cần KTV hỗ trợ..."
+              rows={3}
+              required={ticketCategory !== "EQUIPMENT" || selectedEquipments.length === 0}
+              placeholder={
+                ticketCategory === "EQUIPMENT" && selectedEquipments.length > 0
+                  ? "Nội dung tổng hợp tự động từ bảng chi tiết từng máy ở trên (hoặc bạn có thể gõ ghi chú bổ sung tại đây)..."
+                  : "Nhập chi tiết hiện tượng lỗi, vị trí cụ thể, tình trạng máy hiện tại hoặc yêu cầu cần KTV hỗ trợ..."
+              }
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                setIsAutoSyncDesc(false);
+                setDescription(e.target.value);
+              }}
               style={{ fontSize: "13px", lineHeight: "1.5" }}
             />
           </div>
