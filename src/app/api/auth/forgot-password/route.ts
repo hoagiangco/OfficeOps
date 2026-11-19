@@ -55,7 +55,7 @@ export const POST = withErrors(async (req: Request) => {
   });
 
   // 2. Gửi email chứa liên kết reset mật khẩu
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:5000";
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:5000").replace(/\/+$/, "");
   const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
 
   const emailHtml = getPasswordResetEmailHtml({

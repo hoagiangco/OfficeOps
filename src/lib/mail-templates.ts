@@ -3,7 +3,7 @@
  * Dùng bảng (table layout) và CSS inline để đảm bảo hiển thị hoàn hảo trên Gmail web và mobile.
  */
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:5000";
+const APP_URL = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:5000").replace(/\/+$/, "");
 
 // Helper định dạng tiền tệ VND
 function formatCurrency(amount: number): string {

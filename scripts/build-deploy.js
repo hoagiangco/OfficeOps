@@ -28,7 +28,14 @@ function getTimestamp() {
 
 function run(command, cwd = ROOT_DIR) {
   console.log(`\n>> Đang chạy: ${command}`);
-  execSync(command, { cwd, stdio: "inherit" });
+  execSync(command, {
+    cwd,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      NODE_OPTIONS: "--max-old-space-size=4096",
+    },
+  });
 }
 
 async function main() {
